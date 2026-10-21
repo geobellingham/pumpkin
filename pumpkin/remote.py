@@ -1,8 +1,19 @@
 """Reaching Pumpkin from a phone: over Tailscale (anywhere) or the home network."""
 import json
+import os
 import shutil
 import socket
 import subprocess
+
+MAC_APP_CLI = "/Applications/Tailscale.app/Contents/MacOS/Tailscale"
+
+
+def ts():
+    """The tailscale command: on the PATH, or inside the Mac app (which does not add itself to the PATH)."""
+    w = shutil.which("tailscale")
+    if w:
+        return w
+    return MAC_APP_CLI if os.path.exists(MAC_APP_CLI) else None
 
 
 def _run(cmd, timeout=15):
@@ -14,9 +25,9 @@ def _run(cmd, timeout=15):
 
 
 def tailscale_host():
-    if not shutil.which("tailscale"):
+    if not ts():
         return None
-    code, out, _ = _run(["tailscale", "status", "--json"])
+    code, out, _ = _run([ts(), "status", "--json"])
     if code != 0:
         return None
     try:
@@ -27,9 +38,9 @@ def tailscale_host():
 
 def tailscale_on(port):
     """Publishes Pumpkin at https://<machine>.<tailnet>.ts.net (tailnet only)."""
-    if not shutil.which("tailscale"):
+    if not ts():
         raise RuntimeError("Tailscale is not installed. Install it on this computer and your phone first.")
-    code, out, err = _run(["tailscale", "serve", "--bg", "--https=443", f"localhost:{port}"])
+    code, out, err = _run([ts(), "serve", "--bg", "--https=443", f"localhost:{port}"])
     if code != 0:
         msg = err or out
         if "access denied" in msg.lower() or "operator" in msg.lower():
@@ -45,8 +56,8 @@ def tailscale_on(port):
 
 
 def tailscale_off():
-    if shutil.which("tailscale"):
-        _run(["tailscale", "serve", "--https=443", "off"])
+    if ts():
+        _run([ts(), "serve", "--https=443", "off"])
 
 
 def lan_ip():
@@ -71,4 +82,4 @@ def status(settings, token):
         ip = lan_ip()
         base = f"http://{ip}:{port}" if ip else None
     return {"mode": mode, "base": base, "link": f"{base}/login?key={token}" if base else None,
-            "tailscale_installed": bool(shutil.which("tailscale")), "lan_ip": lan_ip()}
+            "tailscale_installed": bool(ts()), "lan_ip": lan_ip()}

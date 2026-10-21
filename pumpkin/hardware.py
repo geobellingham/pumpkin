@@ -1,12 +1,78 @@
 """What the machine has: GPUs, VRAM, RAM, CPU, and live usage."""
 import glob
 import os
+import platform
 import re
 import shutil
 import subprocess
+import sys
 
 GiB = 2 ** 30
 VENDORS = {"0x1002": "AMD", "0x10de": "NVIDIA", "0x8086": "Intel"}
+MAC = sys.platform == "darwin"
+
+
+# ---------------------------------------------------------------- macOS
+def _sysctl(name):
+    try:
+        out = subprocess.run(["sysctl", "-n", name], capture_output=True, text=True, timeout=3)
+        return out.stdout.strip() if out.returncode == 0 else None
+    except (OSError, subprocess.SubprocessError):
+        return None
+
+
+def _int(v):
+    try:
+        return int(v)
+    except (TypeError, ValueError):
+        return None
+
+
+def apple_silicon():
+    return MAC and (platform.machine() == "arm64" or _sysctl("hw.optional.arm64") == "1")
+
+
+def gpu_memory_limit(ram_bytes, wired_limit_mb=None):
+    """How much of a Mac's memory the GPU may use. macOS allows about two thirds of RAM up to 36 GB and
+    three quarters above that, unless someone raised it with `sudo sysctl iogpu.wired_limit_mb=...`."""
+    if wired_limit_mb:
+        return wired_limit_mb / 1024
+    ram = ram_bytes / GiB
+    return ram * (0.75 if ram > 36 else 2 / 3)
+
+
+def _mac_gpus():
+    if not apple_silicon():
+        return []                               # Intel Macs: llama.cpp runs on the CPU
+    ram = _int(_sysctl("hw.memsize")) or 0
+    chip = _sysctl("machdep.cpu.brand_string") or "Apple Silicon"
+    return [{"index": 0, "vendor": "Apple", "name": f"{chip} GPU", "integrated": False, "unified": True,
+             "vram_total": round(gpu_memory_limit(ram, _int(_sysctl("iogpu.wired_limit_mb"))), 1),
+             "vram_used": None, "busy": None}]
+
+
+def _mac_memory():
+    tot = _int(_sysctl("hw.memsize")) or 0
+    avail = None
+    try:
+        out = subprocess.run(["vm_stat"], capture_output=True, text=True, timeout=3).stdout
+        page = int(re.search(r"page size of (\d+)", out).group(1))
+        pages = {k.strip().lower(): int(v.strip().rstrip(".")) for k, v in re.findall(r"^([^:]+):\s+(\d+)\.?$", out, re.M)}
+        free = sum(pages.get(k, 0) for k in ("pages free", "pages inactive", "pages speculative", "pages purgeable"))
+        avail = free * page
+    except (OSError, subprocess.SubprocessError, AttributeError, ValueError):
+        pass
+    if avail is None:
+        avail = tot
+    return {"ram_total": tot / GiB, "ram_used": max(0, tot - avail) / GiB, "ram_available": avail / GiB}
+
+
+def _mac_cpu():
+    logical = _int(_sysctl("hw.logicalcpu")) or os.cpu_count() or 1
+    physical = _int(_sysctl("hw.physicalcpu")) or logical
+    perf = _int(_sysctl("hw.perflevel0.physicalcpu"))           # performance cores on Apple Silicon
+    return {"model": _sysctl("machdep.cpu.brand_string") or "CPU", "physical_cores": perf or physical,
+            "logical_cores": logical, "avx2": False, "avx512": False}
 
 
 def _read(path, cast=str):
@@ -56,7 +122,10 @@ def _nvidia():
 
 
 def gpus():
-    """All GPUs with their VRAM in GiB. Integrated GPUs report vram_total 0 (they share RAM)."""
+    """All GPUs with their VRAM in GiB. Integrated GPUs report vram_total 0 (they share RAM).
+    On Apple Silicon the GPU shares memory with the CPU; vram_total is the part macOS lets the GPU use."""
+    if MAC:
+        return _mac_gpus()
     found = []
     seen_nvidia = False
     for dev in sorted(glob.glob("/sys/class/drm/card[0-9]*/device")):
@@ -95,6 +164,8 @@ def main_gpu(gpu_list=None):
 
 
 def memory():
+    if MAC:
+        return _mac_memory()
     mem = {}
     try:
         with open("/proc/meminfo") as f:
@@ -108,6 +179,8 @@ def memory():
 
 
 def cpu():
+    if MAC:
+        return _mac_cpu()
     model, flags, cores = None, set(), set()
     phys = None
     try:
@@ -133,6 +206,8 @@ def cpu():
 
 
 def recommended_backend(gpu_list=None):
+    if MAC:
+        return "metal" if apple_silicon() else "cpu"
     g = main_gpu(gpu_list)
     if not g:
         return "cpu"
@@ -144,6 +219,8 @@ def recommended_backend(gpu_list=None):
 
 
 def vulkan_loader():
+    if MAC:
+        return False
     for p in ("/usr/lib/x86_64-linux-gnu/libvulkan.so.1", "/usr/lib64/libvulkan.so.1", "/usr/lib/libvulkan.so.1",
               "/usr/lib/aarch64-linux-gnu/libvulkan.so.1"):
         if os.path.exists(p):
@@ -194,6 +271,12 @@ def live():
         return {"ram_total": fake["ram_total"], "ram_used": fake.get("ram_used", 6.2), "ram_available": 20,
                 "vram_total": g.get("vram_total"), "vram_used": fake.get("vram_used", 1.1), "gpu_busy": 3}
     out = memory()
+    if MAC:
+        g = (_mac_gpus() or [None])[0]
+        if g:
+            # one pool of memory: show how much of the GPU's share is in use (everything in use counts)
+            out["vram_total"], out["vram_used"], out["unified"] = g["vram_total"], min(out["ram_used"], g["vram_total"]), True
+        return out
     g = None
     for dev in sorted(glob.glob("/sys/class/drm/card[0-9]*/device")):
         tot = _read(f"{dev}/mem_info_vram_total", int)

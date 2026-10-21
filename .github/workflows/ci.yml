@@ -7,10 +7,15 @@ on:
 
 jobs:
   backend:
-    runs-on: ubuntu-24.04
     strategy:
+      fail-fast: false
       matrix:
-        python: ["3.10", "3.12", "3.13"]
+        include:
+          - { os: ubuntu-24.04, python: "3.10" }
+          - { os: ubuntu-24.04, python: "3.12" }
+          - { os: ubuntu-24.04, python: "3.13" }
+          - { os: macos-14, python: "3.12" }        # Apple Silicon
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v6
@@ -24,10 +29,35 @@ jobs:
           python -m unittest discover -s tests -v > test-output.txt 2>&1
           code=$?
           cat test-output.txt
-          if [ "$code" -ne 0 ]; then
-            # also show the end of the output as an annotation, which is easy to read from the run summary
-            msg=$(grep -vE "ResourceWarning|^  " test-output.txt | tail -60 | sed ':a;N;$!ba;s/%/%25/g;s/\r//g;s/\n/%0A/g')
-            echo "::error title=Tests failed::$msg"
+          [ "$code" -eq 0 ] || python .github/annotate.py error "Tests failed" test-output.txt
+          exit $code
+
+  # the real thing: Pumpkin downloads llama.cpp and a tiny model, starts it and chats
+  real:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-24.04, backend: cpu }
+          - { os: macos-14, backend: "" }           # Apple Silicon: Metal
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: End to end with a real model
+        env:
+          E2E_BACKEND: ${{ matrix.backend }}
+        run: |
+          set +e
+          python tests/e2e_real.py > e2e.txt 2>&1
+          code=$?
+          cat e2e.txt
+          if [ "$code" -eq 0 ]; then
+            python .github/annotate.py notice "End to end on ${{ matrix.os }}" e2e.txt
+          else
+            python .github/annotate.py error "End to end failed on ${{ matrix.os }}" e2e.txt
           fi
           exit $code
 

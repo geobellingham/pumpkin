@@ -60,8 +60,13 @@ def fit(model_gb, info, ctx, kv_type, hw):
         kv = ctx * per_token * (2 if (kv_type or "f16") in ("f16", "bf16") else 1)
     overhead = 0.5 + 0.02 * model_gb                       # compute buffers and runtime
     need = model_gb + kv + overhead
-    usable_vram = max(0.0, vram - 0.8)                     # desktop and driver
-    usable_ram = max(0.0, ram * 0.75 - 4)                  # leave room for the system
+    if hw.get("unified"):
+        # a Mac: GPU and CPU share one pool, and vram_total is already the GPU's share of it, so there is
+        # no separate RAM to spill into
+        usable_vram, usable_ram = max(0.0, vram - 1.0), 0.0
+    else:
+        usable_vram = max(0.0, vram - 0.8)                 # desktop and driver
+        usable_ram = max(0.0, ram * 0.75 - 4)              # leave room for the system
     if vram and need <= usable_vram:
         level = "gpu"
     elif need <= usable_vram + usable_ram:

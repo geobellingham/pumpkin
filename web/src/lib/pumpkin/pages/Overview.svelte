@@ -84,7 +84,7 @@
 		</div>
 
 		<div class="mt-4 flex gap-4">
-			<Meter label="VRAM" total={s?.live.vram_total} used={s?.live.vram_used} />
+			<Meter label={s?.live.unified ? "GPU memory" : "VRAM"} total={s?.live.vram_total} used={s?.live.vram_used} />
 			<Meter label="RAM" total={s?.live.ram_total} used={s?.live.ram_used} />
 		</div>
 

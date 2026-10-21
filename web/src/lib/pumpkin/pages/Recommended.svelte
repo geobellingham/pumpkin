@@ -31,7 +31,7 @@
 	interface Recs {
 		error: string | null;
 		gpu: Rec[];
-		hardware: { ram_total: number; vram_total: number };
+		hardware: { ram_total: number; unified?: boolean; vram_total: number };
 		moe: Rec[];
 		source: 'huggingface' | 'offline';
 		stale: boolean;
@@ -168,10 +168,17 @@
 		'Nothing fits entirely in your video memory. Try the models below, which can use RAM too.'
 	)}
 
+	{#if recs?.hardware.unified}
+		<p class="px-1 text-sm text-muted-foreground">
+			On a Mac the GPU and the CPU share one pool of memory, so every model that fits is in the list above. Mixture-of-experts
+			models are a great pick here: they are big but only use a few billion parameters for each word, so they stay fast.
+		</p>
+	{:else}
 	{@render route(
 		'moe',
 		'Bigger models that also use RAM',
 		'Mixture-of-experts models only use a few billion parameters for each word, so they stay quick with part of the model in RAM. Smarter, a little slower.',
 		'No mixture-of-experts model fits this computer well right now.'
 	)}
+	{/if}
 </div>

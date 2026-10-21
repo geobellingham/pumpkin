@@ -8,6 +8,7 @@ import secrets
 import shutil
 import signal
 import subprocess
+import sys
 import tarfile
 import threading
 import time
@@ -61,7 +62,7 @@ def candidates(settings):
     if w:
         out.append(w)
     out += [os.path.join(config.HOME, "llama.cpp", "build", "bin", "llama-server"), "/usr/local/bin/llama-server",
-            "/opt/llama.cpp/bin/llama-server"]
+            "/opt/llama.cpp/bin/llama-server", "/opt/homebrew/bin/llama-server"]          # the last one: Homebrew on a Mac
     seen, res = set(), []
     for c in out:
         if c and c not in seen and os.path.isfile(c) and os.access(c, os.X_OK):
@@ -78,7 +79,8 @@ def find_server(settings):
 def _env_for(binary):
     env = dict(os.environ)
     d = os.path.dirname(os.path.realpath(binary))
-    env["LD_LIBRARY_PATH"] = d + (":" + env["LD_LIBRARY_PATH"] if env.get("LD_LIBRARY_PATH") else "")
+    var = "DYLD_LIBRARY_PATH" if sys.platform == "darwin" else "LD_LIBRARY_PATH"
+    env[var] = d + (":" + env[var] if env.get(var) else "")
     return env
 
 
@@ -107,6 +109,8 @@ def probe(binary):
         for b in ("Vulkan", "CUDA", "ROCm", "HIP", "Metal", "SYCL", "CPU"):
             if re.search(rf"\b{b}\b", txt):
                 info["backends"].append(b)
+        if not info["backends"] and re.search(r"arm64-apple-darwin", txt):
+            info["backends"].append("Metal")       # Apple Silicon builds use Metal without saying so
         h = subprocess.run([binary, "--help"], capture_output=True, text=True, timeout=30, env=_env_for(binary))
         htxt = (h.stdout or "") + (h.stderr or "")
         info["flags"] = [f for f in KNOWN_FLAGS if re.search(rf"(^|[\s,]){re.escape(f)}([\s,=]|$)", htxt, re.M)]
@@ -130,7 +134,10 @@ def latest_tag():
     return m.group(1)
 
 
-def asset_names(tag, backend, arch="x64"):
+def asset_names(tag, backend, arch="x64", system=None):
+    if (system or sys.platform) == "darwin":
+        # the arm64 build uses Metal (Apple Silicon GPUs); Intel Macs get the x64 CPU build
+        return [f"llama-{tag}-bin-macos-{arch}.tar.gz", f"llama-{tag}-bin-macos-{arch}.zip"]
     if backend == "cuda":
         return [f"llama-{tag}-bin-ubuntu-cuda-12.8-{arch}.tar.gz", f"llama-{tag}-bin-ubuntu-cuda-13.4-{arch}.tar.gz"]
     if backend == "vulkan":
@@ -195,6 +202,12 @@ def _fetch(url, dest, progress=None, cancelled=lambda: False):
 
 
 def _extract(archive, dest):
+    if archive.endswith(".zip") and shutil.which("unzip"):
+        # unzip keeps the symlinks and execute bits that Python's zipfile drops (macOS builds have both)
+        os.makedirs(dest, exist_ok=True)
+        r = subprocess.run(["unzip", "-q", "-o", archive, "-d", dest], capture_output=True, text=True)
+        if r.returncode == 0:
+            return
     if archive.endswith(".zip"):
         with zipfile.ZipFile(archive) as z:
             z.extractall(dest)
@@ -238,13 +251,18 @@ def download_release(backend, tag=None, progress=None, cancelled=lambda: False):
                 os.remove(rt)
             except (urllib.error.URLError, OSError):
                 pass                           # the system CUDA runtime may be enough
+        if sys.platform == "darwin":
+            # downloaded by Pumpkin rather than a browser, so macOS should not quarantine it; clear it in case
+            subprocess.run(["xattr", "-dr", "com.apple.quarantine", target], capture_output=True)
         hits = glob.glob(os.path.join(target, "**", "llama-server"), recursive=True)
         if not hits:
             raise RuntimeError(f"The download did not contain llama-server ({name}).")
         binary = hits[0]
         bindir = os.path.dirname(binary)
         # put any runtime libraries next to the binary so LD_LIBRARY_PATH finds them
-        for lib in glob.glob(os.path.join(target, "**", "*.so*"), recursive=True):
+        libs = glob.glob(os.path.join(target, "**", "*.so*"), recursive=True) + \
+            glob.glob(os.path.join(target, "**", "*.dylib"), recursive=True)
+        for lib in libs:
             dst = os.path.join(bindir, os.path.basename(lib))
             if not os.path.exists(dst):
                 try:
@@ -412,14 +430,20 @@ class ServerManager:
         self._changed()
 
     def _inhibit(self, on):
-        """While a model is loaded, ask systemd not to suspend the computer (screen can still lock)."""
+        """While a model is loaded, keep the computer from going to sleep (the screen can still lock).
+        Linux asks systemd; a Mac uses caffeinate (closing a laptop's lid still sleeps it)."""
         cur = getattr(self, "_inhibitor", None)
-        if on and cur is None and self.settings["keep_awake"] and shutil.which("systemd-inhibit"):
+        if sys.platform == "darwin":
+            cmd = ["caffeinate", "-i"] if shutil.which("caffeinate") else None
+        elif shutil.which("systemd-inhibit"):
+            cmd = ["systemd-inhibit", "--what=sleep:idle", "--who=Pumpkin", "--why=A model is loaded",
+                   "--mode=block", "sleep", "infinity"]
+        else:
+            cmd = None
+        if on and cur is None and self.settings["keep_awake"] and cmd:
             try:
-                self._inhibitor = subprocess.Popen(
-                    ["systemd-inhibit", "--what=sleep:idle", "--who=Pumpkin", "--why=A model is loaded",
-                     "--mode=block", "sleep", "infinity"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                    start_new_session=True)
+                self._inhibitor = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                                                   start_new_session=True)
             except OSError:
                 self._inhibitor = None
         elif not on and cur is not None:

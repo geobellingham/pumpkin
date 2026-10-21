@@ -7,6 +7,7 @@ import ipaddress
 import json
 import mimetypes
 import os
+import sys
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -295,7 +296,8 @@ class Web:
             if method == "GET" and not ident:
                 binary = llama.find_server(core.settings)
                 return {"path": binary, "info": llama.probe(binary), "candidates": llama.candidates(core.settings),
-                        "backend": core.hardware()["backend"], "log": "".join(core.server.log_tail(80))}
+                        "backend": core.hardware()["backend"], "platform": sys.platform,
+                        "log": "".join(core.server.log_tail(80))}
             if ident == "download" and method == "POST":
                 return core.download_llama(body.get("backend") or core.hardware()["backend"])
             if ident == "start" and method == "POST":

@@ -5,7 +5,7 @@
   pumpkin open         open the window (or your browser)
   pumpkin link         print the sign-in link for this computer and for your phone
   pumpkin doctor       check that everything needed is in place
-  pumpkin service install|uninstall|status    run Pumpkin at login with systemd
+  pumpkin service install|uninstall|status    run Pumpkin at login (systemd on Linux, launchd on a Mac)
   pumpkin stop         stop the background server and the model
 """
 import argparse
@@ -69,7 +69,8 @@ def start_background():
     if running():
         return True
     if service_installed():
-        subprocess.run(["systemctl", "--user", "start", f"{APP_ID}.service"])
+        from . import service
+        service.start()
     else:
         log = open(os.path.join(config.STATE_DIR, "pumpkin.log"), "a")
         subprocess.Popen([sys.executable, "-m", "pumpkin", "serve"], stdout=log, stderr=subprocess.STDOUT,
@@ -101,11 +102,17 @@ def cmd_open(args):
                 return
         except Exception as e:  # noqa: BLE001 - fall back to the browser
             print(f"Window unavailable ({e}); opening your browser.", file=sys.stderr)
-    opener = shutil.which("xdg-open")
+    opener = shutil.which("open" if sys.platform == "darwin" else "xdg-open")
     if opener:
         subprocess.Popen([opener, login_url()], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     else:
         print(f"Open this in your browser: {login_url()}")
+
+
+def cmd_up(args):
+    """Start in the background without opening anything (used after an update)."""
+    config.ensure_dirs()
+    sys.exit(0 if start_background() else 1)
 
 
 def cmd_link(args):
@@ -149,8 +156,11 @@ def cmd_service(args):
             urllib_post("quit")
             time.sleep(1.5)
         service.enable(start_now=True)
-        print(f"{APP_NAME} now starts when you log in. To keep it running while you are logged out "
-              f"(for scheduled tasks), run: sudo loginctl enable-linger $USER")
+        if sys.platform == "darwin":
+            print(f"{APP_NAME} now starts when you log in.")
+        else:
+            print(f"{APP_NAME} now starts when you log in. To keep it running while you are logged out "
+                  f"(for scheduled tasks), run: sudo loginctl enable-linger $USER")
     elif args.action == "uninstall":
         service.disable()
         print("Removed the login service.")
@@ -171,7 +181,8 @@ def urllib_post(name, body=None):
 
 def cmd_stop(args):
     if service_installed():
-        subprocess.run(["systemctl", "--user", "stop", f"{APP_ID}.service"])
+        from . import service
+        service.stop()
     elif running():
         urllib_post("quit")
     print(f"{APP_NAME} stopped.")
@@ -191,10 +202,11 @@ def main(argv=None):
     sv = sub.add_parser("service", help="run at login (systemd user service)")
     sv.add_argument("action", choices=["install", "uninstall", "status"])
     sub.add_parser("stop", help="stop Pumpkin and the model")
+    sub.add_parser("up", help="start Pumpkin in the background without opening it")
     args = ap.parse_args(argv)
     config.ensure_dirs()
     {"serve": cmd_serve, "open": cmd_open, "link": cmd_link, "doctor": cmd_doctor, "service": cmd_service,
-     "stop": cmd_stop, None: cmd_open}[args.cmd](args)
+     "stop": cmd_stop, "up": cmd_up, None: cmd_open}[args.cmd](args)
 
 
 if __name__ == "__main__":

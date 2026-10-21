@@ -38,6 +38,7 @@ export interface State {
 		gpu_busy?: number | null;
 		ram_total?: number;
 		ram_used?: number;
+		unified?: boolean;
 		vram_total?: number;
 		vram_used?: number;
 	};
@@ -193,6 +194,7 @@ export interface Settings {
 
 export interface LlamaInfo {
 	backend: string;
+	platform?: string;
 	candidates: string[];
 	info: {
 		backends: string[];
@@ -211,7 +213,7 @@ export interface Hardware {
 	cpu: { model: string; physical_cores: number };
 	disk: number | null;
 	gpus: { name: string; vendor: string; vram_total: number; integrated?: boolean }[];
-	main_gpu: { name: string; vendor: string; vram_total: number } | null;
+	main_gpu: { name: string; unified?: boolean; vendor: string; vram_total: number } | null;
 	ram_total: number;
 	vulkan: boolean;
 }

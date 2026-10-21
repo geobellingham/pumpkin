@@ -265,9 +265,10 @@ class TestOnline(unittest.TestCase):
         from pumpkin import llama
         tag = open(os.path.join(os.path.dirname(HERE), "web", "LLAMA_TAG")).read().strip()
         digests = llama.release_digests(tag)
-        for backend in ("vulkan", "cpu"):
-            names = [n for n in llama.asset_names(tag, backend) if n in digests]
-            self.assertTrue(names, f"no {backend} build in {tag}")
+        for backend, arch, system in (("vulkan", "x64", "linux"), ("cpu", "x64", "linux"), ("metal", "arm64", "darwin"),
+                                      ("cpu", "x64", "darwin")):
+            names = [n for n in llama.asset_names(tag, backend, arch, system) if n in digests]
+            self.assertTrue(names, f"no {backend} build for {system} {arch} in {tag}")
             self.assertTrue(digests[names[0]].startswith("sha256:"), names[0])
 
 

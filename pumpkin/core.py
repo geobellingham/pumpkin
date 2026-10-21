@@ -64,7 +64,10 @@ class Core:
     def fit_hw(self):
         h = self.hardware()
         g = h.get("main_gpu") or {}
-        return {"vram_total": g.get("vram_total") or 0, "ram_total": h.get("ram_total") or 0}
+        out = {"vram_total": g.get("vram_total") or 0, "ram_total": h.get("ram_total") or 0}
+        if g.get("unified"):
+            out["unified"] = True
+        return out
 
     def persona_prompt(self):
         p = self.personas.get(self.settings["persona"])

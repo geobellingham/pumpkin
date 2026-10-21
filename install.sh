@@ -19,9 +19,30 @@ done
 say() { printf '\033[1;33m🎃\033[0m %s\n' "$*"; }
 die() { printf '\033[1;31mError:\033[0m %s\n' "$*" >&2; exit 1; }
 
-[ "$(uname -s)" = "Linux" ] || die "Pumpkin 0.1 runs on Linux. macOS and Windows are planned."
-command -v python3 >/dev/null || die "Python 3.10 or newer is needed: sudo apt install python3"
-python3 -c 'import sys; sys.exit(0 if sys.version_info >= (3, 10) else 1)' || die "Python 3.10 or newer is needed."
+OS="$(uname -s)"
+case "$OS" in
+  Linux|Darwin) ;;
+  *) die "Pumpkin runs on Linux and macOS. Windows is planned." ;;
+esac
+MAC=0; [ "$OS" = "Darwin" ] && MAC=1
+
+# the newest Python 3.10+ there is. A Mac's built-in python3 is 3.9, so Homebrew's is preferred there.
+PY=""
+if [ "$MAC" = 1 ]; then
+  CANDS="python3.14 python3.13 python3.12 python3.11 python3.10 /opt/homebrew/bin/python3 /usr/local/bin/python3 python3"
+else
+  CANDS="python3 python3.14 python3.13 python3.12 python3.11 python3.10"   # the system one has GTK for the window
+fi
+for c in $CANDS; do
+  p="$(command -v "$c" 2>/dev/null || true)"
+  if [ -n "$p" ] && "$p" -c 'import sys; sys.exit(0 if sys.version_info >= (3, 10) else 1)' 2>/dev/null; then PY="$p"; break; fi
+done
+if [ -z "$PY" ]; then
+  if [ "$MAC" = 1 ]; then
+    die "Pumpkin needs Python 3.10 or newer, and the one built into macOS is older. Install it with Homebrew (brew install python) or from python.org, then run this again."
+  fi
+  die "Python 3.10 or newer is needed: sudo apt install python3"
+fi
 
 # where to install from
 SRC=""
@@ -39,7 +60,7 @@ else
   if [ -z "${PUMPKIN_TAG:-}" ] && ! curl -fsSL -r 0-0 -o /dev/null "https://github.com/$REPO/releases/download/$TAG/$FILE" 2>/dev/null; then
     # a release that was just published has no download for the first few minutes, while GitHub builds it
     PREV="$(curl -fsSL -H 'Accept: application/vnd.github+json' "https://api.github.com/repos/$REPO/releases?per_page=10" \
-      | python3 -c 'import json,sys; print(next((r["tag_name"] for r in json.load(sys.stdin) if r["tag_name"] != sys.argv[1] and not r.get("draft") and not r.get("prerelease") and any(a["name"] == "pumpkin-" + r["tag_name"].lstrip("v") + ".tar.gz" for a in r.get("assets", []))), ""))' "$TAG" \
+      | "$PY" -c 'import json,sys; print(next((r["tag_name"] for r in json.load(sys.stdin) if r["tag_name"] != sys.argv[1] and not r.get("draft") and not r.get("prerelease") and any(a["name"] == "pumpkin-" + r["tag_name"].lstrip("v") + ".tar.gz" for a in r.get("assets", []))), ""))' "$TAG" \
       2>/dev/null || true)"
     [ -n "$PREV" ] || die "Pumpkin $TAG is still being built on GitHub. Try again in a couple of minutes."
     say "Pumpkin $TAG is still being built on GitHub, so installing $PREV. Run this again later to get $TAG."
@@ -49,9 +70,9 @@ else
   curl -fsSL -o "$TMP/$FILE" "https://github.com/$REPO/releases/download/$TAG/$FILE" || die "Download failed."
   # check the file against the SHA-256 GitHub publishes for it
   WANT="$(curl -fsSL -H 'Accept: application/vnd.github+json' "https://api.github.com/repos/$REPO/releases/tags/$TAG" \
-    | python3 -c 'import json,sys; f=sys.argv[1]; print(next((a.get("digest") or "" for a in json.load(sys.stdin).get("assets", []) if a.get("name") == f), ""))' "$FILE" \
+    | "$PY" -c 'import json,sys; f=sys.argv[1]; print(next((a.get("digest") or "" for a in json.load(sys.stdin).get("assets", []) if a.get("name") == f), ""))' "$FILE" \
     2>/dev/null || true)"
-  GOT="sha256:$(python3 -c 'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1],"rb").read()).hexdigest())' "$TMP/$FILE")"
+  GOT="sha256:$("$PY" -c 'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1],"rb").read()).hexdigest())' "$TMP/$FILE")"
   if [ -n "$WANT" ]; then
     [ "$WANT" = "$GOT" ] || die "The download does not match its published checksum. Nothing was installed."
     say "Checksum verified"
@@ -59,7 +80,7 @@ else
     die "Could not get the checksum from GitHub to verify the download. Try again in a minute (or set PUMPKIN_SKIP_VERIFY=1)."
   fi
   tar -xzf "$TMP/$FILE" -C "$TMP"
-  SRC="$(find "$TMP" -maxdepth 2 -name install.sh -printf '%h\n' | head -1)"
+  SRC="$(dirname "$(find "$TMP" -maxdepth 2 -name install.sh | head -1)")"
 fi
 
 if [ ! -f "$SRC/pumpkin/ui/index.html" ]; then
@@ -82,30 +103,74 @@ find "$APP_DIR" -name __pycache__ -prune -exec rm -rf {} +
 mkdir -p "$BIN_DIR"
 cat > "$BIN_DIR/pumpkin" <<WRAP
 #!/bin/sh
-PYTHONPATH="$APP_DIR\${PYTHONPATH:+:\$PYTHONPATH}" exec python3 -m pumpkin "\$@"
+PYTHONPATH="$APP_DIR\${PYTHONPATH:+:\$PYTHONPATH}" exec "$PY" -m pumpkin "\$@"
 WRAP
 chmod +x "$BIN_DIR/pumpkin"
 
-ICON_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/icons/hicolor/scalable/apps"
-APPS_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/applications"
-mkdir -p "$ICON_DIR" "$APPS_DIR"
-cp "$APP_DIR/pumpkin/assets/pumpkin.svg" "$ICON_DIR/pumpkin.svg"
-sed "s#^Exec=pumpkin#Exec=$BIN_DIR/pumpkin#" "$SRC/packaging/pumpkin.desktop" > "$APPS_DIR/pumpkin.desktop"
-command -v update-desktop-database >/dev/null && update-desktop-database "$APPS_DIR" >/dev/null 2>&1 || true
-
-case ":$PATH:" in *":$BIN_DIR:"*) ;; *) say "Add $BIN_DIR to your PATH to use the pumpkin command (most desktops do this after you log in again)." ;; esac
-
-if ! python3 -c 'import gi; gi.require_version("WebKit2", "4.1")' >/dev/null 2>&1; then
-  say "Optional: for Pumpkin's own window instead of a browser tab, run: sudo apt install python3-gi gir1.2-webkit2-4.1"
+if [ "$MAC" = 1 ]; then
+  # a small app in ~/Applications, so Pumpkin is in Launchpad, Spotlight and the Dock
+  APP="$HOME/Applications/Pumpkin.app"
+  rm -rf "$APP"; mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
+  cp "$APP_DIR/pumpkin/assets/pumpkin.icns" "$APP/Contents/Resources/pumpkin.icns" 2>/dev/null || true
+  cat > "$APP/Contents/MacOS/Pumpkin" <<LAUNCH
+#!/bin/sh
+exec "$BIN_DIR/pumpkin" open
+LAUNCH
+  chmod +x "$APP/Contents/MacOS/Pumpkin"
+  cat > "$APP/Contents/Info.plist" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>CFBundleName</key><string>Pumpkin</string>
+  <key>CFBundleDisplayName</key><string>Pumpkin</string>
+  <key>CFBundleIdentifier</key><string>app.pumpkin.launcher</string>
+  <key>CFBundleExecutable</key><string>Pumpkin</string>
+  <key>CFBundleIconFile</key><string>pumpkin</string>
+  <key>CFBundlePackageType</key><string>APPL</string>
+  <key>LSUIElement</key><true/>
+</dict></plist>
+PLIST
+  touch "$APP"
+else
+  ICON_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/icons/hicolor/scalable/apps"
+  APPS_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/applications"
+  mkdir -p "$ICON_DIR" "$APPS_DIR"
+  cp "$APP_DIR/pumpkin/assets/pumpkin.svg" "$ICON_DIR/pumpkin.svg"
+  sed "s#^Exec=pumpkin#Exec=$BIN_DIR/pumpkin#" "$SRC/packaging/pumpkin.desktop" > "$APPS_DIR/pumpkin.desktop"
+  command -v update-desktop-database >/dev/null && update-desktop-database "$APPS_DIR" >/dev/null 2>&1 || true
 fi
-if ! command -v docker >/dev/null; then
-  say "Optional: agent tools run in a Docker sandbox. Install it with: sudo apt install docker.io && sudo usermod -aG docker \$USER"
+
+case ":$PATH:" in
+  *":$BIN_DIR:"*) ;;
+  *)
+    if [ "$MAC" = 1 ]; then
+      say "To use the pumpkin command in Terminal, run: echo 'export PATH=\"\$HOME/.local/bin:\$PATH\"' >> ~/.zprofile"
+    else
+      say "Add $BIN_DIR to your PATH to use the pumpkin command (most desktops do this after you log in again)."
+    fi ;;
+esac
+
+if [ "$MAC" = 1 ]; then
+  if ! command -v docker >/dev/null; then
+    say "Optional: agent tools run in a Docker sandbox. Install Docker Desktop (brew install --cask docker) and open it once."
+  fi
+else
+  if ! "$PY" -c 'import gi; gi.require_version("WebKit2", "4.1")' >/dev/null 2>&1; then
+    say "Optional: for Pumpkin's own window instead of a browser tab, run: sudo apt install python3-gi gir1.2-webkit2-4.1"
+  fi
+  if ! command -v docker >/dev/null; then
+    say "Optional: agent tools run in a Docker sandbox. Install it with: sudo apt install docker.io && sudo usermod -aG docker \$USER"
+  fi
 fi
 
 if [ "$SERVICE" = 1 ]; then
   "$BIN_DIR/pumpkin" service install
 fi
-say "Pumpkin is installed. Open it from your app menu or run: pumpkin"
-if [ "$OPEN" = 1 ] && { [ -n "${DISPLAY:-}" ] || [ -n "${WAYLAND_DISPLAY:-}" ]; }; then
+if [ "$MAC" = 1 ]; then
+  say "Pumpkin is installed. Open it from Launchpad or Spotlight, or run: pumpkin"
+else
+  say "Pumpkin is installed. Open it from your app menu or run: pumpkin"
+fi
+if [ "$OPEN" = 1 ] && { [ "$MAC" = 1 ] || [ -n "${DISPLAY:-}" ] || [ -n "${WAYLAND_DISPLAY:-}" ]; }; then
   nohup "$BIN_DIR/pumpkin" >/dev/null 2>&1 &
 fi

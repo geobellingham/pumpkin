@@ -6,6 +6,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import threading
 import time
 
@@ -98,10 +99,16 @@ def run_agent(port, prompt, system, say, settings, cancelled=lambda: False):
 
 def notify(settings, title, body=""):
     """Desktop notification, plus a phone push through ntfy when a topic is set."""
-    if settings["notifications"] and shutil.which("notify-send"):
+    cmd = None
+    if sys.platform == "darwin" and shutil.which("osascript"):
+        # strings go in as arguments, never pasted into the script, so a title cannot inject AppleScript
+        cmd = ["osascript", "-e", "on run argv", "-e", "display notification (item 2 of argv) with title (item 1 of argv)",
+               "-e", "end run", title, body or " "]
+    elif shutil.which("notify-send"):
+        cmd = ["notify-send", "-a", APP_NAME, title, body]
+    if settings["notifications"] and cmd:
         try:
-            subprocess.Popen(["notify-send", "-a", APP_NAME, title, body], stdout=subprocess.DEVNULL,
-                             stderr=subprocess.DEVNULL)
+            subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         except OSError:
             pass
     topic = (settings["ntfy_topic"] or "").strip()

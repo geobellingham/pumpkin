@@ -4,8 +4,11 @@ import os
 import shutil
 import socket
 import subprocess
+import sys
 
-from . import hardware, llama
+from . import hardware, llama, remote
+
+MAC = sys.platform == "darwin"
 
 
 def _run(cmd, timeout=8):
@@ -46,10 +49,18 @@ def check(core):
     hw = hardware.summary()
     g = hw.get("main_gpu")
     if not g:
-        add("Hardware", "GPU", "warn", "No GPU found. Models will run on the CPU, which is slow.",
-            "If you have a GPU, install its driver.")
+        if MAC:
+            add("Hardware", "GPU", "warn", "This Mac has an Intel processor, so models run on the CPU, which is slow. "
+                "Small models (up to about 8B) still work.")
+        else:
+            add("Hardware", "GPU", "warn", "No GPU found. Models will run on the CPU, which is slow.",
+                "If you have a GPU, install its driver.")
     else:
-        detail = f"{g['name']}, {g['vram_total']:.0f} GB VRAM" if g.get("vram_total") else g["name"]
+        if g.get("unified"):
+            detail = (f"{g['name']}, shares {hw['ram_total']:.0f} GB of memory and can use about "
+                      f"{g['vram_total']:.0f} GB of it")
+        else:
+            detail = f"{g['name']}, {g['vram_total']:.0f} GB VRAM" if g.get("vram_total") else g["name"]
         add("Hardware", "GPU", "ok", detail)
         if g["vendor"] in ("AMD", "Intel") or (g["vendor"] == "NVIDIA" and not shutil.which("nvidia-smi")):
             if not hw.get("vulkan"):
@@ -74,9 +85,14 @@ def check(core):
 
     # ---- sandbox
     if not shutil.which("docker"):
-        add("Agent tools", "Docker sandbox", "warn", "Docker is not installed. Tools would run directly on this "
-            "computer, so Pumpkin keeps them off until Docker is available.",
-            "Install Docker, then log out and back in.", "sudo apt install docker.io && sudo usermod -aG docker $USER")
+        if MAC:
+            add("Agent tools", "Docker sandbox", "warn", "Docker is not installed. Tools would run directly on this "
+                "computer, so Pumpkin keeps them off until Docker is available.",
+                "Install Docker Desktop (or OrbStack) and open it once.", "brew install --cask docker")
+        else:
+            add("Agent tools", "Docker sandbox", "warn", "Docker is not installed. Tools would run directly on this "
+                "computer, so Pumpkin keeps them off until Docker is available.",
+                "Install Docker, then log out and back in.", "sudo apt install docker.io && sudo usermod -aG docker $USER")
     else:
         code, txt = _run(["docker", "info", "--format", "{{.ServerVersion}}"])
         if code == 0:
@@ -84,6 +100,9 @@ def check(core):
             c2, _ = _run(["docker", "image", "inspect", img])
             add("Agent tools", "Docker sandbox", "ok", f"Docker {txt.strip()}; sandbox image {img}"
                 + ("" if c2 == 0 else " will download on first use"))
+        elif MAC:
+            add("Agent tools", "Docker sandbox", "fail", "Docker is installed but not running.",
+                "Open Docker Desktop and wait until it says it is running.", "open -a Docker")
         elif "permission denied" in txt.lower():
             in_group = False
             try:
@@ -106,15 +125,15 @@ def check(core):
     # ---- remote access
     mode = s["remote"]
     if mode == "tailscale":
-        if not shutil.which("tailscale"):
+        if not remote.ts():
             add("Phone access", "Tailscale", "fail", "Tailscale is not installed.",
                 "Install it and sign in on this computer and your phone.",
-                "curl -fsSL https://tailscale.com/install.sh | sh && sudo tailscale up")
+                "" if MAC else "curl -fsSL https://tailscale.com/install.sh | sh && sudo tailscale up")
         else:
-            code, txt = _run(["tailscale", "status", "--json"])
+            code, txt = _run([remote.ts(), "status", "--json"])
             if code != 0:
                 add("Phone access", "Tailscale", "fail", "Tailscale is not running or not signed in.",
-                    "Sign in.", "sudo tailscale up")
+                    "Open the Tailscale app and sign in." if MAC else "Sign in.", "" if MAC else "sudo tailscale up")
             else:
                 add("Phone access", "Tailscale", "ok", "Signed in")
     elif mode == "lan":
@@ -128,6 +147,9 @@ def check(core):
             if busy:
                 add("System", name, "warn", f"Something else is using port {port}.",
                     "Stop the other program or change the port in Settings.")
+    if MAC:
+        add("System", "Notifications", "ok", "Mac notifications for finished tasks")
+        return out
     add("System", "Notifications", "ok" if shutil.which("notify-send") else "warn",
         "Desktop notifications for finished tasks" if shutil.which("notify-send") else "notify-send is missing.",
         "" if shutil.which("notify-send") else "Install it for task notifications.",

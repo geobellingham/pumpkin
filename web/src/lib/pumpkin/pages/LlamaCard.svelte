@@ -44,11 +44,19 @@
 		}, 800);
 	}
 
-	const BACKENDS = [
-		{ label: 'Vulkan: AMD, Intel and most NVIDIA GPUs', value: 'vulkan' },
-		{ label: 'CUDA: NVIDIA GPUs (fastest there)', value: 'cuda' },
-		{ label: 'CPU only', value: 'cpu' }
-	];
+	// a Mac gets the Metal build (Apple Silicon) or the CPU build (Intel); the rest is for Linux
+	const BACKENDS = $derived(
+		info?.platform === 'darwin'
+			? [
+					{ label: 'Metal: Apple Silicon GPUs', value: 'metal' },
+					{ label: 'CPU only', value: 'cpu' }
+				]
+			: [
+					{ label: 'Vulkan: AMD, Intel and most NVIDIA GPUs', value: 'vulkan' },
+					{ label: 'CUDA: NVIDIA GPUs (fastest there)', value: 'cuda' },
+					{ label: 'CPU only', value: 'cpu' }
+				]
+	);
 </script>
 
 <Card description={compact ? '' : 'The llama.cpp engine that loads and runs the models.'} title="Model server">

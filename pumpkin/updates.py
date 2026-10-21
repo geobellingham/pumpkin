@@ -72,8 +72,7 @@ def apply():
     bin_pumpkin = os.path.join(config.HOME, ".local", "bin", "pumpkin")
     cmd = f"sleep 1; {script}"
     if not os.environ.get("PUMPKIN_INSTALL_CMD"):          # a custom command (tests) is left to do its own thing
-        cmd += (f" && {{ systemctl --user is-enabled pumpkin.service >/dev/null 2>&1 "
-                f"&& systemctl --user start pumpkin.service || nohup {bin_pumpkin} serve >/dev/null 2>&1 & }}")
+        cmd += f" && {bin_pumpkin} up"                     # the login service if there is one, else in the background
     log = open(os.path.join(config.STATE_DIR, "update.log"), "w")
     subprocess.Popen(["bash", "-c", cmd], stdout=log, stderr=subprocess.STDOUT, start_new_session=True,
                      cwd=config.HOME)

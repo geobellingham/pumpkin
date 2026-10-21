@@ -114,7 +114,7 @@
 						<div>
 							{#if hw.main_gpu}
 								<div class="font-medium">{hw.main_gpu.name}</div>
-								<div class="text-muted-foreground">{hw.main_gpu.vram_total ? `${hw.main_gpu.vram_total.toFixed(0)} GB of video memory` : 'Shares system memory'}</div>
+								<div class="text-muted-foreground">{hw.main_gpu.unified ? `Shares ${hw.ram_total.toFixed(0)} GB of memory with the CPU and can use about ${hw.main_gpu.vram_total.toFixed(0)} GB of it` : hw.main_gpu.vram_total ? `${hw.main_gpu.vram_total.toFixed(0)} GB of video memory` : 'Shares system memory'}</div>
 							{:else}
 								<div class="font-medium">No graphics card found</div>
 								<div class="text-muted-foreground">Models will run on the CPU. Small models still work.</div>
