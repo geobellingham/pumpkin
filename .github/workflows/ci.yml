@@ -17,7 +17,17 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
       - name: Tests
-        run: python -m unittest discover -s tests -v
+        run: |
+          set +e
+          python -m unittest discover -s tests -v > test-output.txt 2>&1
+          code=$?
+          cat test-output.txt
+          if [ "$code" -ne 0 ]; then
+            # also show the end of the output as an annotation, which is easy to read from the run summary
+            msg=$(grep -vE "ResourceWarning|^  " test-output.txt | tail -60 | sed ':a;N;$!ba;s/%/%25/g;s/\r//g;s/\n/%0A/g')
+            echo "::error title=Tests failed::$msg"
+          fi
+          exit $code
 
   web:
     runs-on: ubuntu-24.04
