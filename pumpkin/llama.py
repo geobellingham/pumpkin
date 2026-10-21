@@ -407,12 +407,13 @@ class ServerManager:
             if has("--no-reasoning-preserve"):
                 cmd += ["--no-reasoning-preserve"]
             cmd += ["--reasoning-budget", str(int(tb))]
-        if preset.get("tools") and has("--agent"):
-            cmd += ["--agent"]
-            if has("--tools-runtime") and preset.get("sandbox", True) and shutil.which("docker"):
+        if preset.get("tools"):
+            # llama.cpp's built-in tools (shell commands, file edits) only ever run inside the sandbox. Without
+            # Docker they would run directly on this computer, so they stay off; web search (MCP) still works.
+            if has("--agent") and has("--tools-runtime") and preset.get("sandbox", True) and shutil.which("docker"):
                 # the sandbox with the work folder mounted, so files the AI makes end up in ~/Pumpkin/files
                 box = workspace.ensure(s)
-                cmd += ["--tools-runtime", f"docker-container:{box}" if box else f"docker:{s['sandbox_image']}"]
+                cmd += ["--agent", "--tools-runtime", f"docker-container:{box}" if box else f"docker:{s['sandbox_image']}"]
             mcp = self.mcp_config(preset)
             if mcp and has("--mcp-servers-config") and _mcp_has_servers(mcp):
                 cmd += ["--mcp-servers-config", mcp]

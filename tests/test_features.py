@@ -236,6 +236,30 @@ class TestUpdates(unittest.TestCase):
                 os.remove(marker)
 
 
+class TestToolsNeedTheSandbox(unittest.TestCase):
+    def cmd(self, docker):
+        from unittest import mock
+        from pumpkin import llama
+        lib = mock.Mock()
+        lib.resolve.return_value = {"path": "/m/x.gguf", "info": {}}
+        sm = llama.ServerManager.__new__(llama.ServerManager)
+        sm.settings = {"threads": 4, "sandbox_image": "ubuntu:24.04", "llama_port": 8080, "files_dir": tempfile.mkdtemp()}
+        sm.library = lib
+        sm.mcp_config = lambda p: None
+        info = {"flags": ["--agent", "--tools-runtime", "--mcp-servers-config"]}
+        with mock.patch.object(llama.shutil, "which", lambda b: "/usr/bin/docker" if docker and b == "docker" else None), \
+                mock.patch.object(llama.workspace, "ensure", lambda s: "pumpkin-workspace"):
+            return sm.build_cmd({"model": "x", "tools": True, "sandbox": True}, "/bin/llama-server", info)
+
+    def test_no_docker_means_no_command_tools(self):
+        self.assertNotIn("--agent", self.cmd(docker=False))
+
+    def test_with_docker_the_tools_run_in_the_sandbox(self):
+        c = self.cmd(docker=True)
+        self.assertIn("--agent", c)
+        self.assertEqual(c[c.index("--tools-runtime") + 1], "docker-container:pumpkin-workspace")
+
+
 class TestProxyEnvironment(unittest.TestCase):
     def test_local_requests_ignore_a_proxy(self):
         """With HTTP_PROXY set, Pumpkin must still reach itself and llama-server on 127.0.0.1."""
