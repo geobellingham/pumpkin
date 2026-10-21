@@ -124,9 +124,32 @@ def probe(binary):
 
 
 # ---------------------------------------------------------------- downloading a release
+def pinned_tag():
+    """The llama.cpp release Pumpkin's chat UI is built from. Using the same llama-server keeps the two in step."""
+    pkg = os.path.dirname(os.path.abspath(__file__))
+    for p in (os.path.join(pkg, "ui", "LLAMA_TAG"), os.path.join(os.path.dirname(pkg), "web", "LLAMA_TAG")):
+        try:
+            with open(p) as f:
+                t = f.read().strip()
+            if re.fullmatch(r"b\d+", t):
+                return t
+        except OSError:
+            continue
+    return None
+
+
 def latest_tag():
-    """Newest release tag, read from the redirect of /releases/latest (no API token needed)."""
-    req = urllib.request.Request(f"{RELEASES}/latest", headers={"User-Agent": USER_AGENT}, method="HEAD")
+    """Newest release tag."""
+    req = urllib.request.Request(f"{GITHUB_API}/repos/ggml-org/llama.cpp/releases/latest",
+                                 headers={"User-Agent": USER_AGENT, "Accept": "application/vnd.github+json"})
+    try:
+        with urllib.request.urlopen(req, timeout=20) as r:
+            t = json.loads(r.read().decode()).get("tag_name") or ""
+        if re.fullmatch(r"b\d+", t):
+            return t
+    except (urllib.error.URLError, OSError, ValueError, HTTPException):
+        pass
+    req = urllib.request.Request(f"{RELEASES}/latest", headers={"User-Agent": USER_AGENT})
     with urllib.request.urlopen(req, timeout=20) as r:
         m = re.search(r"/tag/(b\d+)", r.geturl())
     if not m:
@@ -221,7 +244,7 @@ def _extract(archive, dest):
 
 def download_release(backend, tag=None, progress=None, cancelled=lambda: False):
     """Download a prebuilt llama-server for this backend and return its path."""
-    tag = tag or latest_tag()
+    tag = tag or pinned_tag() or latest_tag()
     arch = machine_arch()
     os.makedirs(LLAMA_DIR, exist_ok=True)
     target = os.path.join(LLAMA_DIR, f"{tag}-{backend}")

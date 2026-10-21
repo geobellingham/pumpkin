@@ -84,6 +84,12 @@ class TestMacLlama(unittest.TestCase):
         self.assertEqual(llama.asset_names("b1", "vulkan", "x64", "linux")[0], "llama-b1-bin-ubuntu-vulkan-x64.tar.gz")
 
 
+class TestPinnedLlama(unittest.TestCase):
+    def test_downloads_the_release_the_ui_is_built_from(self):
+        want = open(os.path.join(os.path.dirname(HERE), "web", "LLAMA_TAG")).read().strip()
+        self.assertEqual(llama.pinned_tag(), want)
+
+
 class TestLaunchAgent(unittest.TestCase):
     def test_plist(self):
         d = tempfile.mkdtemp()
