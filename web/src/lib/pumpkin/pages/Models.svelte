@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { ChevronLeft, Download, Eye, LoaderCircle, RefreshCw, Search, Sparkles, Trash } from '@lucide/svelte';
+	import { ChevronLeft, Download, LoaderCircle, RefreshCw, Search, Trash } from '@lucide/svelte';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
 	import Card from '../components/Card.svelte';
@@ -8,12 +8,11 @@
 	import Progress from '../components/Progress.svelte';
 	import Segmented from '../components/Segmented.svelte';
 	import { api, pumpkin } from '../store.svelte';
-	import type { CatalogModel, Download as DL, HfFile, LocalModel, Plan } from '../types';
+	import type { Download as DL, HfFile, LocalModel } from '../types';
+	import Recommended from './Recommended.svelte';
 	import { onDestroy, onMount } from 'svelte';
 
 	let tab = $state('install');
-	let catalog = $state<CatalogModel[] | null>(null);
-	let plans = $state<Record<string, Plan | 'gone' | undefined>>({});
 	let hw = $state<{ ram_total: number; vram_total: number } | null>(null);
 	let local = $state<LocalModel[] | null>(null);
 	let dirs = $state<string[]>([]);
@@ -25,25 +24,6 @@
 	let repo = $state<string | null>(null);
 	let files = $state<HfFile[] | null>(null);
 	let timer: ReturnType<typeof setInterval> | undefined;
-
-	async function loadCatalog() {
-		const r = await pumpkin.run(() =>
-			api<{ hardware: { ram_total: number; vram_total: number }; models: CatalogModel[] }>('catalog')
-		);
-
-		if (!r) return;
-
-		catalog = r.models;
-		hw = r.hardware;
-
-		for (const c of r.models) {
-			if (c.plan) plans[c.id] = c.plan;
-			else
-				api<Plan>(`catalog/${c.id}`)
-					.then((p) => (plans[c.id] = p))
-					.catch((e) => (plans[c.id] = /no longer|404/.test(String(e?.message)) ? 'gone' : { error: String(e?.message ?? e) } as unknown as Plan));
-		}
-	}
 
 	async function loadLocal(rescan = false) {
 		const r = await pumpkin.run(() =>
@@ -63,7 +43,6 @@
 	}
 
 	onMount(() => {
-		void loadCatalog();
 		void loadLocal();
 		void loadJobs();
 		api<{ suggestions: string[] }>('hf/suggestions')
@@ -81,12 +60,6 @@
 		pumpkin.fast--;
 		clearInterval(timer);
 	});
-
-	async function install(c: CatalogModel) {
-		const r = await pumpkin.run(() => api(`catalog/${c.id}`, { body: { start: true } }), `Installing ${c.name}`);
-
-		if (r) location.hash = '#/pumpkin/overview';
-	}
 
 	async function search(q = query) {
 		query = q;
@@ -162,58 +135,7 @@
 	</div>
 
 	{#if tab === 'install'}
-		<Card description="Pick one and Pumpkin chooses the right size for your computer, downloads it, and starts it." title="One-click models">
-			{#if catalog === null}
-				<div class="flex justify-center py-8"><LoaderCircle class="h-5 w-5 animate-spin text-muted-foreground" /></div>
-			{:else}
-				<div class="grid gap-3 sm:grid-cols-2">
-					{#each catalog as c (c.id)}
-						{@const plan = plans[c.id]}
-						{@const installing = pumpkin.state?.installs.find((i) => i.model === c.name && i.state === 'running')}
-						{#if plan !== 'gone'}
-							<div class="flex flex-col gap-2 rounded-xl border border-border/60 p-3.5">
-								<div class="flex items-start justify-between gap-2">
-									<div class="font-medium">{c.name}</div>
-									{#if c.vision}<Eye class="h-4 w-4 shrink-0 text-muted-foreground" aria-label="Understands images" />{/if}
-								</div>
-
-								<p class="text-sm leading-snug text-muted-foreground">{c.blurb}</p>
-
-								<div class="mt-auto flex items-center justify-between gap-2 pt-1">
-									<div class="flex min-w-0 flex-col gap-1">
-										{#if plan === undefined}
-											<span class="text-xs text-muted-foreground">Checking the best size…</span>
-										{:else if (plan as unknown as { error?: string }).error}
-											<span class="text-xs text-muted-foreground">Can't check sizes right now (is Hugging Face reachable?)</span>
-										{:else if plan.file}
-											<FitBadge fit={plan.fit} short />
-											<span class="text-xs text-muted-foreground">{plan.file.quant} · {plan.size_gb} GB</span>
-										{:else}
-											<span class="text-xs text-red-600 dark:text-red-400">Too big for this computer</span>
-										{/if}
-									</div>
-
-									{#if c.installed}
-										<span class="text-xs font-medium text-emerald-600 dark:text-emerald-400">Installed</span>
-									{:else if installing}
-										<span class="flex items-center gap-1.5 text-xs"><LoaderCircle class="h-3.5 w-3.5 animate-spin" />{installing.total ? Math.round((installing.done / installing.total) * 100) + '%' : 'Starting'}</span>
-									{:else}
-										<Button
-											class="rounded-full"
-											disabled={!plan || !plan.file || (plan.fit?.level === 'no')}
-											onclick={() => install(c)}
-											size="sm"
-										>
-											<Sparkles class="h-3.5 w-3.5" /> Install
-										</Button>
-									{/if}
-								</div>
-							</div>
-						{/if}
-					{/each}
-				</div>
-			{/if}
-		</Card>
+		<Recommended onhardware={(h) => (hw = h)} />
 
 		<Card description="Search every GGUF model on Hugging Face. Each file shows whether it fits." title="Find more models">
 			<form

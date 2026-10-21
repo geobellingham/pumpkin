@@ -1,11 +1,12 @@
 """Everything Pumpkin does, in one object the HTTP API calls into."""
 import json
+import re
 import os
 import sys
 import threading
 import time
 
-from . import __version__, agent, config, hardware, llama, migrate, models, remote
+from . import __version__, agent, config, hardware, llama, migrate, models, recommend, remote
 
 
 class Core:
@@ -108,29 +109,43 @@ class Core:
              "fitt": 1024, "think_budget": None, "tools": tools_ok, "sandbox": True, "web": tools_ok, "extra": ""}
         return self.presets.add(p)
 
-    # ---- one-click models
-    def catalog(self):
-        hw = self.fit_hw()
-        total = hw["vram_total"] + hw["ram_total"] * 0.6
-        local = {os.path.basename(m["path"]).lower() for m in self.library.scan()}
-        out = []
-        for c in models.catalog():
-            c = dict(c)
-            c["likely"] = "gpu" if hw["vram_total"] >= c.get("min_memory_gb", 0) else \
-                ("ram" if total >= c.get("min_memory_gb", 0) else "no")
-            plan = self._plans.get(c["id"])
-            c["plan"] = plan
-            if plan and plan.get("file"):
-                c["installed"] = os.path.basename(plan["file"]["files"][0]).lower() in local
-            out.append(c)
-        return out
-
+    # ---- recommendations and one-click install
     _plans = {}
+    _recs = None
+
+    def recommendations(self, refresh=False):
+        """Two lists for this machine: models that fit the GPU, and MoE models that are fine in RAM."""
+        hw = self.fit_hw()
+        curated = models.catalog()
+        source, at, stale, error = "huggingface", None, False, None
+        try:
+            data = recommend.fetch(self.settings["hf_token"] or None, force=refresh)
+            items, at, stale = data["items"], data.get("at"), bool(data.get("stale"))
+        except Exception as e:  # noqa: BLE001 - fall back to the hand-picked list
+            items, source, error = [], "offline", str(e)
+        have = {it.get("id", "").lower() for it in items}
+        items = items + [c for c in recommend.curated_items(curated) if c["id"].lower() not in have]
+        local = [re.sub(r"[-_.]", "", os.path.basename(m["path"]).lower()) for m in self.library.scan()]
+        recs = recommend.recommend(items, hw, local, curated)
+        self._recs = {d["id"]: d for r in recs.values() for d in r}
+        return {"gpu": recs["gpu"], "moe": recs["moe"], "hardware": hw, "source": source, "updated": at,
+                "stale": stale, "error": error}
+
+    def _spec(self, ident):
+        if self._recs is None:
+            self.recommendations()
+        d = (self._recs or {}).get(ident)
+        if d:
+            return {"id": d["id"], "name": d["name"], "repo": d["repo"], "moe": d["route"] == "moe",
+                    "vision": d.get("vision"), "ctx": d["ctx"], "blurb": d.get("blurb", "")}
+        c = next((x for x in models.catalog() if x["id"] == ident), None)
+        if c:
+            return c
+        raise RuntimeError("Unknown model. Refresh the recommendations and try again.")
 
     def catalog_plan(self, ident):
-        c = next((x for x in models.catalog() if x["id"] == ident), None)
-        if not c:
-            raise RuntimeError("Unknown model.")
+        """The exact files to download for a recommendation, from the repo's real file list."""
+        c = self._spec(ident)
         cached = self._plans.get(ident)
         if cached and time.time() - cached["at"] < 3600:
             return cached
@@ -146,15 +161,13 @@ class Core:
 
     def install(self, ident, start=True):
         """Download the best quant for this machine, make a preset, and start it."""
-        c = next((x for x in models.catalog() if x["id"] == ident), None)
-        if not c:
-            raise RuntimeError("Unknown model.")
+        c = self._spec(ident)
 
         def fn(progress, cancelled, job):
             job["phase"] = "Choosing the right size for your computer"
             plan = self.catalog_plan(ident)
             if not plan.get("file"):
-                raise RuntimeError(f"{c['name']} is too big for this computer.")
+                raise RuntimeError(f"No file in {c['repo']} fits this computer.")
             files = list(plan["file"]["files"]) + (list(plan["mmproj"]["files"]) if plan.get("mmproj") else [])
             dl = self.downloads.add(c["repo"], files, config.slug(c["name"]))
             job["phase"] = f"Downloading {plan['file']['quant'] or ''} ({plan['size_gb']} GB)".replace("  ", " ")
@@ -174,7 +187,7 @@ class Core:
             if c.get("ctx") and not existing:
                 m = self.library.resolve(path)
                 best = models.best_ctx(m["size_gb"], m.get("info") or {}, "q8_0", self.fit_hw(),
-                                       cap=int(c["ctx"]))
+                                       cap=int(c["ctx"]) if not c.get("moe") else 65536)
                 preset = self.presets.update(preset["id"], {"ctx": best, "desc": c.get("blurb", "")})
             if start:
                 job["phase"] = "Starting the model"
@@ -183,8 +196,7 @@ class Core:
             return {"preset": preset["id"]}
 
         self.settings.update({"setup_done": True})
-        job = self.start_job("install", fn, model=c["name"], phase="Starting")
-        return job
+        return self.start_job("install", fn, model=c["name"], phase="Starting")
 
     # ---- state for the UI
     def state(self):

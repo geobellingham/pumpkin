@@ -21,7 +21,50 @@ REPOS = {
     "unsloth/Qwen3-4B-Instruct-2507-GGUF": (4.2, "qwen3", 0),
     "unsloth/gemma-3-4b-it-GGUF": (4.3, "gemma3", 0),
     "bartowski/Mistral-Small-3.2-24B-GGUF": (24.0, "llama", 0),
+    "unsloth/Qwen3-30B-A3B-Instruct-2507-GGUF": (30.5, "qwen3moe", 128),
+    "ornith-ai/Ornith-1.5-35B-A3B-GGUF": (35.5, "qwen35moe", 256),
+    "ornith-ai/Ornith-1.5-9B-GGUF": (9.2, "qwen35", 0),
+    "bartowski/Qwen_Qwen3.6-35B-A3B-GGUF": (35.1, "qwen3moe", 128),
+    "JonathanColetti/Qwen3.8-27B-Uncensored-GGUF": (27.3, "qwen35", 0),
+    "ggml-org/gpt-oss-120b-GGUF": (117.0, "gpt-oss", 128),
+    "unsloth/GLM-4.5-Air-GGUF": (106.0, "glm4moe", 128),
+    "TheBloke/Llama-2-13B-chat-GGUF": (13.0, "llama", 0),
 }
+
+RICH = [
+    # id, params (B), arch, pipeline, downloads, trending, days old, tools in template
+    ("unsloth/Qwen3.6-35B-A3B-GGUF", 35.1, "qwen3moe", "text-generation", 2100000, 180, 40, True),
+    ("bartowski/Qwen_Qwen3.6-35B-A3B-GGUF", 35.1, "qwen3moe", "text-generation", 900000, 60, 38, True),
+    ("ornith-ai/Ornith-1.5-35B-A3B-GGUF", 35.5, "qwen35moe", "text-generation", 3866315, 240, 20, True),
+    ("ornith-ai/Ornith-1.5-9B-GGUF", 9.2, "qwen35", "text-generation", 5040182, 300, 20, True),
+    ("unsloth/Qwen3.8-27B-GGUF", 27.3, "qwen35", "text-generation", 1500000, 90, 30, True),
+    ("JonathanColetti/Qwen3.8-27B-Uncensored-GGUF", 27.3, "qwen35", "text-generation", 2542392, 120, 25, True),
+    ("ggml-org/gpt-oss-20b-GGUF", 20.9, "gpt-oss", "text-generation", 1800000, 40, 300, True),
+    ("ggml-org/gpt-oss-120b-GGUF", 117.0, "gpt-oss", "text-generation", 700000, 30, 300, True),
+    ("unsloth/GLM-4.5-Air-GGUF", 106.0, "glm4moe", "text-generation", 400000, 20, 400, True),
+    ("unsloth/Qwen3-30B-A3B-Instruct-2507-GGUF", 30.5, "qwen3moe", "text-generation", 1200000, 15, 450, True),
+    ("unsloth/Qwen3-4B-Instruct-2507-GGUF", 4.0, "qwen3", "text-generation", 1100000, 10, 450, True),
+    ("bartowski/Mistral-Small-3.2-24B-GGUF", 24.0, "llama", "text-generation", 300000, 5, 480, True),
+    ("TheBloke/Llama-2-13B-chat-GGUF", 13.0, "llama", "text-generation", 600000, 0, 1100, False),
+    ("unsloth/gemma-3-12b-it-GGUF", 12.2, "gemma3", "image-text-to-text", 900000, 12, 500, False),
+    ("unsloth/gemma-3-4b-it-GGUF", 3.9, "gemma3", "image-text-to-text", 800000, 8, 500, False),
+    ("abenzerps/Qwen-Image-2.1-Uncensored-GGUF", 7.1, "qwen_image21", "text-to-image", 50000, 683, 5, False),
+    ("nomic-ai/nomic-embed-text-v2-GGUF", 0.5, "nomic-bert", "feature-extraction", 900000, 3, 200, False),
+]
+
+
+def rich(pipeline):
+    out = []
+    for rid, pb, arch, pipe, dl, tr, days, tools in RICH:
+        if pipeline and pipe != pipeline:
+            continue
+        ts = time.strftime("%Y-%m-%dT%H:%M:%S.000Z", time.gmtime(time.time() - days * 86400))
+        tmpl = "{% for m in messages %}{{ m.content }}{% endfor %}" + (" {% if tools %}{{ tools }}{% endif %}" if tools else "")
+        out.append({"id": rid, "downloads": dl, "trendingScore": tr, "likes": dl // 5000, "lastModified": ts,
+                    "gated": False, "pipeline_tag": pipe,
+                    "gguf": {"total": int(pb * 1e9), "architecture": arch, "context_length": 131072,
+                             "chat_template": "" if pipe in ("text-to-image", "feature-extraction") else tmpl}})
+    return out
 
 
 def tree(repo):
@@ -65,6 +108,9 @@ class H(BaseHTTPRequestHandler):
     def route(self, head=False):
         u = urlparse(self.path)
         p = unquote(u.path)
+        if p == "/api/models" and "expand" in u.query:
+            pipe = (parse_qs(u.query).get("pipeline_tag") or [""])[0]
+            return self.j(rich(pipe))
         if p == "/api/models":
             q = (parse_qs(u.query).get("search") or [""])[0].lower().replace(" gguf", "")
             hits = [r for r in REPOS if all(w in r.lower() for w in q.split())] or list(REPOS)[:3]

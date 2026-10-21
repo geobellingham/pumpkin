@@ -9,7 +9,7 @@ import os
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, unquote, urlparse
 
 from . import APP_NAME, __version__, agent, config, doctor, hardware, llama, models, remote
 
@@ -302,9 +302,11 @@ class Web:
                 f = models.fit(m["size_gb"], m.get("info") or {}, ctx, kv, core.fit_hw())
                 f["text"] = models.FIT_TEXT[f["level"]]
                 return f
+        if head == "recommend" and method == "GET":
+            return core.recommendations(refresh=arg("refresh") == "1")
         if head == "catalog":
-            if method == "GET" and not ident:
-                return {"models": core.catalog(), "hardware": core.fit_hw()}
+            # ids can contain a slash and a colon (hf:org/repo), sent URL-encoded
+            ident = unquote(name[len("catalog/"):]) if "/" in name else None
             if method == "GET" and ident:
                 return core.catalog_plan(ident)
             if method == "POST" and ident:

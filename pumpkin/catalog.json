@@ -1,64 +1,99 @@
 {
-  "_comment": "One-click models. Pumpkin checks each repo on Hugging Face when the page opens and hides any that are gone, then picks the best quant that fits the machine. Pull requests to add or update models are welcome.",
+  "_comment": "Hand-picked models. They always appear in recommendations when they fit, marked as tested, and are the fallback when Hugging Face cannot be reached. params_b is the total parameter count in billions. Pull requests welcome.",
   "models": [
     {
       "id": "qwen3.6-35b-a3b",
       "name": "Qwen3.6 35B-A3B",
       "repo": "unsloth/Qwen3.6-35B-A3B-GGUF",
       "blurb": "Fast all-round agent. Mixture-of-experts, so it stays quick even when part of it sits in RAM.",
-      "tags": ["agent", "tools", "fast"],
+      "tags": [
+        "agent",
+        "tools",
+        "fast"
+      ],
       "moe": true,
       "ctx": 65536,
-      "min_memory_gb": 24
+      "min_memory_gb": 24,
+      "params_b": 35.1,
+      "active_b": 3.0,
+      "tools": true
     },
     {
       "id": "qwen3.8-27b",
       "name": "Qwen3.8 27B",
       "repo": "unsloth/Qwen3.8-27B-GGUF",
       "blurb": "Smarter dense model for harder questions. Best with 16 GB of VRAM or more.",
-      "tags": ["agent", "tools", "smart"],
+      "tags": [
+        "agent",
+        "tools",
+        "smart"
+      ],
       "moe": false,
       "ctx": 32768,
-      "min_memory_gb": 16
+      "min_memory_gb": 16,
+      "params_b": 27.3,
+      "tools": true
     },
     {
       "id": "gpt-oss-20b",
       "name": "gpt-oss 20B",
       "repo": "ggml-org/gpt-oss-20b-GGUF",
       "blurb": "OpenAI's open-weight model. Good at tool use and runs well on 16 GB GPUs.",
-      "tags": ["agent", "tools"],
+      "tags": [
+        "agent",
+        "tools"
+      ],
       "moe": true,
       "ctx": 32768,
-      "min_memory_gb": 14
+      "min_memory_gb": 14,
+      "params_b": 20.9,
+      "active_b": 3.6,
+      "tools": true
     },
     {
       "id": "gemma-3-12b",
       "name": "Gemma 3 12B",
       "repo": "unsloth/gemma-3-12b-it-GGUF",
       "blurb": "Google's mid-size model that can also look at images. Comfortable on 12 GB GPUs.",
-      "tags": ["vision", "chat"],
+      "tags": [
+        "vision",
+        "chat"
+      ],
       "vision": true,
       "ctx": 16384,
-      "min_memory_gb": 10
+      "min_memory_gb": 10,
+      "params_b": 12.2,
+      "tools": false
     },
     {
       "id": "qwen3-4b",
       "name": "Qwen3 4B Instruct",
       "repo": "unsloth/Qwen3-4B-Instruct-2507-GGUF",
       "blurb": "Small and quick. Runs on almost any GPU, even 6 GB, and on CPUs.",
-      "tags": ["small", "fast", "tools"],
+      "tags": [
+        "small",
+        "fast",
+        "tools"
+      ],
       "ctx": 32768,
-      "min_memory_gb": 4
+      "min_memory_gb": 4,
+      "params_b": 4.0,
+      "tools": true
     },
     {
       "id": "gemma-3-4b",
       "name": "Gemma 3 4B",
       "repo": "unsloth/gemma-3-4b-it-GGUF",
       "blurb": "Tiny model that understands images. Good first test on any machine.",
-      "tags": ["small", "vision"],
+      "tags": [
+        "small",
+        "vision"
+      ],
       "vision": true,
       "ctx": 16384,
-      "min_memory_gb": 4
+      "min_memory_gb": 4,
+      "params_b": 3.9,
+      "tools": false
     }
   ]
 }

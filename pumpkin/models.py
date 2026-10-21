@@ -58,7 +58,7 @@ def fit(model_gb, info, ctx, kv_type, hw):
         # no metadata yet (a file not downloaded): typical sizes per token at q8_0
         per_token = 0.00003 if moe else 0.00008
         kv = ctx * per_token * (2 if (kv_type or "f16") in ("f16", "bf16") else 1)
-    overhead = 0.6 + 0.08 * model_gb                       # compute buffers and runtime
+    overhead = 0.5 + 0.02 * model_gb                       # compute buffers and runtime
     need = model_gb + kv + overhead
     usable_vram = max(0.0, vram - 0.8)                     # desktop and driver
     usable_ram = max(0.0, ram * 0.75 - 4)                  # leave room for the system

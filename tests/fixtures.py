@@ -74,7 +74,7 @@ class H(BaseHTTPRequestHandler):
             b = b"llamacpp:predicted_tokens_seconds 37.5\nllamacpp:prompt_tokens_seconds 900\n"
             s.send_response(200); s.send_header("Content-Length", str(len(b))); s.end_headers(); s.wfile.write(b); return
         if p == "/tools": return s.j(TOOLS)
-        if p == "/props": return s.j({"model_path": args[args.index("-m") + 1], "default_generation_settings": {"n_ctx": 8192, "params": {}}, "modalities": {}, "build_info": "b11796"})
+        if p == "/props": return s.j({"model_path": args[args.index("-m") + 1], "default_generation_settings": {"n_ctx": 8192, "params": {}}, "modalities": {}, "build_info": "b11796", "ui_settings": {"systemMessage": "STALE SERVER PERSONA"}})
         s.j({"error": {"code": 404, "message": "nf"}}, 404)
     def do_POST(s):
         n = int(s.headers.get("Content-Length") or 0); body = json.loads(s.rfile.read(n) or b"{}")

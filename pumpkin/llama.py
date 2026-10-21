@@ -302,11 +302,8 @@ class ServerManager:
             mcp = self.mcp_config(preset)
             if mcp and has("--mcp-servers-config") and _mcp_has_servers(mcp):
                 cmd += ["--mcp-servers-config", mcp]
-        if has("--webui-config-file"):
-            path = os.path.join(config.STATE_DIR, "webui-config.json")
-            with open(path, "w") as f:
-                json.dump({"systemMessage": self.persona_prompt()}, f)
-            cmd += ["--webui-config-file", path]
+        # the persona reaches the chat through Pumpkin's UI (it keeps the browser's system message in step);
+        # handing it to llama-server as a UI default as well made the two fight over it
         idle = int(preset.get("idle_minutes") or 0)
         if idle > 0 and has("--sleep-idle-seconds"):
             cmd += ["--sleep-idle-seconds", str(idle * 60)]

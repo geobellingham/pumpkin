@@ -140,28 +140,15 @@ class PumpkinStore {
 	}
 
 	/**
-	 * The chat UI keeps its own copy of the system message in the browser and only reads the server's
-	 * default on the very first visit, so a persona picked in Pumpkin is copied over whenever it changes.
+	 * The persona picked in Pumpkin is the chat's system message. The chat UI keeps its own copy in the
+	 * browser and can also take one from the server on a first visit, so Pumpkin puts its persona back
+	 * whenever the two differ. Edit personas in Pumpkin (Agent page) rather than in the chat settings.
 	 */
 	private applyPersona(s: T.State): void {
-		const key = 'pumpkin.appliedPersona';
-		const want = `${s.persona}\n${s.persona_prompt}`;
-		let applied: string | null = null;
+		const want = s.persona_prompt ?? '';
 
-		try {
-			applied = localStorage.getItem(key);
-		} catch {
-			/* storage can be blocked */
-		}
-
-		if (applied === want) return;
-
-		settingsStore.updateMultipleConfig({ systemMessage: s.persona_prompt ?? '' });
-
-		try {
-			localStorage.setItem(key, want);
-		} catch {
-			/* ignore */
+		if (settingsStore.config.systemMessage !== want) {
+			settingsStore.updateMultipleConfig({ systemMessage: want });
 		}
 	}
 

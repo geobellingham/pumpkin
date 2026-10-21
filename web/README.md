@@ -5,6 +5,8 @@ pages added. Everything Pumpkin-specific lives in two folders, so following upst
 
 - `src/lib/pumpkin/` – the Pumpkin store, voice chat, components and pages
 - `src/routes/pumpkin/` – the `#/pumpkin/<section>` route
+- `src/lib/assets/logo.svg` – the pumpkin logo, which replaces the llama.cpp logo in the sidebar, favicon
+  and home screen icons (`build.sh` also names the app Pumpkin)
 
 `llama-ui.patch` holds the few one-line hooks into upstream files:
 
