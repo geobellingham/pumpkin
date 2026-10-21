@@ -46,7 +46,7 @@ adb("install", "-r", "-g", APK)                      # -g grants the notificatio
 adb("shell", "am", "start", "-n", f"{PKG}/.MainActivity")
 home = "files/home/.config/pumpkin"
 settings = wait(lambda: json.loads(adb("shell", "run-as", PKG, "cat", f"{home}/settings.json")), "Pumpkin's settings", 300)
-token = adb("shell", "run-as", PKG, "cat", f"{home}/token").strip()
+token = wait(lambda: adb("shell", "run-as", PKG, "cat", f"{home}/token").strip(), "the access key", 300)
 port = settings["port"]
 adb("forward", f"tcp:{LOCAL}", f"tcp:{port}")
 print("Pumpkin is on port", port, "on the phone")
