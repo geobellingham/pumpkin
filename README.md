@@ -72,7 +72,7 @@ Then open **Pumpkin** from your app menu, or run `pumpkin`. The first start walk
 4. **Your model.** Use one you already have, or install the best match in one click. It downloads,
    starts, and opens the chat.
 
-On a Mac, Pumpkin appears in Launchpad and Spotlight. The GPU shares memory with the rest of the Mac
+On a Mac, Pumpkin is an app in Launchpad and Spotlight with its own window, like on Linux. The GPU shares memory with the rest of the Mac
 and macOS lets it use about two thirds of it (three quarters above 36 GB), so Pumpkin recommends models
 that fit in that share.
 
