@@ -36,6 +36,15 @@ else
   fi
   [ -n "$TAG" ] || die "Could not find a release of $REPO."
   FILE="pumpkin-${TAG#v}.tar.gz"
+  if [ -z "${PUMPKIN_TAG:-}" ] && ! curl -fsSL -r 0-0 -o /dev/null "https://github.com/$REPO/releases/download/$TAG/$FILE" 2>/dev/null; then
+    # a release that was just published has no download for the first few minutes, while GitHub builds it
+    PREV="$(curl -fsSL -H 'Accept: application/vnd.github+json' "https://api.github.com/repos/$REPO/releases?per_page=10" \
+      | python3 -c 'import json,sys; print(next((r["tag_name"] for r in json.load(sys.stdin) if r["tag_name"] != sys.argv[1] and not r.get("draft") and not r.get("prerelease") and any(a["name"] == "pumpkin-" + r["tag_name"].lstrip("v") + ".tar.gz" for a in r.get("assets", []))), ""))' "$TAG" \
+      2>/dev/null || true)"
+    [ -n "$PREV" ] || die "Pumpkin $TAG is still being built on GitHub. Try again in a couple of minutes."
+    say "Pumpkin $TAG is still being built on GitHub, so installing $PREV. Run this again later to get $TAG."
+    TAG="$PREV"; FILE="pumpkin-${TAG#v}.tar.gz"
+  fi
   say "Downloading Pumpkin $TAG"
   curl -fsSL -o "$TMP/$FILE" "https://github.com/$REPO/releases/download/$TAG/$FILE" || die "Download failed."
   # check the file against the SHA-256 GitHub publishes for it
