@@ -108,14 +108,18 @@ WRAP
 chmod +x "$BIN_DIR/pumpkin"
 
 if [ "$MAC" = 1 ]; then
-  # a small app in ~/Applications, so Pumpkin is in Launchpad, Spotlight and the Dock
+  # Pumpkin.app in ~/Applications, so it is in Launchpad, Spotlight and the Dock. Releases carry a small native
+  # window (pumpkin/mac/Pumpkin, built on GitHub's Macs); a source checkout without it opens the browser instead.
   APP="$HOME/Applications/Pumpkin.app"
   rm -rf "$APP"; mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
   cp "$APP_DIR/pumpkin/assets/pumpkin.icns" "$APP/Contents/Resources/pumpkin.icns" 2>/dev/null || true
-  cat > "$APP/Contents/MacOS/Pumpkin" <<LAUNCH
-#!/bin/sh
-exec "$BIN_DIR/pumpkin" open
-LAUNCH
+  if [ -f "$APP_DIR/pumpkin/mac/Pumpkin" ]; then
+    cp "$APP_DIR/pumpkin/mac/Pumpkin" "$APP/Contents/MacOS/Pumpkin"
+    BACKGROUND=""
+  else
+    printf '#!/bin/sh\nexec "%s" open --browser\n' "$BIN_DIR/pumpkin" > "$APP/Contents/MacOS/Pumpkin"
+    BACKGROUND="<key>LSUIElement</key><true/>"
+  fi
   chmod +x "$APP/Contents/MacOS/Pumpkin"
   cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -123,13 +127,21 @@ LAUNCH
 <plist version="1.0"><dict>
   <key>CFBundleName</key><string>Pumpkin</string>
   <key>CFBundleDisplayName</key><string>Pumpkin</string>
-  <key>CFBundleIdentifier</key><string>app.pumpkin.launcher</string>
+  <key>CFBundleIdentifier</key><string>app.pumpkin.window</string>
   <key>CFBundleExecutable</key><string>Pumpkin</string>
   <key>CFBundleIconFile</key><string>pumpkin</string>
   <key>CFBundlePackageType</key><string>APPL</string>
-  <key>LSUIElement</key><true/>
+  <key>CFBundleShortVersionString</key><string>$("$PY" -c "import sys; sys.path.insert(0, '$APP_DIR'); import pumpkin; print(pumpkin.__version__)")</string>
+  <key>LSMinimumSystemVersion</key><string>12.0</string>
+  <key>NSHighResolutionCapable</key><true/>
+  <key>NSMicrophoneUsageDescription</key><string>Pumpkin uses the microphone for voice chat.</string>
+  <key>NSSpeechRecognitionUsageDescription</key><string>Pumpkin turns what you say into text for voice chat.</string>
+  <key>PumpkinCommand</key><string>$BIN_DIR/pumpkin</string>
+  $BACKGROUND
 </dict></plist>
 PLIST
+  # sign it for this Mac only (no Apple account involved), which Apple Silicon needs to run an app
+  command -v codesign >/dev/null && codesign --force --deep --sign - "$APP" >/dev/null 2>&1 || true
   touch "$APP"
 else
   ICON_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/icons/hicolor/scalable/apps"
@@ -171,6 +183,8 @@ if [ "$MAC" = 1 ]; then
 else
   say "Pumpkin is installed. Open it from your app menu or run: pumpkin"
 fi
-if [ "$OPEN" = 1 ] && { [ "$MAC" = 1 ] || [ -n "${DISPLAY:-}" ] || [ -n "${WAYLAND_DISPLAY:-}" ]; }; then
+if [ "$OPEN" = 1 ] && [ "$MAC" = 1 ]; then
+  open "$HOME/Applications/Pumpkin.app"
+elif [ "$OPEN" = 1 ] && { [ -n "${DISPLAY:-}" ] || [ -n "${WAYLAND_DISPLAY:-}" ]; }; then
   nohup "$BIN_DIR/pumpkin" >/dev/null 2>&1 &
 fi

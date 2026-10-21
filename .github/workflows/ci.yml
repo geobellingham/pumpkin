@@ -93,18 +93,31 @@ jobs:
         with:
           name: pumpkin-ui
           path: pumpkin/ui
+      - name: Build the Mac window
+        if: runner.os == 'macOS'
+        run: ./packaging/macos/build.sh
       - name: Install, start, stop, uninstall
         run: |
           set +e
           {
             set -ex
-            export HOME="$RUNNER_TEMP/home" && mkdir -p "$HOME"
+            [ "$(uname -s)" = Darwin ] || { export HOME="$RUNNER_TEMP/home" && mkdir -p "$HOME"; }
             bash install.sh --no-open
             "$HOME/.local/bin/pumpkin" --version
             if [ "$(uname -s)" = Darwin ]; then
               plutil -lint "$HOME/Applications/Pumpkin.app/Contents/Info.plist"
               test -x "$HOME/Applications/Pumpkin.app/Contents/MacOS/Pumpkin"
               test -s "$HOME/Applications/Pumpkin.app/Contents/Resources/pumpkin.icns"
+              file "$HOME/Applications/Pumpkin.app/Contents/MacOS/Pumpkin"
+              codesign --verify --verbose "$HOME/Applications/Pumpkin.app"
+              "$HOME/Applications/Pumpkin.app/Contents/MacOS/Pumpkin" --check
+              # open the real app and photograph its window
+              open "$HOME/Applications/Pumpkin.app"
+              for i in $(seq 1 30); do curl -s -o /dev/null http://127.0.0.1:8090/ && break; sleep 2; done
+              sleep 12
+              screencapture -x "$GITHUB_WORKSPACE/mac-window.png" || true
+              osascript -e 'tell application "System Events" to get name of every window of process "Pumpkin"' || true
+              osascript -e 'tell application "Pumpkin" to quit' || true
             else
               test -f "$HOME/.local/share/applications/pumpkin.desktop"
             fi
@@ -123,4 +136,9 @@ jobs:
             python .github/annotate.py error "Installer failed on ${{ matrix.os }}" install.txt
           fi
           exit $code
-
+      - uses: actions/upload-artifact@v5
+        if: runner.os == 'macOS' && always()
+        with:
+          name: mac-window-screenshot
+          path: mac-window.png
+          retention-days: 7

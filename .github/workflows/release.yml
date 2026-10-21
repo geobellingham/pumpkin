@@ -8,7 +8,19 @@ permissions:
   contents: write
 
 jobs:
+  # Pumpkin's Mac window, built on a Mac for Apple Silicon and Intel
+  mac-window:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v5
+      - run: ./packaging/macos/build.sh
+      - uses: actions/upload-artifact@v5
+        with:
+          name: mac-window
+          path: pumpkin/mac/Pumpkin
+
   release:
+    needs: mac-window
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
@@ -22,6 +34,10 @@ jobs:
         run: python -m unittest discover -s tests
       - name: Build the web UI
         run: ./web/build.sh
+      - uses: actions/download-artifact@v5
+        with:
+          name: mac-window
+          path: pumpkin/mac
       - name: Package
         run: |
           V="${GITHUB_REF_NAME#v}"
@@ -31,6 +47,8 @@ jobs:
           sed -i "s/^__version__ = .*/__version__ = \"$V\"/" "dist/pumpkin-$V/pumpkin/__init__.py"
           grep -q "__version__ = \"$V\"" "dist/pumpkin-$V/pumpkin/__init__.py"
           find "dist/pumpkin-$V" -name __pycache__ -prune -exec rm -rf {} +
+          chmod +x "dist/pumpkin-$V/pumpkin/mac/Pumpkin"
+          test -s "dist/pumpkin-$V/pumpkin/mac/Pumpkin"
           tar -C dist -czf "dist/pumpkin-$V.tar.gz" "pumpkin-$V"
       - uses: softprops/action-gh-release@v2
         with:

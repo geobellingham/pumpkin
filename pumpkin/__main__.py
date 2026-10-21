@@ -94,6 +94,10 @@ def cmd_open(args):
     if not start_background():
         print(f"{APP_NAME} did not start. See {os.path.join(config.STATE_DIR, 'pumpkin.log')}", file=sys.stderr)
         sys.exit(1)
+    if not getattr(args, "browser", False) and sys.platform == "darwin" and mac_window():
+        # the Mac app starts Pumpkin and signs in by itself (pumpkin up, pumpkin url)
+        subprocess.Popen(["open", mac_window()], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        return
     if not getattr(args, "browser", False):
         try:
             from . import desktop
@@ -113,6 +117,23 @@ def cmd_up(args):
     """Start in the background without opening anything (used after an update)."""
     config.ensure_dirs()
     sys.exit(0 if start_background() else 1)
+
+
+def mac_window():
+    """~/Applications/Pumpkin.app when it holds the native window (not just a launcher script)."""
+    app = os.path.join(config.HOME, "Applications", "Pumpkin.app")
+    exe = os.path.join(app, "Contents", "MacOS", "Pumpkin")
+    try:
+        with open(exe, "rb") as f:
+            native = f.read(4) in (b"\xcf\xfa\xed\xfe", b"\xca\xfe\xba\xbe")   # a Mach-O program
+    except OSError:
+        return None
+    return app if native else None
+
+
+def cmd_url(args):
+    """Prints this computer's sign-in link (the Mac window uses it)."""
+    print(login_url())
 
 
 def cmd_link(args):
@@ -203,10 +224,11 @@ def main(argv=None):
     sv.add_argument("action", choices=["install", "uninstall", "status"])
     sub.add_parser("stop", help="stop Pumpkin and the model")
     sub.add_parser("up", help="start Pumpkin in the background without opening it")
+    sub.add_parser("url", help="print this computer's sign-in link")
     args = ap.parse_args(argv)
     config.ensure_dirs()
     {"serve": cmd_serve, "open": cmd_open, "link": cmd_link, "doctor": cmd_doctor, "service": cmd_service,
-     "stop": cmd_stop, "up": cmd_up, None: cmd_open}[args.cmd](args)
+     "stop": cmd_stop, "up": cmd_up, "url": cmd_url, None: cmd_open}[args.cmd](args)
 
 
 if __name__ == "__main__":

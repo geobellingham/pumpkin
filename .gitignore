@@ -7,3 +7,4 @@ __pycache__/
 *.egg-info/
 /e2e/
 .venv/
+/pumpkin/mac/
