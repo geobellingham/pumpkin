@@ -33,7 +33,8 @@
 		const r = await pumpkin.run(() => api<{ restart_needed: boolean }>('persona', { body: { id: p.id } }));
 
 		if (r) {
-			pumpkin.say(r.restart_needed ? `${p.name} is on. Tasks use it now; chats use it after the model restarts.` : `${p.name} is on`);
+			pumpkin.say(`${p.name} is on. New chats use it; chats you already started keep the old one.`);
+			void pumpkin.refresh();
 			void load();
 		}
 	}

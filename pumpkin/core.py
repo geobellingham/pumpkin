@@ -203,6 +203,7 @@ class Core:
                          for j in self.jobs.values() if j["kind"] == "install"
                          and (j["state"] == "running" or time.time() - j.get("ended", time.time()) < 60)],
             "persona": self.settings["persona"],
+            "persona_prompt": self.persona_prompt(),
             "setup_done": bool(self.settings["setup_done"]),
             "has_server": bool(llama.find_server(self.settings)),
             "has_models": any(m["kind"] == "model" for m in self.library.scan()),

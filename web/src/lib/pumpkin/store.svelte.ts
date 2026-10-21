@@ -4,6 +4,7 @@
  */
 import { modelsStore } from '$lib/stores/models/index.svelte';
 import { serverStore } from '$lib/stores/server.svelte';
+import { settingsStore } from '$lib/stores/settings/index.svelte';
 import type * as T from './types';
 
 const API = './pumpkin/api/';
@@ -138,8 +139,36 @@ class PumpkinStore {
 		}
 	}
 
+	/**
+	 * The chat UI keeps its own copy of the system message in the browser and only reads the server's
+	 * default on the very first visit, so a persona picked in Pumpkin is copied over whenever it changes.
+	 */
+	private applyPersona(s: T.State): void {
+		const key = 'pumpkin.appliedPersona';
+		const want = `${s.persona}\n${s.persona_prompt}`;
+		let applied: string | null = null;
+
+		try {
+			applied = localStorage.getItem(key);
+		} catch {
+			/* storage can be blocked */
+		}
+
+		if (applied === want) return;
+
+		settingsStore.updateMultipleConfig({ systemMessage: s.persona_prompt ?? '' });
+
+		try {
+			localStorage.setItem(key, want);
+		} catch {
+			/* ignore */
+		}
+	}
+
 	/** Keep the chat UI in step when a model starts, stops or changes. */
 	private sync(s: T.State): void {
+		this.applyPersona(s);
+
 		const ready = s.server.state === 'ready' || s.server.state === 'external';
 		const model = ready ? (s.server.preset?.id ?? 'external') : null;
 

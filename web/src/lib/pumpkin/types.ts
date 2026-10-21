@@ -43,6 +43,7 @@ export interface State {
 	metrics: { predicted_tokens_seconds?: number | null };
 	migrated: string[];
 	persona: string;
+	persona_prompt: string;
 	remote: string;
 	server: {
 		error: string | null;
