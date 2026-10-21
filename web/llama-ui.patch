@@ -1,0 +1,124 @@
+diff --git a/tools/ui/src/lib/components/app/chat/ChatForm/ChatFormActions/ChatFormActions.svelte b/tools/ui/src/lib/components/app/chat/ChatForm/ChatFormActions/ChatFormActions.svelte
+index d789251..b52f792 100644
+--- a/tools/ui/src/lib/components/app/chat/ChatForm/ChatFormActions/ChatFormActions.svelte
++++ b/tools/ui/src/lib/components/app/chat/ChatForm/ChatFormActions/ChatFormActions.svelte
+@@ -10,6 +10,7 @@
+ 		ModelsSelector
+ 	} from '$lib/components/app';
+ 	import { Button } from '$lib/components/ui/button';
++	import { PumpkinVoiceButton } from '$lib/pumpkin';
+ 	import { ICON_CLASS_DEFAULT } from '$lib/constants';
+ 	import { setChatFormActionsContext } from '$lib/contexts';
+ 	import { FileTypeCategory, MessageRole } from '$lib/enums';
+@@ -164,6 +165,8 @@
+ 			<ChatFormContextGauge />
+ 		{/if}
+ 
++		<PumpkinVoiceButton />
++
+ 		{#if showModelSelector}
+ 			<ChatFormActionReasoning />
+ 
+diff --git a/tools/ui/src/lib/components/app/chat/ChatScreen/ChatScreen.svelte b/tools/ui/src/lib/components/app/chat/ChatScreen/ChatScreen.svelte
+index 6cea95d..96f6e44 100644
+--- a/tools/ui/src/lib/components/app/chat/ChatScreen/ChatScreen.svelte
++++ b/tools/ui/src/lib/components/app/chat/ChatScreen/ChatScreen.svelte
+@@ -25,8 +25,9 @@
+ 		serverStore,
+ 		settingsStore
+ 	} from '$lib/stores';
++	import { pumpkin } from '$lib/pumpkin';
+ 	import { parseFilesToMessageExtras } from '$lib/utils/browser-only';
+-	import { onDestroy, onMount, tick } from 'svelte';
++	import { onDestroy, onMount, tick, untrack } from 'svelte';
+ 
+ 	let { showCenteredEmpty = false } = $props();
+ 
+@@ -57,6 +58,19 @@
+ 		return '0.5rem';
+ 	});
+ 
++	// Pumpkin: a saved prompt sent from the Pumpkin pages lands in the message box
++	$effect(() => {
++		const text = pumpkin.pendingInput;
++
++		if (text == null) return;
++
++		untrack(() => {
++			pumpkin.pendingInput = null;
++			initialMessage = '';
++			void tick().then(() => (initialMessage = text));
++		});
++	});
++
+ 	const autoScroll = createAutoScrollController();
+ 	const scroll = useChatScreenScroll(autoScroll);
+ 	const activeModel = useChatScreenActiveModel();
+diff --git a/tools/ui/src/lib/components/app/navigation/SidebarNavigation/SidebarNavigationActions.svelte b/tools/ui/src/lib/components/app/navigation/SidebarNavigation/SidebarNavigationActions.svelte
+index 95efa53..4b512b1 100644
+--- a/tools/ui/src/lib/components/app/navigation/SidebarNavigation/SidebarNavigationActions.svelte
++++ b/tools/ui/src/lib/components/app/navigation/SidebarNavigation/SidebarNavigationActions.svelte
+@@ -13,6 +13,7 @@
+ 	} from '$lib/constants';
+ 	import { SidebarAction, TooltipSide } from '$lib/enums';
+ 	import { conversationsStore, deviceStore } from '$lib/stores';
++	import { pumpkin } from '$lib/pumpkin';
+ 	import type { DesktopIconStripItem } from '$lib/types';
+ 	import type { Component } from 'svelte';
+ 	import { onMount } from 'svelte';
+@@ -48,7 +49,10 @@
+ 	// the models manager stays desktop-only: a phone picks its models in the selector
+ 	const actions = $derived(
+ 		SIDEBAR_ACTIONS_ITEMS.filter(
+-			(item) => item.action !== SidebarAction.MANAGE_MODELS || !deviceStore.isMobile
++			(item) =>
++				(item.action !== SidebarAction.MANAGE_MODELS || !deviceStore.isMobile) &&
++				// the Pumpkin entry only exists when the Pumpkin server is serving this page
++				(item.route !== '#/pumpkin' || !!pumpkin.available)
+ 		)
+ 	);
+ 	let initialized = $state(false);
+diff --git a/tools/ui/src/lib/constants/ui.constants.ts b/tools/ui/src/lib/constants/ui.constants.ts
+index 9467939..3d2eceb 100644
+--- a/tools/ui/src/lib/constants/ui.constants.ts
++++ b/tools/ui/src/lib/constants/ui.constants.ts
+@@ -1,5 +1,6 @@
+ import { MODEL_ICON } from './icons.constants';
+ import { Search, Settings, SquarePen } from '@lucide/svelte';
++import PumpkinLogo from '$lib/pumpkin/components/PumpkinLogo.svelte';
+ import McpLogo from '$lib/components/app/mcp/McpLogo.svelte';
+ import { SidebarAction, ToolSource } from '$lib/enums';
+ import type { DesktopIconStripItem } from '$lib/types';
+@@ -95,5 +96,11 @@ export const SIDEBAR_ACTIONS_ITEMS: DesktopIconStripItem[] = [
+ 		action: SidebarAction.SETTINGS,
+ 		icon: Settings,
+ 		tooltip: 'Settings'
++	},
++	{
++		activeRoutePrefix: '/pumpkin',
++		icon: PumpkinLogo,
++		route: '#/pumpkin',
++		tooltip: 'Pumpkin'
+ 	}
+ ];
+diff --git a/tools/ui/src/routes/+layout.svelte b/tools/ui/src/routes/+layout.svelte
+index 5de4f82..f0f0216 100644
+--- a/tools/ui/src/routes/+layout.svelte
++++ b/tools/ui/src/routes/+layout.svelte
+@@ -5,6 +5,7 @@
+ 	import { base } from '$app/paths';
+ 	import { page } from '$app/state';
+ 	import { SidebarNavigation } from '$lib/components/app';
++	import { PumpkinRoot } from '$lib/pumpkin';
+ 	import { PwaMetaTags, PwaRefreshAlert } from '$lib/components/pwa';
+ 	import * as Tooltip from '$lib/components/ui/tooltip';
+ 	import {
+@@ -333,6 +334,8 @@
+ 		</div>
+ 	</div>
+ 
++	<PumpkinRoot />
++
+ 	<ModeWatcher />
+ 
+ 	<Toaster closeButton richColors />

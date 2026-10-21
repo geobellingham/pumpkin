@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Pumpkin
+GenericName=Local AI agents
+Comment=Run AI models and agents on your own computer
+Exec=pumpkin
+Icon=pumpkin
+Terminal=false
+Categories=Development;Utility;
+Keywords=AI;LLM;llama;agent;chat;
+StartupWMClass=pumpkin

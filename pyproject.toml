@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pumpkin-agents"
+dynamic = ["version"]
+description = "Run local AI models and agents with llama.cpp: one-click models, tools, web search, schedules, voice and phone access."
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.10"
+dependencies = []
+classifiers = [
+  "Operating System :: POSIX :: Linux",
+  "Programming Language :: Python :: 3",
+  "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+
+[project.optional-dependencies]
+window = ["PyGObject"]
+
+[project.scripts]
+pumpkin = "pumpkin.__main__:main"
+
+[project.urls]
+Homepage = "https://github.com/geobellingham/Pumpkin"
+
+[tool.setuptools]
+packages = ["pumpkin"]
+
+[tool.setuptools.dynamic]
+version = {attr = "pumpkin.__version__"}
+
+[tool.setuptools.package-data]
+pumpkin = ["catalog.json", "assets/*", "ui/**/*"]

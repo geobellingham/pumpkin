@@ -1,0 +1,35 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Tests
+        run: python -m unittest discover -s tests
+      - name: Build the web UI
+        run: ./web/build.sh
+      - name: Package
+        run: |
+          V="${GITHUB_REF_NAME#v}"
+          mkdir -p "dist/pumpkin-$V"
+          cp -r pumpkin packaging install.sh uninstall.sh README.md LICENSE "dist/pumpkin-$V/"
+          find "dist/pumpkin-$V" -name __pycache__ -prune -exec rm -rf {} +
+          tar -C dist -czf "dist/pumpkin-$V.tar.gz" "pumpkin-$V"
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/pumpkin-*.tar.gz
+          generate_release_notes: true

@@ -1,0 +1,9 @@
+__pycache__/
+*.pyc
+/pumpkin/ui/
+/web/.build/
+/dist/
+/build/
+*.egg-info/
+/e2e/
+.venv/
