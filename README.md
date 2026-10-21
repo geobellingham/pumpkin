@@ -125,4 +125,4 @@ estimates and Doctor checks. See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 
-MIT. The web interface builds on the llama.cpp UI (MIT, the ggml authors).
+MIT. The web interface builds on the llama.cpp UI (MIT, the ggml authors); see [NOTICE](NOTICE).

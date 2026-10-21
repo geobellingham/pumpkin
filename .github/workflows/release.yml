@@ -26,7 +26,7 @@ jobs:
         run: |
           V="${GITHUB_REF_NAME#v}"
           mkdir -p "dist/pumpkin-$V"
-          cp -r pumpkin packaging install.sh uninstall.sh README.md LICENSE "dist/pumpkin-$V/"
+          cp -r pumpkin packaging install.sh uninstall.sh README.md LICENSE NOTICE "dist/pumpkin-$V/"
           find "dist/pumpkin-$V" -name __pycache__ -prune -exec rm -rf {} +
           tar -C dist -czf "dist/pumpkin-$V.tar.gz" "pumpkin-$V"
       - uses: softprops/action-gh-release@v2

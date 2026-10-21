@@ -50,7 +50,7 @@ say "Installing to $APP_DIR"
 if command -v pumpkin >/dev/null && pumpkin stop >/dev/null 2>&1; then :; fi
 rm -rf "$APP_DIR.new"; mkdir -p "$APP_DIR.new"
 cp -r "$SRC/pumpkin" "$APP_DIR.new/"
-cp "$SRC/LICENSE" "$SRC/README.md" "$SRC/uninstall.sh" "$APP_DIR.new/" 2>/dev/null || true
+cp "$SRC/LICENSE" "$SRC/NOTICE" "$SRC/README.md" "$SRC/uninstall.sh" "$APP_DIR.new/" 2>/dev/null || true
 rm -rf "$APP_DIR"; mv "$APP_DIR.new" "$APP_DIR"
 find "$APP_DIR" -name __pycache__ -prune -exec rm -rf {} +
 
