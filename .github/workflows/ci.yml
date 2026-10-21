@@ -28,7 +28,7 @@ jobs:
           node-version: 24
       - name: Build the web UI
         run: ./web/build.sh
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: pumpkin-ui
           path: pumpkin/ui
