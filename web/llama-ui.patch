@@ -54,8 +54,26 @@ index 6cea95d..96f6e44 100644
  	const autoScroll = createAutoScrollController();
  	const scroll = useChatScreenScroll(autoScroll);
  	const activeModel = useChatScreenActiveModel();
+diff --git a/tools/ui/src/lib/components/app/navigation/SidebarNavigation/SidebarNavigation.svelte b/tools/ui/src/lib/components/app/navigation/SidebarNavigation/SidebarNavigation.svelte
+index 2ce4824..832b8df 100644
+--- a/tools/ui/src/lib/components/app/navigation/SidebarNavigation/SidebarNavigation.svelte
++++ b/tools/ui/src/lib/components/app/navigation/SidebarNavigation/SidebarNavigation.svelte
+@@ -96,6 +96,13 @@
+ 
+ 	let renameDialogOpen = $state(false);
+ 	let settingsDialogOpen = $state(false);
++
++	// Pumpkin's settings page opens the chat settings dialog through this event
++	$effect(() => {
++		const open = () => (settingsDialogOpen = true);
++		window.addEventListener('pumpkin:chat-settings', open);
++		return () => window.removeEventListener('pumpkin:chat-settings', open);
++	});
+ 	let mcpDialogOpen = $state(false);
+ 	let renameTargetConversationId = $state<string | null>(null);
+ 	let renameDraft = $state('');
 diff --git a/tools/ui/src/lib/components/app/navigation/SidebarNavigation/SidebarNavigationActions.svelte b/tools/ui/src/lib/components/app/navigation/SidebarNavigation/SidebarNavigationActions.svelte
-index 95efa53..4b512b1 100644
+index 95efa53..1785696 100644
 --- a/tools/ui/src/lib/components/app/navigation/SidebarNavigation/SidebarNavigationActions.svelte
 +++ b/tools/ui/src/lib/components/app/navigation/SidebarNavigation/SidebarNavigationActions.svelte
 @@ -13,6 +13,7 @@
@@ -66,7 +84,7 @@ index 95efa53..4b512b1 100644
  	import type { DesktopIconStripItem } from '$lib/types';
  	import type { Component } from 'svelte';
  	import { onMount } from 'svelte';
-@@ -48,7 +49,10 @@
+@@ -48,7 +49,13 @@
  	// the models manager stays desktop-only: a phone picks its models in the selector
  	const actions = $derived(
  		SIDEBAR_ACTIONS_ITEMS.filter(
@@ -74,12 +92,15 @@ index 95efa53..4b512b1 100644
 +			(item) =>
 +				(item.action !== SidebarAction.MANAGE_MODELS || !deviceStore.isMobile) &&
 +				// the Pumpkin entry only exists when the Pumpkin server is serving this page
-+				(item.route !== '#/pumpkin' || !!pumpkin.available)
++				(item.route !== '#/pumpkin' || !!pumpkin.available) &&
++				// Pumpkin has its own Models and Settings pages, so those icons go
++				(!pumpkin.available ||
++					(item.action !== SidebarAction.MANAGE_MODELS && item.action !== SidebarAction.SETTINGS))
  		)
  	);
  	let initialized = $state(false);
 diff --git a/tools/ui/src/lib/constants/ui.constants.ts b/tools/ui/src/lib/constants/ui.constants.ts
-index 9467939..3d2eceb 100644
+index 9467939..fd2f9dc 100644
 --- a/tools/ui/src/lib/constants/ui.constants.ts
 +++ b/tools/ui/src/lib/constants/ui.constants.ts
 @@ -1,5 +1,6 @@

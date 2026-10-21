@@ -53,6 +53,10 @@
 	{#if !s}
 		<div class="flex justify-center py-8"><LoaderCircle class="h-5 w-5 animate-spin text-muted-foreground" /></div>
 	{:else}
+		<Card description="How the chat behaves: sampling, display, tools and more." title="Chat settings">
+			<Button class="rounded-full" onclick={() => window.dispatchEvent(new CustomEvent('pumpkin:chat-settings'))} size="sm" variant="secondary">Open chat settings</Button>
+		</Card>
+
 		<Card title="Folders">
 			<div class="flex flex-col gap-4">
 				<Field hint="One folder per line. Pumpkin finds .gguf files in them and their subfolders." label="Model folders">
