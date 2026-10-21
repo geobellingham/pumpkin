@@ -392,6 +392,10 @@ class ServerManager:
         if has("--metrics"):
             cmd += ["--metrics"]
         kv = preset.get("kv") or ""
+        info_m = model.get("info") or {}
+        heads = [info_m.get("key_length"), info_m.get("value_length")]
+        if kv and kv != "f16" and any(h and int(h) % 32 for h in heads):
+            kv = ""                                    # quantized caches need head sizes in multiples of 32
         if kv and kv != "f16" and has("-ctk"):
             cmd += ["-ctk", kv, "-ctv", kv]
         tb = preset.get("think_budget")

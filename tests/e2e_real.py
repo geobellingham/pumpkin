@@ -72,7 +72,16 @@ try:
     if job["state"] != "done":
         raise SystemExit(f"llama.cpp download failed: {job['error']}")
     info = call("GET", "/pumpkin/api/llama")
-    print(info["path"], info["info"]["version"], info["info"]["backends"])
+    print(info["path"], info["info"]["version"], info["info"]["backends"], len(info["info"]["flags"]), "known options")
+    for args in (["--version"], ["--help"]):
+        t0 = time.time()
+        r = subprocess.run([info["path"], *args], capture_output=True, text=True, timeout=120,
+                           env=dict(ENV, DYLD_LIBRARY_PATH=os.path.dirname(info["path"]),
+                                    LD_LIBRARY_PATH=os.path.dirname(info["path"])))
+        out = (r.stdout or "") + (r.stderr or "")
+        print(f"$ llama-server {args[0]}  (exit {r.returncode}, {time.time() - t0:.1f}s, {len(out)} chars)")
+        print("\n".join(out.splitlines()[:12] if args[0] == "--version" else
+                        [l for l in out.splitlines() if any(f in l for f in ("--agent", "-fit", "--metrics", "-ctk"))][:8]))
     assert info["info"]["ok"], info["info"]
 
     step("Pumpkin downloads a tiny real model from Hugging Face")
