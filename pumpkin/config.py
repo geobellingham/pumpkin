@@ -22,6 +22,7 @@ DEFAULT_SETTINGS = {
     "models_dirs": [os.path.join(USER_DIR, "models")],
     "download_dir": os.path.join(USER_DIR, "models"),
     "reports_dir": os.path.join(USER_DIR, "reports"),
+    "files_dir": os.path.join(USER_DIR, "files"),       # the AI's work folder, /workspace in the sandbox
     "threads": 0,                      # 0 = physical cores
     "persona": "Assistant",
     "sandbox_image": "ubuntu:24.04",

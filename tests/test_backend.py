@@ -274,6 +274,42 @@ class TestServer(unittest.TestCase):
         self.assertIn("found", j)
         self.assertIn("update", self.call("GET", "/pumpkin/api/state")[1])
 
+    def test_9_files(self):
+        import http.client
+        base = os.path.join(TMP, "Pumpkin", "files")
+
+        def raw(method, path, body=None, headers=None):
+            c = http.client.HTTPConnection("127.0.0.1", 18190, timeout=10)
+            c.request(method, path, body=body, headers={"Authorization": f"Bearer {self.tok}", **(headers or {})})
+            r = c.getresponse()
+            return r.status, dict(r.getheaders()), r.read()
+
+        code, _, body = raw("POST", "/pumpkin/api/files/upload?dir=docs&name=plan.md", b"# Plan",
+                            {"X-Pumpkin": "1", "Content-Type": "application/octet-stream"})
+        self.assertEqual(code, 200, body)
+        self.assertTrue(os.path.isfile(os.path.join(base, "docs", "plan.md")))
+        code, _, body = raw("POST", "/pumpkin/api/files/upload?name=x.md", b"x")          # no X-Pumpkin header
+        self.assertEqual(code, 403)
+        code, j = self.call("GET", "/pumpkin/api/files?path=docs")
+        self.assertEqual([i["name"] for i in j["items"]], ["plan.md"])
+        code, h, body = raw("GET", "/pumpkin/api/files/download?path=/workspace/docs/plan.md&inline=1")
+        self.assertEqual((code, body), (200, b"# Plan"))
+        self.assertTrue(h["Content-Type"].startswith("text/plain"))
+        with open(os.path.join(base, "evil.html"), "w") as f:
+            f.write("<script>alert(1)</script>")
+        code, h, _ = raw("GET", "/pumpkin/api/files/download?path=evil.html&inline=1")
+        self.assertEqual(h["Content-Type"], "application/octet-stream")
+        self.assertTrue(h["Content-Disposition"].startswith("attachment"))
+        self.assertIn("sandbox", h["Content-Security-Policy"])
+        code, _, _ = raw("GET", "/pumpkin/api/files/download?path=../../.config/pumpkin/token")
+        self.assertEqual(code, 403)
+        code, _, _ = raw("GET", "/pumpkin/api/files/download?path=docs/plan.md", headers={"Authorization": "Bearer wrong"})
+        self.assertEqual(code, 401)
+        code, j = self.call("POST", "/pumpkin/api/files/delete", {"path": "docs"})
+        self.assertFalse(os.path.exists(os.path.join(base, "docs")))
+        code, j = self.call("POST", "/pumpkin/api/files/delete", {"path": ""})
+        self.assertEqual(code, 403)
+
     def test_6_login_page(self):
         req = urllib.request.Request(self.base + "/", headers={"Accept": "text/html"})
         with urllib.request.urlopen(req) as r:

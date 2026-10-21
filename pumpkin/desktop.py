@@ -64,6 +64,15 @@ def run(url):
     web.connect("permission-request", on_permission)
 
     def on_policy(_view, decision, kind):
+        # files sent as downloads (the Files page) are saved instead of ignored
+        if kind == WebKit2.PolicyDecisionType.RESPONSE:
+            resp = decision.get_response()
+            headers = resp.get_http_headers() if resp else None
+            disp = (headers.get_one("Content-Disposition") or "") if headers else ""
+            if disp.lower().startswith("attachment") or not decision.is_mime_type_supported():
+                decision.download()
+                return True
+            return False
         # links to other sites open in the normal browser
         if kind == WebKit2.PolicyDecisionType.NEW_WINDOW_ACTION or kind == WebKit2.PolicyDecisionType.NAVIGATION_ACTION:
             uri = decision.get_navigation_action().get_request().get_uri()
@@ -73,6 +82,28 @@ def run(url):
                 return True
         return False
     web.connect("decide-policy", on_policy)
+    def on_download(_ctx, download):
+        # files from the Files page go to ~/Downloads (never overwriting), then the folder opens
+        from gi.repository import GLib
+        folder = GLib.get_user_special_dir(GLib.UserDirectory.DIRECTORY_DOWNLOAD) or os.path.expanduser("~/Downloads")
+
+        def decide(dl, suggested):
+            os.makedirs(folder, exist_ok=True)
+            name = os.path.basename(suggested or "download")
+            stem, ext = os.path.splitext(name)
+            path, n = os.path.join(folder, name), 2
+            while os.path.exists(path):
+                path, n = os.path.join(folder, f"{stem} ({n}){ext}"), n + 1
+            dl.set_destination(GLib.filename_to_uri(path, None))
+            return True
+
+        download.connect("decide-destination", decide)
+        download.connect("finished", lambda _dl: Gio.AppInfo.launch_default_for_uri(
+            GLib.filename_to_uri(folder, None), None))
+    try:
+        ctx.connect("download-started", on_download)
+    except TypeError:
+        pass
     web.load_uri(url)
     win.add(web)
     win.connect("destroy", Gtk.main_quit)

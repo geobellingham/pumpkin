@@ -112,6 +112,33 @@ try:
     log = open(f"{HOME}/.local/state/pumpkin/llama-server.log").read()
     print("\n".join(l for l in log.splitlines() if any(w in l.lower() for w in ("metal", "gpu", "offload", "vulkan")))[:2000])
 
+    import shutil
+    if shutil.which("docker") and subprocess.run(["docker", "info"], capture_output=True).returncode == 0:
+        step("The AI's tools write into the work folder (Docker sandbox)")
+        call("PUT", f"/pumpkin/api/presets/{preset['id']}", {"tools": True, "sandbox": True, "web": False})
+        call("POST", "/pumpkin/api/llama/start", {"preset": preset["id"]})
+        st = wait(lambda: (s := call("GET", "/pumpkin/api/state")["server"])["state"] in ("ready", "error") and s,
+                  "the model with tools", 600)
+        if st["state"] != "ready":
+            print(call("GET", "/pumpkin/api/llama/log?n=60")["log"])
+            raise SystemExit(f"model with tools failed to start: {st['error']}")
+        log = open(f"{HOME}/.local/state/pumpkin/llama-server.log").read().splitlines()[0]
+        assert "docker-container:pumpkin-workspace" in log, log
+        r = call("POST", "/tools", {"tool": "write_file", "params": {"path": "notes/hello.md", "content": "made by the AI"}}, 120)
+        print("write_file:", json.dumps(r)[:200])
+        r = call("POST", "/tools", {"tool": "exec_shell_command", "params": {"command": "pwd && ls -la notes"}}, 120)
+        print("exec_shell_command:", json.dumps(r)[:300])
+        listing = call("GET", "/pumpkin/api/files?path=notes")
+        print("Files page:", [i["name"] for i in listing["items"]])
+        assert any(i["name"] == "hello.md" for i in listing["items"]), listing
+        with open(f"{HOME}/Pumpkin/files/notes/hello.md") as f:
+            assert f.read() == "made by the AI"
+        st_ = os.stat(f"{HOME}/Pumpkin/files/notes/hello.md")
+        print("owner after the Files page looked:", st_.st_uid, "me:", os.getuid())
+        assert st_.st_uid == os.getuid()
+    else:
+        print("\n(no Docker here, skipping the work folder check)")
+
     step("Without Pumpkin's key the model server refuses")
     try:
         urllib.request.urlopen(urllib.request.Request(f"http://127.0.0.1:{LLAMA_PORT}/v1/models"), timeout=10)

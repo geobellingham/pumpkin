@@ -6,6 +6,7 @@
 		ChevronLeft,
 		Clock,
 		FileText,
+		FolderOpen,
 		House,
 		MessageSquareText,
 		Settings,
@@ -18,6 +19,7 @@
 	import { pumpkin } from '../store.svelte';
 	import Agent from './Agent.svelte';
 	import Doctor from './Doctor.svelte';
+	import Files from './Files.svelte';
 	import Models from './Models.svelte';
 	import Overview from './Overview.svelte';
 	import Phone from './Phone.svelte';
@@ -38,6 +40,7 @@
 		{ icon: SlidersHorizontal, id: 'presets', label: 'Presets', page: Presets },
 		{ icon: Bot, id: 'agent', label: 'Agent', page: Agent },
 		{ icon: Clock, id: 'tasks', label: 'Tasks', page: Tasks },
+		{ icon: FolderOpen, id: 'files', label: 'Files', page: Files },
 		{ icon: MessageSquareText, id: 'prompts', label: 'Prompts', page: Prompts },
 		{ icon: FileText, id: 'reports', label: 'Reports', page: Reports },
 		{ icon: AudioLines, id: 'voice', label: 'Voice', page: Voice },

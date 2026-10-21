@@ -2,11 +2,12 @@
 import json
 import re
 import os
+import shutil
 import sys
 import threading
 import time
 
-from . import __version__, agent, config, hardware, llama, migrate, models, recommend, remote, updates
+from . import __version__, agent, config, hardware, llama, migrate, models, recommend, remote, updates, workspace
 
 
 class Core:
@@ -71,7 +72,12 @@ class Core:
 
     def persona_prompt(self):
         p = self.personas.get(self.settings["persona"])
-        return (p or {}).get("prompt", "")
+        text = (p or {}).get("prompt", "")
+        pre = (self.server.preset or {}) if self.server.state in ("loading", "ready") else {}
+        if pre.get("tools") and pre.get("sandbox", True) and shutil.which("docker"):
+            text += ("\n\nSave files you make for the user in /workspace (your working folder). "
+                     "They can open them on the Files page.")
+        return text
 
     # ---- switching models from the chat
     _switch_lock = threading.Lock()
@@ -352,5 +358,10 @@ class Core:
     def shutdown(self):
         try:
             self.server.stop()
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            workspace.fix_owner(self.settings)
+            workspace.stop()
         except Exception:  # noqa: BLE001
             pass

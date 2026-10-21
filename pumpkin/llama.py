@@ -17,7 +17,7 @@ import urllib.request
 import zipfile
 from http.client import HTTPException
 
-from . import config, hardware
+from . import config, hardware, workspace
 
 RELEASES = "https://github.com/ggml-org/llama.cpp/releases"
 LLAMA_DIR = os.path.join(config.DATA_DIR, "llama")
@@ -408,7 +408,9 @@ class ServerManager:
         if preset.get("tools") and has("--agent"):
             cmd += ["--agent"]
             if has("--tools-runtime") and preset.get("sandbox", True) and shutil.which("docker"):
-                cmd += ["--tools-runtime", f"docker:{s['sandbox_image']}"]
+                # the sandbox with the work folder mounted, so files the AI makes end up in ~/Pumpkin/files
+                box = workspace.ensure(s)
+                cmd += ["--tools-runtime", f"docker-container:{box}" if box else f"docker:{s['sandbox_image']}"]
             mcp = self.mcp_config(preset)
             if mcp and has("--mcp-servers-config") and _mcp_has_servers(mcp):
                 cmd += ["--mcp-servers-config", mcp]

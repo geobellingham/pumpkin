@@ -33,9 +33,11 @@ func isLocal(_ url: URL?) -> Bool {
     return host == "127.0.0.1" || host == "localhost" || host == "::1"
 }
 
-final class Delegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKUIDelegate, NSWindowDelegate {
+final class Delegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKUIDelegate, NSWindowDelegate,
+                      WKDownloadDelegate {
     var window: NSWindow!
     var web: WKWebView!
+    var downloads: [ObjectIdentifier: URL] = [:]
 
     func applicationDidFinishLaunching(_ note: Notification) {
         buildMenu()
@@ -81,12 +83,60 @@ final class Delegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKU
     // ---- links to other sites open in the normal browser
     func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction,
                  decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
+        if action.shouldPerformDownload {                // <a download>, e.g. on the Files page
+            decisionHandler(.download)
+            return
+        }
         if let url = action.request.url, !isLocal(url), url.scheme == "http" || url.scheme == "https" {
             NSWorkspace.shared.open(url)
             decisionHandler(.cancel)
             return
         }
         decisionHandler(.allow)
+    }
+
+    // ---- downloads go to ~/Downloads and are shown in Finder
+    func webView(_ webView: WKWebView, decidePolicyFor response: WKNavigationResponse,
+                 decisionHandler: @escaping (WKNavigationResponsePolicy) -> Void) {
+        let disposition = (response.response as? HTTPURLResponse)?.value(forHTTPHeaderField: "Content-Disposition") ?? ""
+        decisionHandler(disposition.lowercased().hasPrefix("attachment") || !response.canShowMIMEType ? .download : .allow)
+    }
+
+    func webView(_ webView: WKWebView, navigationResponse: WKNavigationResponse, didBecome download: WKDownload) {
+        download.delegate = self
+    }
+
+    func webView(_ webView: WKWebView, navigationAction: WKNavigationAction, didBecome download: WKDownload) {
+        download.delegate = self
+    }
+
+    func download(_ download: WKDownload, decideDestinationUsing response: URLResponse, suggestedFilename: String,
+                  completionHandler: @escaping (URL?) -> Void) {
+        let dir = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask)[0]
+        let name = (suggestedFilename as NSString).lastPathComponent
+        let stem = (name as NSString).deletingPathExtension, ext = (name as NSString).pathExtension
+        var url = dir.appendingPathComponent(name)
+        var n = 2
+        while FileManager.default.fileExists(atPath: url.path) {           // never overwrite: file (2).md
+            url = dir.appendingPathComponent(ext.isEmpty ? "\(stem) (\(n))" : "\(stem) (\(n)).\(ext)")
+            n += 1
+        }
+        downloads[ObjectIdentifier(download)] = url
+        completionHandler(url)
+    }
+
+    func downloadDidFinish(_ download: WKDownload) {
+        if let url = downloads.removeValue(forKey: ObjectIdentifier(download)) {
+            NSWorkspace.shared.activateFileViewerSelecting([url])
+        }
+    }
+
+    func download(_ download: WKDownload, didFailWithError error: Error, resumeData: Data?) {
+        downloads.removeValue(forKey: ObjectIdentifier(download))
+        let a = NSAlert()
+        a.messageText = "The download did not finish."
+        a.informativeText = error.localizedDescription
+        a.beginSheetModal(for: window) { _ in }
     }
 
     func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration,

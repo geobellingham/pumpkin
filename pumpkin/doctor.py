@@ -119,6 +119,9 @@ def check(core):
         else:
             add("Agent tools", "Docker sandbox", "fail", "Docker is installed but not running.",
                 "Start the Docker service.", "sudo systemctl enable --now docker")
+    from . import workspace
+    add("Agent tools", "Work folder", "ok", f"Files the AI makes are saved in {workspace._short(workspace.files_dir(s))}"
+        + (" (/workspace in the sandbox)" if shutil.which("docker") else " once Docker is installed"))
     add("Agent tools", "Web search", "ok" if s.get("web_search", True) is not False else "warn",
         "Built-in search (DuckDuckGo) and page reader, no API key needed")
 

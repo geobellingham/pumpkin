@@ -7,16 +7,18 @@ import ipaddress
 import json
 import mimetypes
 import os
+import shutil
 import sys
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import parse_qs, unquote, urlparse
+from urllib.parse import parse_qs, quote, unquote, urlparse
 
-from . import APP_NAME, __version__, agent, config, discover, doctor, hardware, llama, models, remote, updates
+from . import APP_NAME, __version__, agent, config, discover, doctor, hardware, llama, models, remote, updates, workspace
 
 COOKIE = "pumpkin_key"
 API = "/pumpkin/api/"
+UPLOAD_LIMIT = 512 * 2 ** 20
 HOP = {"connection", "keep-alive", "proxy-authenticate", "proxy-authorization", "te", "trailers",
        "transfer-encoding", "upgrade"}
 PKG_UI = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ui")
@@ -90,7 +92,8 @@ class Web:
             def end_headers(self):
                 # no other site may put Pumpkin in a frame, and links never leak the address (it can hold the key)
                 self.send_header("X-Frame-Options", "SAMEORIGIN")
-                self.send_header("Content-Security-Policy", "frame-ancestors 'self'")
+                if not getattr(self, "own_csp", False):
+                    self.send_header("Content-Security-Policy", "frame-ancestors 'self'")
                 self.send_header("X-Content-Type-Options", "nosniff")
                 self.send_header("Referrer-Policy", "no-referrer")
                 super().end_headers()
@@ -134,6 +137,43 @@ class Web:
         h.end_headers()
         if h.command != "HEAD":
             h.wfile.write(body)
+
+    # files the browser may show itself; anything else (HTML, SVG, scripts) is only ever downloaded, because a
+    # page the AI wrote must never run as Pumpkin
+    INLINE = ("image/png", "image/jpeg", "image/gif", "image/webp", "application/pdf", "audio/", "video/")
+
+    def send_file(self, h, rel, inline=False):
+        p = workspace.safe_path(self.core.settings, rel)
+        if not os.path.isfile(p):
+            raise FileNotFoundError("That file is not there any more.")
+        name = os.path.basename(p)
+        ctype = mimetypes.guess_type(name)[0] or "application/octet-stream"
+        text = ctype.startswith("text/") or name.lower().endswith((".md", ".py", ".json", ".csv", ".log", ".yaml",
+                                                                   ".yml", ".sh"))
+        if inline and text and "html" not in ctype:
+            ctype, disp = "text/plain; charset=utf-8", "inline"
+        elif inline and ctype.startswith(self.INLINE):
+            disp = "inline"
+        else:
+            disp = "attachment"
+            if "html" in ctype or "svg" in ctype or "javascript" in ctype:
+                ctype = "application/octet-stream"
+        size = os.path.getsize(p)
+        h.send_response(200)
+        h.send_header("Content-Type", ctype)
+        h.send_header("Content-Length", str(size))
+        h.send_header("Content-Disposition", f"{disp}; filename*=UTF-8''{quote(name)}")
+        h.own_csp = True
+        if ctype != "application/pdf":                  # the browser's PDF viewer does not work in a sandbox
+            h.send_header("Content-Security-Policy",
+                          "sandbox; default-src 'none'; img-src 'self'; media-src 'self'; frame-ancestors 'self'")
+        else:
+            h.send_header("Content-Security-Policy", "frame-ancestors 'self'")
+        h.send_header("Cache-Control", "no-store")
+        h.end_headers()
+        if h.command != "HEAD":
+            with open(p, "rb") as f:
+                shutil.copyfileobj(f, h.wfile, 1 << 20)
 
     def json(self, h, obj, code=200):
         self.send(h, code, json.dumps(obj, default=str), "application/json")
@@ -254,6 +294,18 @@ class Web:
         core = self.core
         method = h.command
         try:
+            if name == "files/download" and method == "GET":
+                return self.send_file(h, (q.get("path") or [""])[0], (q.get("inline") or [""])[0] == "1")
+            if name == "files/upload" and method == "POST":
+                if h.headers.get("X-Pumpkin") != "1":
+                    raise ApiError("Missing X-Pumpkin header.", 403)
+                n = int(h.headers.get("Content-Length") or 0)
+                if n > UPLOAD_LIMIT:
+                    raise ApiError(f"Files up to {UPLOAD_LIMIT // 2 ** 20} MB can be added here. Put bigger ones in "
+                                   f"the folder directly.", 413)
+                data = h.rfile.read(n) if n else b""
+                rel = workspace.save_upload(core.settings, (q.get("dir") or [""])[0], (q.get("name") or [""])[0], data)
+                return self.json(h, {"path": rel})
             body = {}
             if method in ("POST", "PUT", "PATCH", "DELETE"):
                 if h.headers.get("X-Pumpkin") != "1":
@@ -264,6 +316,10 @@ class Web:
             return self.json(h, result if result is not None else {"ok": True})
         except ApiError as e:
             return self.json(h, {"error": str(e)}, e.code)
+        except FileNotFoundError as e:
+            return self.json(h, {"error": str(e) if str(e) and "No such" not in str(e) else "Not found."}, 404)
+        except PermissionError as e:
+            return self.json(h, {"error": str(e)}, 403)
         except (RuntimeError, ValueError, KeyError, OSError) as e:
             return self.json(h, {"error": str(e)}, 400)
         except Exception as e:  # noqa: BLE001 - always answer, never drop the connection
@@ -461,6 +517,20 @@ class Web:
             with open(p, "w") as f:
                 f.write(text)
             return {"ok": True, "restart_needed": core.server.state == "ready"}
+
+        # ---- the AI's work folder
+        if head == "files":
+            st = core.settings
+            if method == "GET" and not ident:
+                return workspace.listing(st, arg("path", ""))
+            if ident == "recent":
+                return {"items": workspace.recent(st)}
+            if ident == "delete" and method == "POST":
+                workspace.delete(st, body.get("path", ""))
+                return {"ok": True}
+            if ident == "reveal" and method == "POST":
+                workspace.reveal(st, body.get("path", ""))
+                return {"ok": True}
 
         # ---- health, remote access, app
         if head == "update":

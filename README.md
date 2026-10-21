@@ -24,6 +24,8 @@ chat with tools, web search, scheduled agent tasks, voice and phone access, all 
   and Pumpkin stops the current model and starts that one for you.
 - **Uses the models you already have.** Finds LM Studio, Ollama, Hugging Face, llama.cpp, Jan and GPT4All
   downloads and uses them in place. Nothing is copied.
+- **Files the AI makes are yours.** It works in `~/Pumpkin/files` (it sees the folder as `/workspace`),
+  and the Files page lets you view, download, upload and delete them, from your phone too.
 - **Tasks on a schedule.** "Every weekday at 8:00, brief me on the news." Start from a template (news,
   security, weather, price watch, a daily lesson) or write your own. Each run saves a Markdown
   report and can push a notification to your phone.
@@ -143,7 +145,9 @@ pumpkin stop                stop Pumpkin and the model
 - **Verified downloads.** The installer, the update button and the llama.cpp download check the SHA-256
   that GitHub publishes for each release file, and stop if it does not match. Updates install the
   tagged release, never unreleased code.
-- **The agent sandbox.** Commands run in a throwaway Docker container with none of your folders. It does
+- **The agent sandbox.** Commands run in a Docker container that can only see the work folder
+  (`~/Pumpkin/files`), nothing else on your computer. Files the AI writes are only ever downloaded from
+  the Files page, never opened as pages, so an HTML file it made cannot run inside Pumpkin. The sandbox does
   have internet access, and a web page the model reads can try to steer it, so treat agent output like
   anything else from the internet. MCP servers you add run as you, outside the sandbox.
 - **Docker access means root.** Being in the `docker` group lets your user control the computer as root.
