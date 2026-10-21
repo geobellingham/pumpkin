@@ -41,7 +41,7 @@ Pumpkin 0.1 runs on Linux (tested on Ubuntu 24.04 and newer) with an AMD, NVIDIA
 CPU alone. You need Python 3.10 or newer, which most distributions already have.
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/geobellingham/Pumpkin/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/geobellingham/pumpkin/main/install.sh | bash
 ```
 
 Then open **Pumpkin** from your app menu, or run `pumpkin`. The first start walks you through:

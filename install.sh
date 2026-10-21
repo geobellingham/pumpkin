@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # Pumpkin installer. Run from a release folder or a git checkout, or straight from GitHub:
-#   curl -fsSL https://raw.githubusercontent.com/geobellingham/Pumpkin/main/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/geobellingham/pumpkin/main/install.sh | bash
 # Options: --service  also start Pumpkin at login     --no-open  do not open it afterwards
 set -euo pipefail
 
-REPO="${PUMPKIN_REPO:-geobellingham/Pumpkin}"
+REPO="${PUMPKIN_REPO:-geobellingham/pumpkin}"
 APP_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/pumpkin/app"
 BIN_DIR="$HOME/.local/bin"
 SERVICE=0; OPEN=1

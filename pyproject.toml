@@ -23,7 +23,7 @@ window = ["PyGObject"]
 pumpkin = "pumpkin.__main__:main"
 
 [project.urls]
-Homepage = "https://github.com/geobellingham/Pumpkin"
+Homepage = "https://github.com/geobellingham/pumpkin"
 
 [tool.setuptools]
 packages = ["pumpkin"]

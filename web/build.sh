@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Builds Pumpkin's web UI: the llama.cpp chat UI at the pinned release, plus Pumpkin's pages.
-# Needs git and Node.js 20+. Output goes to pumpkin/ui.
+# Needs git and Node.js 22+. Output goes to pumpkin/ui.
 set -euo pipefail
 HERE=$(cd "$(dirname "$0")" && pwd)
 TAG=${LLAMA_TAG:-$(cat "$HERE/LLAMA_TAG")}
@@ -22,6 +22,7 @@ echo "llama.cpp UI at $TAG"
 git -C "$WORK/llama.cpp" apply "$HERE/llama-ui.patch"
 cp -r "$HERE/src/." "$UI/src/"
 cd "$UI"
+export NODE_OPTIONS="${NODE_OPTIONS:---max-old-space-size=8192}"
 npm ci --no-audit --no-fund
 npm install --no-save --no-audit --no-fund qrcode-generator@1.4.4
 npm run build
