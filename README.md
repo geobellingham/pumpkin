@@ -5,6 +5,8 @@
 <p align="center">Run AI models and agents on your own computer, and use them from your phone.<br>
 Free, open source, and nothing leaves your machine unless you want it to.</p>
 
+<p align="center"><img src="docs/demo.gif" alt="Setting up Pumpkin: it finds your models, asks what you want to do, installs one, and opens the chat" width="760"><br><sub><a href="docs/demo.mp4">Watch it as a video</a></sub></p>
+
 <p align="center"><img src="docs/phone-screens.png" alt="Pumpkin on a phone: overview, one-click models, chat, and a task run" width="900"></p>
 
 Pumpkin is a friendly home for [llama.cpp](https://github.com/ggml-org/llama.cpp). It looks at your
@@ -18,7 +20,12 @@ chat with tools, web search, scheduled agent tasks, voice and phone access, all 
   *fits your GPU*, *runs with RAM offload* or *too big*.
 - **Agents with tools.** Models can search the web and read pages (built in, no API key), run
   commands in a Docker sandbox, and use any MCP server you add.
-- **Tasks on a schedule.** "Every weekday at 8:00, brief me on the news." Each run saves a Markdown
+- **Switch models from the chat.** Every preset shows up in the chat's model list. Pick another one
+  and Pumpkin stops the current model and starts that one for you.
+- **Uses the models you already have.** Finds LM Studio, Ollama, Hugging Face, llama.cpp, Jan and GPT4All
+  downloads and uses them in place. Nothing is copied.
+- **Tasks on a schedule.** "Every weekday at 8:00, brief me on the news." Start from a template (news,
+  security, weather, price watch, a daily lesson) or write your own. Each run saves a Markdown
   report and can push a notification to your phone.
 - **Phone access.** Scan a QR code and the whole app, chat included, works on your phone over
   Tailscale or your home Wi-Fi. Add it to your home screen and it behaves like an app.
@@ -28,12 +35,19 @@ chat with tools, web search, scheduled agent tasks, voice and phone access, all 
 - **It explains problems.** When a model fails to start you get "the model did not fit in memory, try a
   smaller quant or a shorter context" instead of a log dump. The Doctor page checks the GPU driver,
   Vulkan, Docker permissions, disk space and Tailscale, and gives the command that fixes each one.
+- **Updates and privacy.** Pumpkin tells you when a new version is out and updates in one click. The
+  Settings page lists exactly what it sends over the network and when. There are no accounts, no
+  analytics and no crash reports.
 - **It stays out of the way.** Your computer won't suspend while a model is loaded (the screen still locks),
   and models can unload themselves when idle to free the GPU.
 
 The chat is the llama.cpp web UI you may already know, with Pumpkin's pages added on top.
 
 <p align="center"><img src="docs/models-desktop.png" alt="Models page on a desktop" width="900"></p>
+
+<p align="center"><img src="docs/setup-desktop.png" alt="First run: Pumpkin finds models from LM Studio and Ollama" width="440"> <img src="docs/switch-model-desktop.png" alt="Switching models from the chat" width="440"></p>
+
+<p align="center"><img src="docs/tasks-desktop.png" alt="Task templates" width="440"> <img src="docs/settings-desktop.png" alt="Updates and privacy" width="440"></p>
 
 ## Install
 
@@ -46,10 +60,14 @@ curl -fsSL https://raw.githubusercontent.com/geobellingham/pumpkin/main/install.
 
 Then open **Pumpkin** from your app menu, or run `pumpkin`. The first start walks you through:
 
-1. **Your computer.** Pumpkin shows what it found: GPU, video memory, RAM.
-2. **Model server.** It downloads the official llama.cpp build for your GPU (Vulkan for AMD and Intel,
+1. **Your computer.** Pumpkin shows what it found: GPU, video memory, RAM. If LM Studio, Ollama, the
+   Hugging Face cache or others already downloaded models, it offers to use them where they are.
+2. **What for.** Chat, coding, research or agents. This picks the starting personality and the models
+   it recommends.
+3. **Model server.** It downloads the official llama.cpp build for your GPU (Vulkan for AMD and Intel,
    CUDA or Vulkan for NVIDIA), or uses the one you already have.
-3. **First model.** Pick one and it installs and starts.
+4. **Your model.** Use one you already have, or install the best match in one click. It downloads,
+   starts, and opens the chat.
 
 Optional extras:
 

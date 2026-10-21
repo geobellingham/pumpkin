@@ -36,6 +36,7 @@ DEFAULT_SETTINGS = {
     "ntfy_server": "https://ntfy.sh",
     "keep_awake": True,                # stop the computer from sleeping while a model is loaded
     "setup_done": False,
+    "check_updates": True,             # ask GitHub twice a day if a new Pumpkin is out
 }
 
 DEFAULT_PERSONAS = [

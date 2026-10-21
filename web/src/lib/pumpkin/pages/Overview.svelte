@@ -120,6 +120,12 @@
 		</Card>
 	{/each}
 
+	{#if s?.update?.available}
+		<Card description="Open Settings to see what changed and update." title="Pumpkin {s.update.latest} is out">
+			<Button class="rounded-full" href="#/pumpkin/settings" size="sm">See the update</Button>
+		</Card>
+	{/if}
+
 	{#if s?.migrated?.length}
 		<Card description="Brought over from LLM Studio: {s.migrated.join(', ')}." title="Welcome to Pumpkin" />
 	{/if}

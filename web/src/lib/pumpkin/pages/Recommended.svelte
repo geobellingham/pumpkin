@@ -38,7 +38,7 @@
 		updated: number | null;
 	}
 
-	let { onhardware }: { onhardware?: (hw: Recs['hardware']) => void } = $props();
+	let { goal, onhardware, ontop }: { goal?: string; onhardware?: (hw: Recs['hardware']) => void; ontop?: (r: Recs) => void } = $props();
 
 	let recs = $state<Recs | null>(null);
 	let refreshing = $state(false);
@@ -47,13 +47,14 @@
 	async function load(refresh = false) {
 		refreshing = refresh;
 
-		const r = await pumpkin.run(() => api<Recs>(`recommend${refresh ? '?refresh=1' : ''}`));
+		const r = await pumpkin.run(() => api<Recs>(`recommend?${refresh ? 'refresh=1&' : ''}${goal ? `goal=${goal}` : ''}`));
 
 		refreshing = false;
 
 		if (r) {
 			recs = r;
 			onhardware?.(r.hardware);
+			ontop?.(r);
 		}
 	}
 

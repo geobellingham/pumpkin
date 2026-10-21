@@ -28,6 +28,7 @@ export interface Install {
 }
 
 export interface State {
+	update?: { available: boolean; latest: string };
 	agent: { busy: boolean; job: string | null; log_seq: number };
 	downloads: number;
 	has_models: boolean;
@@ -169,6 +170,7 @@ export interface Check {
 
 export interface Settings {
 	autostart_model: boolean;
+	check_updates: boolean;
 	download_dir: string;
 	hf_token: string;
 	keep_awake: boolean;

@@ -214,6 +214,56 @@ class TestServer(unittest.TestCase):
         code, j = self.call("POST", "/pumpkin/api/models/delete", {"path": "/etc/passwd"})
         self.assertEqual(code, 400)
 
+    def test_7_chat_switches_models(self):
+        code, lib = self.call("GET", "/pumpkin/api/models")
+        small = next(m for m in lib["models"] if m["file"] == "tiny-Q8_0.gguf")
+        a = self.call("POST", "/pumpkin/api/presets/from-model", {"path": small["path"], "name": "Switch A"})[1]
+        b = self.call("POST", "/pumpkin/api/presets/from-model", {"path": small["path"], "name": "Switch B"})[1]
+        self.call("POST", "/pumpkin/api/llama/stop")
+
+        def get(path, body=None):
+            req = urllib.request.Request(self.base + path, data=json.dumps(body).encode() if body else None,
+                                         headers={"Authorization": f"Bearer {self.tok}", "Content-Type": "application/json"})
+            try:
+                with urllib.request.urlopen(req, timeout=60) as r:
+                    return r.status, json.loads(r.read() or b"{}")
+            except urllib.error.HTTPError as e:
+                return e.code, json.loads(e.read() or b"{}")
+
+        code, j = get("/v1/models")                      # works with no model running: the chat lists presets
+        names = [m["id"] for m in j["data"]]
+        self.assertIn(a["name"], names)
+        self.assertIn(b["name"], names)
+        code, j = get("/v1/chat/completions", {"model": a["name"], "messages": [{"role": "user", "content": "hi"}]})
+        self.assertEqual(code, 200, j)                   # started Switch A, then answered
+        self.assertEqual(self.call("GET", "/pumpkin/api/state")[1]["server"]["preset"]["id"], a["id"])
+        code, j = get("/v1/chat/completions", {"model": b["name"], "messages": [{"role": "user", "content": "hi"}]})
+        self.assertEqual(code, 200, j)
+        self.assertEqual(self.call("GET", "/pumpkin/api/state")[1]["server"]["preset"]["id"], b["id"])
+        status = {m["id"]: m["status"]["value"] for m in get("/v1/models")[1]["data"]}
+        self.assertEqual(status[b["name"]], "loaded")
+        self.assertEqual(status[a["name"]], "unloaded")
+        # the chat's "Load model" button
+        code, j = get("/models/load", {"model": a["name"]})
+        self.assertEqual(code, 200, j)
+        self.assertTrue(self.wait(lambda: (self.call("GET", "/pumpkin/api/state")[1]["server"]["preset"] or {}).get("id") == a["id"]
+                                  and self.call("GET", "/pumpkin/api/state")[1]["server"]["state"] == "ready"))
+        code, j = get("/models/unload", {"model": a["name"]})
+        self.assertEqual(self.call("GET", "/pumpkin/api/state")[1]["server"]["state"], "off")
+        code, j = get("/models/load", {"model": "not a preset"})
+        self.assertEqual(code, 404)
+        self.call("POST", "/pumpkin/api/llama/stop")
+
+    def test_8_setup_goal_and_update_endpoints(self):
+        code, j = self.call("POST", "/pumpkin/api/setup/goal", {"goal": "coding"})
+        self.assertEqual(j["persona"], "Coder")
+        code, j = self.call("POST", "/pumpkin/api/setup/goal", {"goal": "nope"})
+        self.assertEqual(code, 400)
+        code, j = self.call("GET", "/pumpkin/api/models/discover")
+        self.assertEqual(code, 200)
+        self.assertIn("found", j)
+        self.assertIn("update", self.call("GET", "/pumpkin/api/state")[1])
+
     def test_6_login_page(self):
         req = urllib.request.Request(self.base + "/", headers={"Accept": "text/html"})
         with urllib.request.urlopen(req) as r:

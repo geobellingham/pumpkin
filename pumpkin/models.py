@@ -141,7 +141,8 @@ class Library:
                 if not os.path.isdir(d):
                     continue
                 for p in glob.glob(os.path.join(d, "**", "*.gguf"), recursive=True):
-                    if "/." in p or p.endswith(".part"):
+                    rel = os.path.relpath(p, d)
+                    if any(seg.startswith(".") for seg in rel.split(os.sep)) or p.endswith(".part"):
                         continue
                     m = SHARD.search(p)
                     key = SHARD.sub(".gguf", p) if m else p

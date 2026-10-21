@@ -4,6 +4,7 @@
 	import { Input } from '$lib/components/ui/input';
 	import Card from '../components/Card.svelte';
 	import Empty from '../components/Empty.svelte';
+	import FoundModels from '../components/FoundModels.svelte';
 	import FitBadge from '../components/FitBadge.svelte';
 	import Progress from '../components/Progress.svelte';
 	import Segmented from '../components/Segmented.svelte';
@@ -203,6 +204,8 @@
 			{/if}
 		</Card>
 	{:else if tab === 'local'}
+		<FoundModels onadded={() => loadLocal(true)} />
+
 		<Card description={dirs.length ? `Looking in ${dirs.join(', ')}` : ''} title="Models on this computer">
 			{#snippet actions()}
 				<Button aria-label="Scan folders again" class="size-9 rounded-full" onclick={() => loadLocal(true)} size="icon" variant="ghost">

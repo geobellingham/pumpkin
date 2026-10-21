@@ -11,6 +11,7 @@
 	import Select from '../components/Select.svelte';
 	import Toggle from '../components/Toggle.svelte';
 	import { api, pumpkin } from '../store.svelte';
+	import { TASK_TEMPLATES, type TaskTemplate } from '../templates';
 	import type { Preset, Task } from '../types';
 	import { onDestroy, onMount } from 'svelte';
 
@@ -64,10 +65,19 @@
 		if (logEl) logEl.scrollTop = logEl.scrollHeight;
 	});
 
-	function edit(t?: Task) {
+	function edit(t?: Task, tpl?: TaskTemplate) {
 		editing = t
 			? { ...t }
-			: { days: 'weekdays', enabled: true, id: '', name: '', preset: presets[0]?.id ?? '', prompt: '', stop_after: false, time: '08:00' };
+			: {
+					days: tpl?.days ?? 'weekdays',
+					enabled: !tpl?.prompt.includes('<'),
+					id: '',
+					name: tpl?.name ?? '',
+					preset: presets[0]?.id ?? '',
+					prompt: tpl?.prompt ?? '',
+					stop_after: false,
+					time: tpl?.time ?? '08:00'
+				};
 		open = true;
 	}
 
@@ -167,6 +177,21 @@
 				Schedules run while Pumpkin is running. Install the login service (Settings) so they run with the window closed.
 			</p>
 		{/if}
+	</Card>
+
+	<Card description="Pick one, change what you like, and save. Words in angle brackets need your own details." title="Start from a template">
+		<div class="grid gap-3 sm:grid-cols-2">
+			{#each TASK_TEMPLATES as tpl (tpl.name)}
+				<button
+					class="flex flex-col gap-0.5 rounded-xl border border-border/60 p-3 text-left transition-colors hover:bg-muted/50 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+					onclick={() => edit(undefined, tpl)}
+					type="button"
+				>
+					<span class="text-sm font-medium">{tpl.name}</span>
+					<span class="text-xs text-muted-foreground">{tpl.summary}</span>
+				</button>
+			{/each}
+		</div>
 	</Card>
 </div>
 

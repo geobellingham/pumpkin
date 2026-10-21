@@ -11,7 +11,7 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, unquote, urlparse
 
-from . import APP_NAME, __version__, agent, config, doctor, hardware, llama, models, remote
+from . import APP_NAME, __version__, agent, config, discover, doctor, hardware, llama, models, remote, updates
 
 COOKIE = "pumpkin_key"
 API = "/pumpkin/api/"
@@ -291,6 +291,12 @@ class Web:
                 lib = models.annotate(core.library.scan(force=arg("rescan") == "1"), core.fit_hw(), ctx,
                                       arg("kv", "q8_0"))
                 return {"models": lib, "dirs": core.library.dirs(), "hardware": core.fit_hw()}
+            if ident == "discover" and method == "GET":
+                return {"found": discover.find(core.settings)}
+            if ident == "discover" and method == "POST":
+                added = discover.add(core.settings, body.get("ids") or [])
+                core.library.scan(force=True)
+                return {"added": added}
             if ident == "delete" and method == "POST":
                 return {"removed": core.library.delete(body["path"])}
             if ident == "fit" and method == "GET":
@@ -303,7 +309,9 @@ class Web:
                 f["text"] = models.FIT_TEXT[f["level"]]
                 return f
         if head == "recommend" and method == "GET":
-            return core.recommendations(refresh=arg("refresh") == "1")
+            return core.recommendations(refresh=arg("refresh") == "1", goal=arg("goal"))
+        if head == "setup" and ident == "goal" and method == "POST":
+            return core.apply_goal(body.get("goal"))
         if head == "catalog":
             # ids can contain a slash and a colon (hf:org/repo), sent URL-encoded
             ident = unquote(name[len("catalog/"):]) if "/" in name else None
@@ -420,6 +428,11 @@ class Web:
             return {"ok": True, "restart_needed": core.server.state == "ready"}
 
         # ---- health, remote access, app
+        if head == "update":
+            if method == "POST" and ident == "apply":
+                updates.apply()
+                return {"ok": True}
+            return updates.status(force=arg("fresh") == "1")
         if head == "doctor":
             return {"checks": doctor.check(core)}
         if head == "remote":
@@ -448,10 +461,48 @@ class Web:
         raise ApiError(f"Unknown endpoint {method} {name}", 404)
 
     # ------------------------------------------------------------ llama-server pass-through
+    CHAT_PATHS = ("/v1/chat/completions", "/chat/completions", "/v1/completions", "/completion", "/v1/messages")
+
+    def _load_preset(self, ref):
+        try:
+            self.core.ensure_preset(ref)
+        except RuntimeError:
+            pass                                   # the status chip and Doctor show why it failed
+
     def proxy(self, h):
         port = int(self.core.settings["llama_port"])
         try:
             body = _read_body(h)
+            path = urlparse(h.path).path
+            if h.command == "GET" and path in ("/v1/models", "/models") and self.core.presets.all() \
+                    and self.core.server.state != "external":
+                data = self.core.model_list()
+                if data:
+                    return self.json(h, {"object": "list", "data": data, "models": data})
+            if h.command == "POST" and path in ("/models/load", "/models/unload") and self.core.presets.all() \
+                    and self.core.server.state != "external":
+                try:
+                    ref = (json.loads(body.decode() or "{}") or {}).get("model")
+                except (ValueError, AttributeError):
+                    ref = None
+                preset = self.core.find_preset(ref)
+                if preset is None:
+                    return self.json(h, {"error": {"code": 404, "message": "That model is not one of your presets."}}, 404)
+                if path == "/models/load":
+                    threading.Thread(target=self._load_preset, args=(ref,), daemon=True).start()
+                elif (self.core.server.preset or {}).get("id") == preset.get("id"):
+                    self.core.server.stop()
+                return self.json(h, {"success": True})
+            if h.command == "POST" and body and path in self.CHAT_PATHS:
+                try:
+                    want = json.loads(body.decode() or "{}").get("model")
+                except (ValueError, AttributeError):
+                    want = None
+                if want:
+                    try:
+                        self.core.ensure_preset(want)
+                    except RuntimeError as e:
+                        return self.json(h, {"error": {"code": 503, "message": str(e), "type": "unavailable_error"}}, 503)
             fwd = {}
             for k, v in h.headers.items():
                 kl = k.lower()

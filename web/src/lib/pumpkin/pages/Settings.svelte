@@ -11,16 +11,53 @@
 	import LlamaCard from './LlamaCard.svelte';
 	import { onMount } from 'svelte';
 
+	interface UpdateInfo {
+		available: boolean;
+		checked: number | null;
+		current: string;
+		failed: boolean;
+		latest: string;
+		notes: string;
+		url: string;
+	}
+
 	let s = $state<Settings | null>(null);
 	let dirsText = $state('');
 	let hfToken = $state('');
+	let upd = $state<UpdateInfo | null>(null);
+	let updating = $state(false);
 	let svc = $state<{ active: boolean; available: boolean; installed: boolean; linger: boolean; linger_command: string } | null>(null);
 
 	onMount(async () => {
 		s = await pumpkin.run(() => api<Settings>('settings'));
 		dirsText = (s?.models_dirs ?? []).join('\n');
 		svc = await api<typeof svc>('service').catch(() => null);
+		upd = await api<UpdateInfo>('update').catch(() => null);
 	});
+
+	async function checkNow() {
+		upd = (await pumpkin.run(() => api<UpdateInfo>('update?fresh=1'))) ?? upd;
+
+		if (upd && !upd.available && !upd.failed) pumpkin.say('You have the latest version');
+	}
+
+	async function applyUpdate() {
+		if (!confirm('Update Pumpkin now? It restarts, and the model stops while it does.')) return;
+
+		updating = true;
+		await api('update/apply', { body: {} }).catch(() => {});
+
+		// the server goes away and comes back as the new version
+		const was = pumpkin.state?.version;
+		const timer = setInterval(async () => {
+			const r = await api<{ version: string }>('state').catch(() => null);
+
+			if (r && r.version !== was) {
+				clearInterval(timer);
+				location.reload();
+			}
+		}, 2500);
+	}
 
 	async function save(patch: Partial<Settings>, msg = 'Saved') {
 		const r = await pumpkin.run(() => api<Settings>('settings', { body: patch, method: 'PUT' }), msg);
@@ -101,8 +138,45 @@
 			</div>
 		</Card>
 
+		<Card title="Updates">
+			<div class="flex flex-col gap-3 text-sm">
+				<p class="text-muted-foreground">
+					Version {pumpkin.state?.version}.
+					{#if upd?.available}
+						<span class="font-medium text-foreground">Version {upd.latest} is out.</span>
+					{:else if upd?.failed}
+						Could not reach GitHub to check.
+					{:else if upd?.checked}
+						This is the latest version.
+					{/if}
+				</p>
+				{#if upd?.available && upd.notes}<p class="rounded-xl bg-muted/60 p-3 text-xs whitespace-pre-wrap">{upd.notes}</p>{/if}
+				<div class="flex flex-wrap gap-2">
+					{#if upd?.available}
+						<Button class="rounded-full" disabled={updating} onclick={applyUpdate} size="sm">
+							{#if updating}<LoaderCircle class="h-4 w-4 animate-spin" /> Updating{:else}Update to {upd.latest}{/if}
+						</Button>
+					{/if}
+					<Button class="rounded-full" disabled={updating} onclick={checkNow} size="sm" variant="secondary">Check now</Button>
+				</div>
+				<Toggle bind:checked={s.check_updates} description="Asks GitHub twice a day whether a new version exists. Nothing else is sent." label="Check for updates automatically" onchange={(v) => save({ check_updates: v })} />
+			</div>
+		</Card>
+
+		<Card description="What Pumpkin sends over the network, and when." title="Privacy">
+			<ul class="flex flex-col gap-2.5 text-sm">
+				<li><span class="font-medium">Your chats, files and prompts</span> stay on this computer. The model server only listens on 127.0.0.1.</li>
+				<li><span class="font-medium">Hugging Face</span>: when you search for models, open Recommended, or download. Your search words go there, and your token if you saved one.</li>
+				<li><span class="font-medium">GitHub</span>: to check for a new Pumpkin (if the setting above is on) and to download llama.cpp when you ask.</li>
+				<li><span class="font-medium">Web search</span>: only when a model uses its search tool. The search words go to DuckDuckGo, and the pages the model opens are fetched.</li>
+				<li><span class="font-medium">ntfy</span>: only if you set a topic. The notification text goes to the ntfy server.</li>
+				<li><span class="font-medium">Tailscale</span>: only if you turn on phone access.</li>
+				<li class="text-muted-foreground">No accounts, no analytics, no crash reports.</li>
+			</ul>
+		</Card>
+
 		<Card title="Pumpkin">
-			<p class="text-sm text-muted-foreground">Version {pumpkin.state?.version}. Free and open source under the MIT license.</p>
+			<p class="text-sm text-muted-foreground">Free and open source under the MIT license.</p>
 			<div class="mt-3 flex flex-wrap gap-2">
 				<Button class="rounded-full" href="#/pumpkin/setup" size="sm" variant="secondary">Run setup again</Button>
 				<Button class="rounded-full" onclick={resetKey} size="sm" variant="ghost">New access key</Button>

@@ -6,7 +6,7 @@ import sys
 import threading
 import time
 
-from . import __version__, agent, config, hardware, llama, migrate, models, recommend, remote
+from . import __version__, agent, config, hardware, llama, migrate, models, recommend, remote, updates
 
 
 class Core:
@@ -34,10 +34,19 @@ class Core:
         self.bench_state = {"running": False, "error": None, "last": None}
         self.hw = None
         self.hw_at = 0
+        threading.Thread(target=self._check_update, daemon=True).start()
         if self.settings["autostart_model"]:
             p = self.presets.get(self.settings["last_preset"])
             if p:
                 threading.Thread(target=self._safe_start, args=(p,), daemon=True).start()
+
+    def _check_update(self):
+        time.sleep(20)
+        try:
+            if self.settings["check_updates"]:
+                updates.check()
+        except Exception:  # noqa: BLE001 - never bother anyone because GitHub is unreachable
+            pass
 
     def _safe_start(self, p):
         try:
@@ -60,6 +69,42 @@ class Core:
     def persona_prompt(self):
         p = self.personas.get(self.settings["persona"])
         return (p or {}).get("prompt", "")
+
+    # ---- switching models from the chat
+    _switch_lock = threading.Lock()
+
+    def find_preset(self, ref):
+        ref = (ref or "").strip().lower()
+        if not ref:
+            return None
+        for p in self.presets.all():
+            if ref in ((p.get("id") or "").lower(), (p.get("name") or "").lower()):
+                return p
+        return None
+
+    def ensure_preset(self, ref):
+        """The chat asked for a model by preset name: start that preset if it is not the one running."""
+        p = self.find_preset(ref)
+        if not p or self.server.state == "external":
+            return None
+        with self._switch_lock:
+            cur = self.server.preset or {}
+            if not (self.server.state in ("ready", "loading") and cur.get("id") == p.get("id")):
+                self.server.start(p)
+            if not self.server.wait_ready(timeout=900):
+                raise RuntimeError(self.server.error or f"{p.get('name')} did not start. Open Pumpkin to see why.")
+        return p
+
+    def model_list(self):
+        """/v1/models for the chat: every preset, with the running one marked."""
+        cur = (self.server.preset or {}) if self.server.state in ("ready", "loading") else {}
+        data = []
+        for p in self.presets.all():
+            name = p.get("name") or p.get("id")
+            data.append({"id": name, "object": "model", "created": 0, "owned_by": "pumpkin",
+                         "status": {"value": "loaded" if cur.get("id") == p.get("id") and self.server.state == "ready"
+                                    else "loading" if cur.get("id") == p.get("id") else "unloaded"}})
+        return data
 
     def default_preset(self):
         last = self.presets.get(self.settings["last_preset"])
@@ -113,7 +158,27 @@ class Core:
     _plans = {}
     _recs = None
 
-    def recommendations(self, refresh=False):
+    GOALS = {"chat": "Assistant", "coding": "Coder", "research": "Researcher", "agent": "Assistant"}
+
+    def apply_goal(self, goal):
+        """The setup wizard's question: what will this be used for? It picks the persona."""
+        if goal not in self.GOALS:
+            raise RuntimeError("Unknown goal.")
+        name = self.GOALS[goal]
+        if self.personas.get(name):
+            self.settings.update({"persona": name})
+        return {"persona": self.settings["persona"]}
+
+    @staticmethod
+    def _goal_rank(goal, m):
+        text = f"{m.get('name', '')} {m.get('id', '')}".lower()
+        if goal == "coding":
+            return 0 if re.search(r"coder|code|devstral", text) else 1
+        if goal in ("research", "agent"):
+            return 0 if m.get("tools") else 1
+        return 0
+
+    def recommendations(self, refresh=False, goal=None):
         """Two lists for this machine: models that fit the GPU, and MoE models that are fine in RAM."""
         hw = self.fit_hw()
         curated = models.catalog()
@@ -127,6 +192,9 @@ class Core:
         items = items + [c for c in recommend.curated_items(curated) if c["id"].lower() not in have]
         local = [re.sub(r"[-_.]", "", os.path.basename(m["path"]).lower()) for m in self.library.scan()]
         recs = recommend.recommend(items, hw, local, curated)
+        if goal:
+            for k in ("gpu", "moe"):
+                recs[k] = sorted(recs[k], key=lambda m: self._goal_rank(goal, m))   # stable: keeps the ranking
         self._recs = {d["id"]: d for r in recs.values() for d in r}
         return {"gpu": recs["gpu"], "moe": recs["moe"], "hardware": hw, "source": source, "updated": at,
                 "stale": stale, "error": error}
@@ -220,6 +288,7 @@ class Core:
             "has_server": bool(llama.find_server(self.settings)),
             "has_models": any(m["kind"] == "model" for m in self.library.scan()),
             "migrated": self.migrated,
+            "update": updates.cached_status(),
             "remote": self.settings["remote"],
         }
 
