@@ -175,8 +175,10 @@ GITHUB_API = os.environ.get("PUMPKIN_GITHUB_API", "https://api.github.com")
 
 def release_digests(tag):
     """SHA-256 of every file in a llama.cpp release, as GitHub publishes them."""
-    req = urllib.request.Request(f"{GITHUB_API}/repos/ggml-org/llama.cpp/releases/tags/{tag}",
-                                 headers={"User-Agent": USER_AGENT, "Accept": "application/vnd.github+json"})
+    headers = {"User-Agent": USER_AGENT, "Accept": "application/vnd.github+json"}
+    if os.environ.get("GITHUB_TOKEN"):               # optional: a token raises GitHub's limit of 60 lookups an hour
+        headers["Authorization"] = f"Bearer {os.environ['GITHUB_TOKEN']}"
+    req = urllib.request.Request(f"{GITHUB_API}/repos/ggml-org/llama.cpp/releases/tags/{tag}", headers=headers)
     try:
         with urllib.request.urlopen(req, timeout=20) as r:
             assets = json.loads(r.read().decode()).get("assets") or []

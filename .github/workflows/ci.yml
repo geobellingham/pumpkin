@@ -24,6 +24,7 @@ jobs:
       - name: Tests
         env:
           PUMPKIN_ONLINE: "1"
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           set +e
           python -m unittest discover -s tests -v > test-output.txt 2>&1
@@ -49,6 +50,7 @@ jobs:
       - name: End to end with a real model
         env:
           E2E_BACKEND: ${{ matrix.backend }}
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           set +e
           python tests/e2e_real.py > e2e.txt 2>&1
