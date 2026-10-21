@@ -83,6 +83,9 @@
 			<p class="text-sm text-muted-foreground">Not installed yet. Pumpkin can download the official build for your GPU (about 30–300 MB).</p>
 		{/if}
 
+		{#if info.platform === 'android'}
+			<p class="mt-3 text-sm text-muted-foreground">Built into the app. It runs models on the phone's processor.</p>
+		{:else}
 		<div class="mt-4 flex flex-col gap-2 sm:flex-row">
 			<div class="flex-1"><Select ariaLabel="Build" bind:value={backend} options={BACKENDS} /></div>
 			<Button class="rounded-full" disabled={job?.state === 'running'} onclick={download}>
@@ -95,6 +98,7 @@
 			<div class="mt-3"><Progress done={job.done} label="Downloading llama.cpp" total={job.total} /></div>
 		{:else if job?.state === 'error'}
 			<p class="mt-3 text-sm text-destructive">{job.error}</p>
+		{/if}
 		{/if}
 
 		{#if !compact && info.log}

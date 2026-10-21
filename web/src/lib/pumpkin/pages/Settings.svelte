@@ -167,7 +167,9 @@
 				</p>
 				{#if upd?.available && upd.notes}<p class="rounded-xl bg-muted/60 p-3 text-xs whitespace-pre-wrap">{upd.notes}</p>{/if}
 				<div class="flex flex-wrap gap-2">
-					{#if upd?.available}
+					{#if upd?.available && pumpkin.state?.platform === 'android'}
+						<Button class="rounded-full" href={upd.url} size="sm" target="_blank">Get the new APK</Button>
+					{:else if upd?.available}
 						<Button class="rounded-full" disabled={updating} onclick={applyUpdate} size="sm">
 							{#if updating}<LoaderCircle class="h-4 w-4 animate-spin" /> Updating{:else}Update to {upd.latest}{/if}
 						</Button>
@@ -202,7 +204,9 @@
 			<div class="mt-3 flex flex-wrap gap-2">
 				<Button class="rounded-full" href="#/pumpkin/setup" size="sm" variant="secondary">Run setup again</Button>
 				<Button class="rounded-full" onclick={resetKey} size="sm" variant="ghost">New access key</Button>
-				<Button class="rounded-full" onclick={quit} size="sm" variant="ghost">Quit Pumpkin</Button>
+				{#if pumpkin.state?.platform !== 'android'}
+					<Button class="rounded-full" onclick={quit} size="sm" variant="ghost">Quit Pumpkin</Button>
+				{/if}
 			</div>
 		</Card>
 	{/if}

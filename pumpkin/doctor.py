@@ -9,6 +9,7 @@ import sys
 from . import hardware, llama, remote
 
 MAC = sys.platform == "darwin"
+ANDROID = hardware.ANDROID
 
 
 def _run(cmd, timeout=8):
@@ -84,7 +85,10 @@ def check(core):
             "" if free > 30 else "Models are 5–40 GB each. Free some space or pick another download folder.")
 
     # ---- sandbox
-    if not shutil.which("docker"):
+    if ANDROID:
+        add("Agent tools", "Commands and files", "ok", "Phones have no sandbox for running commands, so the AI "
+            "chats and runs your tasks without them.")
+    elif not shutil.which("docker"):
         if MAC:
             add("Agent tools", "Docker sandbox", "warn", "Docker is not installed. Tools would run directly on this "
                 "computer, so Pumpkin keeps them off until Docker is available.",
@@ -120,10 +124,13 @@ def check(core):
             add("Agent tools", "Docker sandbox", "fail", "Docker is installed but not running.",
                 "Start the Docker service.", "sudo systemctl enable --now docker")
     from . import workspace
-    add("Agent tools", "Work folder", "ok", f"Files the AI makes are saved in {workspace._short(workspace.files_dir(s))}"
-        + (" (/workspace in the sandbox)" if shutil.which("docker") else " once Docker is installed"))
-    add("Agent tools", "Web search", "ok" if s.get("web_search", True) is not False else "warn",
-        "Built-in search (DuckDuckGo) and page reader, no API key needed")
+    if not ANDROID:
+        add("Agent tools", "Work folder", "ok", "Files the AI makes are saved in "
+            f"{workspace._short(workspace.files_dir(s))}"
+            + (" (/workspace in the sandbox)" if shutil.which("docker") else " once Docker is installed"))
+    if not ANDROID:
+        add("Agent tools", "Web search", "ok" if s.get("web_search", True) is not False else "warn",
+            "Built-in search (DuckDuckGo) and page reader, no API key needed")
 
     # ---- remote access
     mode = s["remote"]
@@ -150,8 +157,8 @@ def check(core):
             if busy:
                 add("System", name, "warn", f"Something else is using port {port}.",
                     "Stop the other program or change the port in Settings.")
-    if MAC:
-        add("System", "Notifications", "ok", "Mac notifications for finished tasks")
+    if MAC or ANDROID:
+        add("System", "Notifications", "ok", ("Mac" if MAC else "Phone") + " notifications for finished tasks")
         return out
     add("System", "Notifications", "ok" if shutil.which("notify-send") else "warn",
         "Desktop notifications for finished tasks" if shutil.which("notify-send") else "notify-send is missing.",

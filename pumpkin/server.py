@@ -352,7 +352,7 @@ class Web:
             if method == "GET" and not ident:
                 binary = llama.find_server(core.settings)
                 return {"path": binary, "info": llama.probe(binary), "candidates": llama.candidates(core.settings),
-                        "backend": core.hardware()["backend"], "platform": sys.platform,
+                        "backend": core.hardware()["backend"], "platform": "android" if hardware.ANDROID else sys.platform,
                         "log": "".join(core.server.log_tail(80))}
             if ident == "download" and method == "POST":
                 return core.download_llama(body.get("backend") or core.hardware()["backend"])
@@ -397,7 +397,7 @@ class Web:
                 ctx = int(arg("ctx", "8192"))
                 kv = arg("kv", "q8_0")
                 f = models.fit(m["size_gb"], m.get("info") or {}, ctx, kv, core.fit_hw())
-                f["text"] = models.FIT_TEXT[f["level"]]
+                f["text"] = models.fit_label(f)
                 return f
         if head == "recommend" and method == "GET":
             return core.recommendations(refresh=arg("refresh") == "1", goal=arg("goal"))

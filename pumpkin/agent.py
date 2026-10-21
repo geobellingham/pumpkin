@@ -97,8 +97,13 @@ def run_agent(port, prompt, system, say, settings, cancelled=lambda: False):
     return r["choices"][0]["message"].get("content") or ""
 
 
+NOTIFY_HOOK = None        # the Android app sets this to show its own notifications
+
+
 def notify(settings, title, body=""):
     """Desktop notification, plus a phone push through ntfy when a topic is set."""
+    if NOTIFY_HOOK and settings["notifications"]:
+        NOTIFY_HOOK(title, body)
     cmd = None
     if sys.platform == "darwin" and shutil.which("osascript"):
         # strings go in as arguments, never pasted into the script, so a title cannot inject AppleScript

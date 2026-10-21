@@ -23,6 +23,6 @@
 		]}
 		title="{fit.text} · needs about {fit.need_gb} GB"
 	>
-		{short ? SHORT[fit.level] : fit.text}
+		{short ? (fit.phone && fit.level === 'gpu' ? 'Fits' : SHORT[fit.level]) : fit.text}
 	</span>
 {/if}

@@ -240,7 +240,7 @@ def recommend(items, hw, local_files=(), curated=(), per_route=8):
             d["name"] = c["name"]
             d["score"] += 3.0
         d["blurb"] = blurb(d, d)
-        d["fit"]["text"] = models.FIT_TEXT[d["fit"]["level"]]
+        d["fit"]["text"] = models.fit_label(d["fit"])
         d["installed"] = any(d["key"] and d["key"] in f for f in local_files)
         d["ctx"] = 32768 if d["route"] == "moe" else 16384
         out[d["route"]].append(d)

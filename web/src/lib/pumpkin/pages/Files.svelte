@@ -31,7 +31,8 @@
 	let previewOpen = $state(false);
 	let timer: ReturnType<typeof setInterval> | undefined;
 
-	const local = ['127.0.0.1', 'localhost', '[::1]'].includes(location.hostname);
+	// the folder can be opened in a file manager only on the computer itself (not from a phone, not in the Android app)
+	const local = ['127.0.0.1', 'localhost', '[::1]'].includes(location.hostname) && pumpkin.state?.platform !== 'android';
 	const href = (p: string, inline = false) => `./pumpkin/api/files/download?path=${encodeURIComponent(p)}${inline ? '&inline=1' : ''}`;
 
 	async function load(path = dir) {

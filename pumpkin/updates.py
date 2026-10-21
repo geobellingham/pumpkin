@@ -70,6 +70,8 @@ def cached_status():
 def apply():
     """Runs the installer of the new release in the background. It checks the download's checksum, stops this
     server, installs, and starts the new one."""
+    if hasattr(sys, "getandroidapilevel"):
+        raise RuntimeError("On Android, install the new APK from the GitHub release page.")
     tag = check().get("tag") or ""
     if not re.fullmatch(r"v?\d+(\.\d+){1,3}", tag):
         raise RuntimeError("No new release to update to.")

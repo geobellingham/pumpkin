@@ -68,6 +68,8 @@ class Core:
         out = {"vram_total": g.get("vram_total") or 0, "ram_total": h.get("ram_total") or 0}
         if g.get("unified"):
             out["unified"] = True
+        if g.get("phone"):
+            out["phone"] = True
         return out
 
     def persona_prompt(self):
@@ -131,7 +133,7 @@ class Core:
                 servers.update((json.load(f) or {}).get("mcpServers") or {})
         except (OSError, ValueError, AttributeError):
             pass
-        if preset.get("web", True):
+        if preset.get("web", True) and not hardware.ANDROID:     # the app has no separate Python to run it
             pkg_parent = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
             env = {"PYTHONPATH": pkg_parent}
             for k in ("PUMPKIN_SEARXNG", "BRAVE_API_KEY"):
@@ -232,7 +234,7 @@ class Core:
         mm = models.pick_mmproj(choices) if c.get("vision") else None
         plan = {"id": ident, "at": time.time(), "file": pick, "fit": f, "mmproj": mm,
                 "size_gb": round((pick or {}).get("size_gb", 0) + (mm or {}).get("size_gb", 0), 1),
-                "text": models.FIT_TEXT[f["level"]] if f else "Too big for this machine"}
+                "text": models.fit_label(f) if f else "Too big for this machine"}
         self._plans[ident] = plan
         return plan
 
@@ -298,6 +300,7 @@ class Core:
             "has_models": any(m["kind"] == "model" for m in self.library.scan()),
             "migrated": self.migrated,
             "update": updates.cached_status(),
+            "platform": "android" if hardware.ANDROID else sys.platform,
             "remote": self.settings["remote"],
         }
 

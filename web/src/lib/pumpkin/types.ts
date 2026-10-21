@@ -59,6 +59,7 @@ export interface State {
 }
 
 export interface Fit {
+	phone?: boolean;
 	ctx?: number;
 	kv_gb: number;
 	level: 'gpu' | 'moe' | 'split' | 'tight' | 'no';
@@ -213,7 +214,7 @@ export interface Hardware {
 	cpu: { model: string; physical_cores: number };
 	disk: number | null;
 	gpus: { name: string; vendor: string; vram_total: number; integrated?: boolean }[];
-	main_gpu: { name: string; unified?: boolean; vendor: string; vram_total: number } | null;
+	main_gpu: { name: string; phone?: boolean; unified?: boolean; vendor: string; vram_total: number } | null;
 	ram_total: number;
 	vulkan: boolean;
 }

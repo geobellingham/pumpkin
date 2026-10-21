@@ -31,7 +31,7 @@
 	interface Recs {
 		error: string | null;
 		gpu: Rec[];
-		hardware: { ram_total: number; unified?: boolean; vram_total: number };
+		hardware: { phone?: boolean; ram_total: number; unified?: boolean; vram_total: number };
 		moe: Rec[];
 		source: 'huggingface' | 'offline';
 		stale: boolean;
@@ -163,15 +163,20 @@
 
 	{@render route(
 		'gpu',
-		'Runs fully on your GPU',
-		recs?.hardware.unified ? 'The whole model fits in the memory your GPU can use.' : 'The fastest option: the whole model sits in video memory.',
+		recs?.hardware.phone ? 'Fits your phone' : 'Runs fully on your GPU',
+		recs?.hardware.phone ? 'Chosen for the memory your phone can spare.' : recs?.hardware.unified ? 'The whole model fits in the memory your GPU can use.' : 'The fastest option: the whole model sits in video memory.',
 		'Nothing fits entirely in your video memory. Try the models below, which can use RAM too.'
 	)}
 
 	{#if recs?.hardware.unified}
 		<p class="px-1 text-sm text-muted-foreground">
-			On a Mac the GPU and the CPU share one pool of memory, so every model that fits is in the list above. Mixture-of-experts
-			models are a great pick here: they are big but only use a few billion parameters for each word, so they stay fast.
+			{#if recs?.hardware.phone}
+				On a phone, models run on the processor and share its memory, so the list above has the ones that fit. Smaller models
+				answer faster.
+			{:else}
+				On a Mac the GPU and the CPU share one pool of memory, so every model that fits is in the list above. Mixture-of-experts
+				models are a great pick here: they are big but only use a few billion parameters for each word, so they stay fast.
+			{/if}
 		</p>
 	{:else}
 	{@render route(

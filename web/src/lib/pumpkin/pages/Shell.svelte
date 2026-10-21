@@ -94,7 +94,7 @@
 					class="sticky top-0 z-10 -mx-4 flex gap-1 overflow-x-auto bg-background/90 px-4 py-2 backdrop-blur-xl md:static md:mx-0 md:flex-col md:self-start md:bg-transparent md:p-0 md:backdrop-blur-none"
 					style="scrollbar-width: none"
 				>
-					{#each NAV as n (n.id)}
+					{#each NAV.filter((n) => !(pumpkin.state?.platform === 'android' && n.id === 'phone')) as n (n.id)}
 						{@const Icon = n.icon}
 						<a
 							aria-current={current.id === n.id ? 'page' : undefined}

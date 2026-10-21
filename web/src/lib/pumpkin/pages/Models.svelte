@@ -14,7 +14,7 @@
 	import { onDestroy, onMount } from 'svelte';
 
 	let tab = $state('install');
-	let hw = $state<{ ram_total: number; unified?: boolean; vram_total: number } | null>(null);
+	let hw = $state<{ phone?: boolean; ram_total: number; unified?: boolean; vram_total: number } | null>(null);
 	let local = $state<LocalModel[] | null>(null);
 	let dirs = $state<string[]>([]);
 	let jobs = $state<DL[]>([]);
@@ -130,7 +130,7 @@
 
 		{#if hw}
 			<span class="text-xs text-muted-foreground">
-				Your computer: {hw.unified ? `${hw.ram_total.toFixed(0)} GB unified memory, about ${hw.vram_total.toFixed(0)} GB for the GPU` : `${hw.vram_total ? `${hw.vram_total.toFixed(0)} GB VRAM, ` : 'no GPU, '}${hw.ram_total.toFixed(0)} GB RAM`}
+				{hw.phone ? 'Your phone' : 'Your computer'}: {hw.phone ? `${hw.ram_total.toFixed(0)} GB memory, about ${hw.vram_total.toFixed(0)} GB free for models` : hw.unified ? `${hw.ram_total.toFixed(0)} GB unified memory, about ${hw.vram_total.toFixed(0)} GB for the GPU` : `${hw.vram_total ? `${hw.vram_total.toFixed(0)} GB VRAM, ` : 'no GPU, '}${hw.ram_total.toFixed(0)} GB RAM`}
 			</span>
 		{/if}
 	</div>

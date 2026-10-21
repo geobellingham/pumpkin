@@ -10,6 +10,45 @@ import sys
 GiB = 2 ** 30
 VENDORS = {"0x1002": "AMD", "0x10de": "NVIDIA", "0x8086": "Intel"}
 MAC = sys.platform == "darwin"
+ANDROID = hasattr(sys, "getandroidapilevel") or sys.platform == "android"
+
+
+# ---------------------------------------------------------------- Android (the Pumpkin app)
+def _getprop(name):
+    try:
+        out = subprocess.run(["getprop", name], capture_output=True, text=True, timeout=3)
+        return out.stdout.strip() or None
+    except (OSError, subprocess.SubprocessError):
+        return None
+
+
+def phone_memory_limit(ram_bytes):
+    """How much memory a model may use on a phone. Android and the apps you have open need the rest, and
+    Android closes an app that takes too much. About half of RAM, a little less on small phones."""
+    ram = ram_bytes / GiB
+    return max(1.5, ram * 0.55 - 0.5)
+
+
+def _android_gpus():
+    tot = (memory().get("ram_total") or 0) * GiB
+    model = _getprop("ro.product.model") or "Phone"
+    soc = _getprop("ro.soc.model") or _getprop("ro.board.platform") or ""
+    return [{"index": 0, "vendor": "Phone", "name": f"{model}{f' ({soc})' if soc else ''}", "integrated": False,
+             "unified": True, "phone": True, "vram_total": round(phone_memory_limit(tot), 1), "vram_used": None,
+             "busy": None}]
+
+
+def _android_cpu():
+    """The fast cores only: llama.cpp is slower when it also waits for the small, slow ones."""
+    logical = os.cpu_count() or 1
+    freqs = []
+    for i in range(logical):
+        f = _read(f"/sys/devices/system/cpu/cpu{i}/cpufreq/cpuinfo_max_freq", int)
+        if f:
+            freqs.append(f)
+    fast = sum(1 for f in freqs if f >= 0.75 * max(freqs)) if freqs else max(1, logical // 2)
+    soc = _getprop("ro.soc.model") or _getprop("ro.board.platform") or "ARM"
+    return {"model": soc, "physical_cores": max(2, fast), "logical_cores": logical, "avx2": False, "avx512": False}
 
 
 # ---------------------------------------------------------------- macOS
@@ -126,6 +165,8 @@ def gpus():
     On Apple Silicon the GPU shares memory with the CPU; vram_total is the part macOS lets the GPU use."""
     if MAC:
         return _mac_gpus()
+    if ANDROID:
+        return _android_gpus()
     found = []
     seen_nvidia = False
     for dev in sorted(glob.glob("/sys/class/drm/card[0-9]*/device")):
@@ -181,6 +222,8 @@ def memory():
 def cpu():
     if MAC:
         return _mac_cpu()
+    if ANDROID:
+        return _android_cpu()
     model, flags, cores = None, set(), set()
     phys = None
     try:
@@ -208,6 +251,8 @@ def cpu():
 def recommended_backend(gpu_list=None):
     if MAC:
         return "metal" if apple_silicon() else "cpu"
+    if ANDROID:
+        return "cpu"
     g = main_gpu(gpu_list)
     if not g:
         return "cpu"
@@ -219,7 +264,7 @@ def recommended_backend(gpu_list=None):
 
 
 def vulkan_loader():
-    if MAC:
+    if MAC or ANDROID:
         return False
     for p in ("/usr/lib/x86_64-linux-gnu/libvulkan.so.1", "/usr/lib64/libvulkan.so.1", "/usr/lib/libvulkan.so.1",
               "/usr/lib/aarch64-linux-gnu/libvulkan.so.1"):
@@ -272,8 +317,8 @@ def live():
                 "vram_total": g.get("vram_total"), "vram_used": fake.get("vram_used", 1.1), "gpu_busy": 3,
                 "unified": bool(g.get("unified"))}
     out = memory()
-    if MAC:
-        g = (_mac_gpus() or [None])[0]
+    if MAC or ANDROID:
+        g = ((_mac_gpus() if MAC else _android_gpus()) or [None])[0]
         if g:
             # one pool of memory: show how much of the GPU's share is in use (everything in use counts)
             out["vram_total"], out["vram_used"], out["unified"] = g["vram_total"], min(out["ram_used"], g["vram_total"]), True

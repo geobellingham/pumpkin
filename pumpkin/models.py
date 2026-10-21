@@ -75,8 +75,18 @@ def fit(model_gb, info, ctx, kv_type, hw):
             level = "tight"
     else:
         level = "no"
-    return {"level": level, "need_gb": round(need, 1), "kv_gb": round(kv, 2), "vram_gb": round(vram, 1),
-            "ram_gb": round(ram, 1), "moe": moe}
+    out = {"level": level, "need_gb": round(need, 1), "kv_gb": round(kv, 2), "vram_gb": round(vram, 1),
+           "ram_gb": round(ram, 1), "moe": moe}
+    if hw.get("phone"):
+        out["phone"] = True
+    return out
+
+
+def fit_label(f):
+    """The sentence for a fit result. A phone has no GPU to speak of, so it says memory there."""
+    if f.get("phone"):
+        return {"gpu": "Fits in your phone's memory", "no": "Too big for this phone"}.get(f["level"], FIT_TEXT[f["level"]])
+    return FIT_TEXT[f["level"]]
 
 
 FIT_TEXT = {
@@ -234,7 +244,7 @@ def annotate(models, hw, ctx=None, kv_type="q8_0"):
             c = ctx or best_ctx(m["size_gb"], info, kv_type, hw)
             m["fit"] = fit(m["size_gb"], info, c, kv_type, hw)
             m["fit"]["ctx"] = c
-            m["fit"]["text"] = FIT_TEXT[m["fit"]["level"]]
+            m["fit"]["text"] = fit_label(m["fit"])
         out.append(m)
     return out
 
@@ -282,7 +292,7 @@ def hf_files(repo, hw, token=None, kv_type="q8_0"):
         if kind == "model":
             # without the file we cannot read the metadata; estimate the context from size only
             fe = fit(size, {"experts": 8} if looks_moe(repo) else None, 8192, kv_type, hw)
-            fe["text"] = FIT_TEXT[fe["level"]]
+            fe["text"] = fit_label(fe)
             c["fit"] = fe
         choices.append(c)
     choices.sort(key=lambda c: (c["kind"] != "model", c["size_gb"]))
