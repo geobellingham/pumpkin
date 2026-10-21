@@ -93,7 +93,27 @@ if [ ! -f "$SRC/pumpkin/ui/index.html" ]; then
 fi
 
 say "Installing to $APP_DIR"
-if command -v pumpkin >/dev/null && pumpkin stop >/dev/null 2>&1; then :; fi
+# stop the running Pumpkin, found by its full path (an app started from the menu or the Mac app has no
+# ~/.local/bin on its PATH). When this runs from Pumpkin's own login service (the Update button), stopping the
+# service would also stop this script, so the service is restarted at the very end instead.
+UNDER_SERVICE=""
+if grep -qs "pumpkin.service" /proc/self/cgroup 2>/dev/null; then UNDER_SERVICE=systemd
+elif [ "${XPC_SERVICE_NAME:-}" = "app.pumpkin" ]; then UNDER_SERVICE=launchd; fi
+OLD="$BIN_DIR/pumpkin"; [ -x "$OLD" ] || OLD="$(command -v pumpkin 2>/dev/null || true)"
+if [ -z "$UNDER_SERVICE" ]; then
+  [ -n "$OLD" ] && { "$OLD" stop >/dev/null 2>&1 || true; }
+  # make sure it really stopped: older versions could miss it (a proxy in the environment, or no PATH)
+  CONF="${XDG_CONFIG_HOME:-$HOME/.config}/pumpkin"
+  PORT="$("$PY" -c 'import json,sys; print(json.load(open(sys.argv[1])).get("port", 8090))' "$CONF/settings.json" 2>/dev/null || echo 8090)"
+  for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
+    curl -s --noproxy '*' -o /dev/null -m 2 "http://127.0.0.1:$PORT/" 2>/dev/null || break
+    if [ -f "$CONF/token" ]; then
+      curl -s --noproxy '*' -o /dev/null -m 3 -X POST -H "Authorization: Bearer $(cat "$CONF/token")" -H "X-Pumpkin: 1" \
+        -H "Content-Type: application/json" -d '{}' "http://127.0.0.1:$PORT/pumpkin/api/quit" 2>/dev/null || true
+    fi
+    sleep 0.5
+  done
+fi
 rm -rf "$APP_DIR.new"; mkdir -p "$APP_DIR.new"
 cp -r "$SRC/pumpkin" "$APP_DIR.new/"
 cp "$SRC/LICENSE" "$SRC/NOTICE" "$SRC/README.md" "$SRC/uninstall.sh" "$APP_DIR.new/" 2>/dev/null || true
@@ -183,6 +203,10 @@ if [ "$MAC" = 1 ]; then
 else
   say "Pumpkin is installed. Open it from your app menu or run: pumpkin"
 fi
+case "$UNDER_SERVICE" in
+  systemd) systemctl --user --no-block restart pumpkin.service ;;
+  launchd) launchctl kickstart -k "gui/$(id -u)/app.pumpkin" >/dev/null 2>&1 || true ;;
+esac
 if [ "$OPEN" = 1 ] && [ "$MAC" = 1 ]; then
   open "$HOME/Applications/Pumpkin.app"
 elif [ "$OPEN" = 1 ] && { [ -n "${DISPLAY:-}" ] || [ -n "${WAYLAND_DISPLAY:-}" ]; }; then

@@ -537,6 +537,8 @@ class Web:
             if method == "POST" and ident == "apply":
                 updates.apply()
                 return {"ok": True}
+            if ident == "log":
+                return {"log": updates.log_tail()}
             return updates.status(force=arg("fresh") == "1")
         if head == "doctor":
             return {"checks": doctor.check(core)}

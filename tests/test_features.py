@@ -236,6 +236,38 @@ class TestUpdates(unittest.TestCase):
                 os.remove(marker)
 
 
+class TestProxyEnvironment(unittest.TestCase):
+    def test_local_requests_ignore_a_proxy(self):
+        """With HTTP_PROXY set, Pumpkin must still reach itself and llama-server on 127.0.0.1."""
+        from pumpkin import llama
+
+        class H(http.server.BaseHTTPRequestHandler):
+            def log_message(self, *a):
+                pass
+
+            def do_GET(self):
+                self.send_response(200)
+                self.send_header("Content-Length", "2")
+                self.end_headers()
+                self.wfile.write(b"{}")
+
+        srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), H)
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        old = {k: os.environ.get(k) for k in ("HTTP_PROXY", "http_proxy", "NO_PROXY", "no_proxy")}
+        try:
+            for k in old:
+                os.environ.pop(k, None)
+            os.environ["HTTP_PROXY"] = os.environ["http_proxy"] = "http://127.0.0.1:9"     # nothing listens there
+            self.assertTrue(llama.health(srv.server_port))
+            self.assertEqual(llama.http(srv.server_port, "/props"), {})
+        finally:
+            for k, v in old.items():
+                os.environ.pop(k, None)
+                if v is not None:
+                    os.environ[k] = v
+            srv.shutdown()
+
+
 class TestModelStopsMidReply(unittest.TestCase):
     def test_metrics_and_health_survive_a_cut_off_reply(self):
         import socket

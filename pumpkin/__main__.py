@@ -30,7 +30,7 @@ def base_url():
 
 def running():
     try:
-        with urllib.request.urlopen(base_url() + "/pumpkin/api/state", timeout=1.5) as r:
+        with config.local_open(base_url() + "/pumpkin/api/state", timeout=1.5) as r:
             return r.status == 200
     except urllib.error.HTTPError as e:
         return e.code == 401                    # it is up, we just did not sign in
@@ -194,7 +194,7 @@ def urllib_post(name, body=None):
                                  headers={"Content-Type": "application/json", "X-Pumpkin": "1",
                                           "Authorization": f"Bearer {config.token()}"}, method="POST")
     try:
-        with urllib.request.urlopen(req, timeout=10) as r:
+        with config.local_open(req, timeout=10) as r:
             return json.loads(r.read().decode() or "{}")
     except (urllib.error.URLError, OSError):
         return None

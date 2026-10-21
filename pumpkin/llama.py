@@ -308,7 +308,7 @@ def http(port, path, payload=None, timeout=60, method=None):
                                  headers={"Content-Type": "application/json", **auth_header()},
                                  method=method or ("POST" if payload is not None else "GET"))
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as r:
+        with config.local_open(req, timeout=timeout) as r:
             body = r.read().decode("utf-8", "replace")
             return json.loads(body) if body.strip() else {}
     except urllib.error.HTTPError as e:
@@ -327,7 +327,7 @@ def http(port, path, payload=None, timeout=60, method=None):
 
 def health(port):
     try:
-        with urllib.request.urlopen(f"http://127.0.0.1:{port}/health", timeout=0.8) as r:
+        with config.local_open(f"http://127.0.0.1:{port}/health", timeout=0.8) as r:
             return r.status == 200
     except urllib.error.HTTPError as e:
         return False if e.code == 503 else False
@@ -339,7 +339,7 @@ def metrics(port):
     out = {}
     try:
         req = urllib.request.Request(f"http://127.0.0.1:{port}/metrics", headers=auth_header())
-        with urllib.request.urlopen(req, timeout=1) as r:
+        with config.local_open(req, timeout=1) as r:
             for line in r.read().decode().splitlines():
                 m = re.match(r"^llamacpp:(\w+)\s+([0-9.eE+-]+)", line)
                 if m:

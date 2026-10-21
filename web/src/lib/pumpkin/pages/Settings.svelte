@@ -26,6 +26,7 @@
 	let hfToken = $state('');
 	let upd = $state<UpdateInfo | null>(null);
 	let updating = $state(false);
+	let stuck = $state<string | null>(null);
 	let svc = $state<{ active: boolean; available: boolean; installed: boolean; linger: boolean; linger_command: string } | null>(null);
 
 	onMount(async () => {
@@ -45,16 +46,30 @@
 		if (!confirm('Update Pumpkin now? It restarts, and the model stops while it does.')) return;
 
 		updating = true;
-		await api('update/apply', { body: {} }).catch(() => {});
+		stuck = null;
 
-		// the server goes away and comes back as the new version
+		try {
+			await api('update/apply', { body: {} });
+		} catch (e) {
+			updating = false;
+			pumpkin.say(e instanceof Error ? e.message : String(e), 'error');
+
+			return;
+		}
+
+		// the server goes away and comes back as the new version; give up after a few minutes and say why
 		const was = pumpkin.state?.version;
+		const started = Date.now();
 		const timer = setInterval(async () => {
 			const r = await api<{ version: string }>('state').catch(() => null);
 
 			if (r && r.version !== was) {
 				clearInterval(timer);
 				location.reload();
+			} else if (Date.now() - started > 4 * 60_000) {
+				clearInterval(timer);
+				updating = false;
+				stuck = (await api<{ log: string }>('update/log').catch(() => null))?.log ?? '';
 			}
 		}, 2500);
 	}
@@ -159,6 +174,13 @@
 					{/if}
 					<Button class="rounded-full" disabled={updating} onclick={checkNow} size="sm" variant="secondary">Check now</Button>
 				</div>
+				{#if stuck !== null}
+					<div class="rounded-xl border border-destructive/40 p-3 text-xs">
+						<p class="mb-2 text-sm">The update did not finish. Run this in a terminal instead:</p>
+						<pre class="overflow-x-auto rounded-lg bg-muted/60 p-2 font-mono">curl -fsSL https://raw.githubusercontent.com/geobellingham/pumpkin/main/install.sh | bash</pre>
+						{#if stuck}<details class="mt-2"><summary class="cursor-pointer text-muted-foreground">What happened</summary><pre class="mt-1 max-h-48 overflow-auto font-mono whitespace-pre-wrap">{stuck}</pre></details>{/if}
+					</div>
+				{/if}
 				<Toggle bind:checked={s.check_updates} description="Asks GitHub twice a day whether a new version exists. Nothing else is sent." label="Check for updates automatically" onchange={(v) => save({ check_updates: v })} />
 			</div>
 		</Card>

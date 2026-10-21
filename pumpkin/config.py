@@ -5,6 +5,7 @@ import os
 import re
 import secrets
 import threading
+import urllib.request
 import uuid
 
 from . import APP_ID
@@ -72,6 +73,14 @@ DEFAULT_TASKS = [
 ]
 
 _lock = threading.RLock()
+
+# Pumpkin talking to itself and to its llama-server on 127.0.0.1 must never go through a proxy, even when
+# HTTP_PROXY is set (urllib would send local requests to the proxy, and they would fail)
+_local = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+
+
+def local_open(req, timeout=10):
+    return _local.open(req, timeout=timeout)
 
 
 def ensure_dirs():

@@ -3,6 +3,8 @@ import json
 import os
 import re
 import subprocess
+import sys
+import shutil
 import time
 import urllib.request
 
@@ -11,6 +13,10 @@ from . import __version__, config
 REPO = os.environ.get("PUMPKIN_REPO", "geobellingham/pumpkin")
 API = os.environ.get("PUMPKIN_UPDATE_URL", f"https://api.github.com/repos/{REPO}/releases/latest")
 CACHE = os.path.join(config.STATE_DIR, "update-check.json")
+
+
+def _log():
+    return os.path.join(config.STATE_DIR, "update.log")
 EVERY = 12 * 3600
 
 
@@ -73,7 +79,21 @@ def apply():
     cmd = f"sleep 1; {script}"
     if not os.environ.get("PUMPKIN_INSTALL_CMD"):          # a custom command (tests) is left to do its own thing
         cmd += f" && {bin_pumpkin} up"                     # the login service if there is one, else in the background
-    log = open(os.path.join(config.STATE_DIR, "update.log"), "w")
-    subprocess.Popen(["bash", "-c", cmd], stdout=log, stderr=subprocess.STDOUT, start_new_session=True,
-                     cwd=config.HOME)
+    log = open(_log(), "w")
+    log.write(f"Updating to {tag}\n")
+    log.flush()
+    argv = ["bash", "-c", cmd]
+    if sys.platform != "darwin" and shutil.which("systemd-run") and os.environ.get("INVOCATION_ID"):
+        # inside the login service: run the update as its own unit, so stopping the service cannot stop it
+        argv = ["systemd-run", "--user", "--collect", "--quiet", f"--unit=pumpkin-update-{int(time.time())}",
+                f"--setenv=HOME={config.HOME}", "bash", "-c", f"{cmd} >> {_log()} 2>&1"]
+    subprocess.Popen(argv, stdout=log, stderr=subprocess.STDOUT, start_new_session=True, cwd=config.HOME)
     log.close()
+
+
+def log_tail(n=40):
+    try:
+        with open(_log(), errors="replace") as f:
+            return "".join(f.readlines()[-n:])
+    except OSError:
+        return ""
