@@ -37,16 +37,12 @@ def wait(cond, what, timeout=600):
         if v:
             return v
         time.sleep(2)
-    print(f"timed out waiting for {what}. Pumpkin's log on the phone:")
     log = adb("logcat", "-d", check=False).splitlines()
-    keep = [l for l in log if any(k in l for k in ("python.std", "app.pumpkin", "AndroidRuntime", "chaquo",
-                                                     "Pumpkin", "pumpkin", "libllama"))]
-    print("\n".join(keep[-60:]))
-    try:
-        print(adb("shell", "run-as", PKG, "ls", "-la", "files/home/.config/pumpkin", check=False))
-        print(adb("shell", "run-as", PKG, "sh", "-c", "tail -40 files/home/.local/state/pumpkin/*.log", check=False))
-    except Exception:  # noqa: BLE001
-        pass
+    keep = [l for l in log if any(k in l for k in ("python.std", " Pumpkin", "AndroidRuntime", "chaquopy"))]
+    print("--- Python and app log\n" + "\n".join(keep[-40:]))
+    for cmd in ("cat files/start-error.txt", "ls -la files/home/.config/pumpkin",
+                "tail -30 files/home/.local/state/pumpkin/llama-server.log"):
+        print(f"--- {cmd}\n" + adb("shell", "run-as", PKG, "sh", "-c", cmd, check=False)[-3000:])
     raise SystemExit(f"timed out waiting for {what}")
 
 

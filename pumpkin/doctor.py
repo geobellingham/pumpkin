@@ -1,5 +1,4 @@
 """Health checks: what works, what is missing, and how to fix it."""
-import grp
 import os
 import shutil
 import socket
@@ -110,8 +109,9 @@ def check(core):
         elif "permission denied" in txt.lower():
             in_group = False
             try:
+                import grp                         # not on every platform (Android has none)
                 in_group = os.environ.get("USER", "") in grp.getgrnam("docker").gr_mem
-            except KeyError:
+            except (ImportError, KeyError):
                 pass
             if in_group:
                 add("Agent tools", "Docker sandbox", "fail", "You were added to the docker group, but this "

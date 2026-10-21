@@ -81,6 +81,7 @@ class PumpkinService : Service() {
                     ).toString()
                 } catch (t: Throwable) {
                     error = t.toString()
+                    android.util.Log.e("Pumpkin", "Pumpkin did not start", t)
                 }
             }.start()
         }

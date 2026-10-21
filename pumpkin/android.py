@@ -5,6 +5,7 @@ Import nothing from Pumpkin at the top: its folders are decided when pumpkin.con
 so the environment has to point at the app's storage before that."""
 import os
 import socket
+import sys
 import threading
 
 _running = {}
@@ -23,7 +24,23 @@ def _free_port(preferred):
 
 
 def start(files_dir, native_dir, cache_dir=""):
-    """Starts Pumpkin and returns the sign-in address for the app's window. Safe to call again."""
+    """Starts Pumpkin and returns the sign-in address for the app's window. Safe to call again.
+    If it fails, the reason is also written to files/start-error.txt (the app shows it too)."""
+    try:
+        return _start(files_dir, native_dir, cache_dir)
+    except BaseException:
+        import traceback
+        text = traceback.format_exc()
+        try:
+            with open(os.path.join(files_dir, "start-error.txt"), "w") as f:
+                f.write(text)
+        except OSError:
+            pass
+        print(text, file=sys.stderr, flush=True)
+        raise
+
+
+def _start(files_dir, native_dir, cache_dir=""):
     if "url" in _running:
         return _running["url"]
     home = os.path.join(files_dir, "home")
