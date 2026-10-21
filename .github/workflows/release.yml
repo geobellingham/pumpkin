@@ -54,3 +54,44 @@ jobs:
         with:
           files: dist/pumpkin-*.tar.gz
           generate_release_notes: true
+
+  # the Android app, attached to the same release as pumpkin-<version>.apk
+  android:
+    needs: release
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.11.1"
+      - run: ./web/build.sh
+      - name: Build the APK
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+        run: |
+          V="${GITHUB_REF_NAME#v}"
+          sed -i "s/^__version__ = .*/__version__ = \"$V\"/" pumpkin/__init__.py
+          if [ -n "$KEYSTORE_B64" ]; then
+            echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/pumpkin.jks"
+            export ANDROID_KEYSTORE_FILE="$RUNNER_TEMP/pumpkin.jks"
+          else
+            echo "::warning title=Android signing::No ANDROID_KEYSTORE_B64 secret: the APK is signed with a throwaway key, so it cannot update an installed Pumpkin (uninstall first)."
+          fi
+          command -v ninja >/dev/null || sudo apt-get install -y ninja-build
+          PUMPKIN_VERSION="$V" ./android/build-android.sh
+          cp android/app/build/outputs/apk/release/app-release.apk "pumpkin-$V.apk"
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: pumpkin-*.apk
+
