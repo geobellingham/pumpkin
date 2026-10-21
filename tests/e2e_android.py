@@ -19,7 +19,7 @@ opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 def adb(*args, check=True, text=True):
     r = subprocess.run(["adb", *args], capture_output=True, text=text, timeout=300)
     if check and r.returncode != 0:
-        raise SystemExit(f"adb {' '.join(args)} failed: {r.stdout} {r.stderr}")
+        raise RuntimeError(f"adb {' '.join(args)} failed: {r.stdout} {r.stderr}")
     return r.stdout
 
 
