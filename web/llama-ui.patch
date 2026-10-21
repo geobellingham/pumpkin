@@ -85,7 +85,7 @@ index 9467939..3d2eceb 100644
 @@ -1,5 +1,6 @@
  import { MODEL_ICON } from './icons.constants';
  import { Search, Settings, SquarePen } from '@lucide/svelte';
-+import PumpkinLogo from '$lib/pumpkin/components/PumpkinLogo.svelte';
++import { LayoutDashboard } from '@lucide/svelte';
  import McpLogo from '$lib/components/app/mcp/McpLogo.svelte';
  import { SidebarAction, ToolSource } from '$lib/enums';
  import type { DesktopIconStripItem } from '$lib/types';
@@ -96,9 +96,9 @@ index 9467939..3d2eceb 100644
 +	},
 +	{
 +		activeRoutePrefix: '/pumpkin',
-+		icon: PumpkinLogo,
++		icon: LayoutDashboard,
 +		route: '#/pumpkin',
-+		tooltip: 'Pumpkin'
++		tooltip: 'Dashboard'
  	}
  ];
 diff --git a/tools/ui/src/routes/+layout.svelte b/tools/ui/src/routes/+layout.svelte
