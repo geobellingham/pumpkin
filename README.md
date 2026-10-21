@@ -51,8 +51,11 @@ The chat is the llama.cpp web UI you may already know, with Pumpkin's pages adde
 
 ## Install
 
-Pumpkin 0.1 runs on Linux (tested on Ubuntu 24.04 and newer) with an AMD, NVIDIA or Intel GPU, or on the
-CPU alone. You need Python 3.10 or newer, which most distributions already have.
+Pumpkin runs on **Linux** (tested on Ubuntu 24.04 and newer) with an AMD, NVIDIA or Intel GPU, or on the
+CPU alone, and on **macOS** (beta) on Apple Silicon (M1 and newer) using the GPU through Metal. Intel Macs
+work too, on the CPU. You need Python 3.10 or newer: most Linux distributions have it, and on a Mac
+install it with `brew install python` or from [python.org](https://www.python.org/downloads/), because
+the one built into macOS is too old.
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/geobellingham/pumpkin/main/install.sh | bash
@@ -69,11 +72,16 @@ Then open **Pumpkin** from your app menu, or run `pumpkin`. The first start walk
 4. **Your model.** Use one you already have, or install the best match in one click. It downloads,
    starts, and opens the chat.
 
+On a Mac, Pumpkin appears in Launchpad and Spotlight. The GPU shares memory with the rest of the Mac
+and macOS lets it use about two thirds of it (three quarters above 36 GB), so Pumpkin recommends models
+that fit in that share.
+
 Optional extras:
 
 | For | Install |
 |---|---|
-| Pumpkin's own window instead of a browser tab | `sudo apt install python3-gi gir1.2-webkit2-4.1` |
+| Pumpkin's own window instead of a browser tab (Linux) | `sudo apt install python3-gi gir1.2-webkit2-4.1` |
+| The agent sandbox on a Mac | [Docker Desktop](https://www.docker.com/products/docker-desktop/) or OrbStack, opened once |
 | The agent sandbox (running commands, editing files) | `sudo apt install docker.io && sudo usermod -aG docker $USER`, then log out and in (see [Security](#security)) |
 | Phone access from anywhere | [Tailscale](https://tailscale.com/download) on the computer and the phone |
 | Running at login, so schedules work with the window closed | Settings > *Start Pumpkin when I log in*, or `pumpkin service install` |
@@ -156,7 +164,8 @@ MCP config, reports folder and speed history on first start, and finds models in
 - More natural voices generated on your computer (Kokoro, Orpheus)
 - "Look at my screen" for vision models
 - Quality benchmarks in the app
-- macOS and Windows
+- Windows
+- A signed, downloadable Mac app
 
 ## Contributing
 

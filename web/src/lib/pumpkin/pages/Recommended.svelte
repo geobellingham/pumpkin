@@ -164,7 +164,7 @@
 	{@render route(
 		'gpu',
 		'Runs fully on your GPU',
-		'The fastest option: the whole model sits in video memory.',
+		recs?.hardware.unified ? 'The whole model fits in the memory your GPU can use.' : 'The fastest option: the whole model sits in video memory.',
 		'Nothing fits entirely in your video memory. Try the models below, which can use RAM too.'
 	)}
 

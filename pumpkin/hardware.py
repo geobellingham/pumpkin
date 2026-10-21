@@ -269,7 +269,8 @@ def live():
     if fake:
         g = fake.get("main_gpu") or {}
         return {"ram_total": fake["ram_total"], "ram_used": fake.get("ram_used", 6.2), "ram_available": 20,
-                "vram_total": g.get("vram_total"), "vram_used": fake.get("vram_used", 1.1), "gpu_busy": 3}
+                "vram_total": g.get("vram_total"), "vram_used": fake.get("vram_used", 1.1), "gpu_busy": 3,
+                "unified": bool(g.get("unified"))}
     out = memory()
     if MAC:
         g = (_mac_gpus() or [None])[0]

@@ -75,3 +75,52 @@ jobs:
           name: pumpkin-ui
           path: pumpkin/ui
           retention-days: 7
+
+  # the installer on a real Mac and on Linux, with the UI built by the web job
+  install:
+    needs: web
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-14]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - uses: actions/download-artifact@v5
+        with:
+          name: pumpkin-ui
+          path: pumpkin/ui
+      - name: Install, start, stop, uninstall
+        run: |
+          set +e
+          {
+            set -ex
+            export HOME="$RUNNER_TEMP/home" && mkdir -p "$HOME"
+            bash install.sh --no-open
+            "$HOME/.local/bin/pumpkin" --version
+            if [ "$(uname -s)" = Darwin ]; then
+              plutil -lint "$HOME/Applications/Pumpkin.app/Contents/Info.plist"
+              test -x "$HOME/Applications/Pumpkin.app/Contents/MacOS/Pumpkin"
+              test -s "$HOME/Applications/Pumpkin.app/Contents/Resources/pumpkin.icns"
+            else
+              test -f "$HOME/.local/share/applications/pumpkin.desktop"
+            fi
+            "$HOME/.local/bin/pumpkin" up
+            "$HOME/.local/bin/pumpkin" link
+            "$HOME/.local/bin/pumpkin" doctor || true
+            "$HOME/.local/bin/pumpkin" stop
+            bash "$HOME/.local/share/pumpkin/app/uninstall.sh"
+            test ! -e "$HOME/.local/bin/pumpkin"
+          } > install.txt 2>&1
+          code=$?
+          cat install.txt
+          if [ "$code" -eq 0 ]; then
+            python .github/annotate.py notice "Installer on ${{ matrix.os }}" install.txt
+          else
+            python .github/annotate.py error "Installer failed on ${{ matrix.os }}" install.txt
+          fi
+          exit $code
+

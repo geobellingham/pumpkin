@@ -90,6 +90,20 @@ class TestPinnedLlama(unittest.TestCase):
         self.assertEqual(llama.pinned_tag(), want)
 
 
+class TestProbe(unittest.TestCase):
+    def test_new_version_format_and_metal(self):
+        d = tempfile.mkdtemp()
+        b = os.path.join(d, "llama-server")
+        with open(b, "w") as f:
+            f.write('#!/bin/sh\nif [ "$1" = "--version" ]; then echo "version: 0.7.0-dev (build 11796, commit 0a1ef309c)"; '
+                    'echo "built with AppleClang 21.0.0 for Darwin arm64"; else echo "-ag,   --agent"; fi\n')
+        os.chmod(b, 0o755)
+        info = llama.probe(b)
+        self.assertEqual(info["version"], "b11796")
+        self.assertEqual(info["backends"], ["Metal"])
+        self.assertIn("--agent", info["flags"])
+
+
 class TestLaunchAgent(unittest.TestCase):
     def test_plist(self):
         d = tempfile.mkdtemp()

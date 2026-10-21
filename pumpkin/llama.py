@@ -102,14 +102,16 @@ def probe(binary):
     try:
         r = subprocess.run([binary, "--version"], capture_output=True, text=True, timeout=30, env=_env_for(binary))
         txt = (r.stdout or "") + (r.stderr or "")
-        m = re.search(r"version:\s*(\d+)\s*\(([0-9a-f]+)\)", txt)
+        # "version: 11796 (0a1ef309c)", or since late 2026 "version: 0.7.0-dev (build 11796, commit 0a1ef309c)"
+        m = re.search(r"version:\s*(\d+)\s*\(([0-9a-f]+)\)", txt) or \
+            re.search(r"build\s+(\d+),\s*commit\s+([0-9a-f]+)", txt)
         if m:
             info["build"], info["commit"] = int(m.group(1)), m.group(2)
             info["version"] = f"b{m.group(1)}"
         for b in ("Vulkan", "CUDA", "ROCm", "HIP", "Metal", "SYCL", "CPU"):
             if re.search(rf"\b{b}\b", txt):
                 info["backends"].append(b)
-        if not info["backends"] and re.search(r"arm64-apple-darwin", txt):
+        if not info["backends"] and re.search(r"arm64-apple-darwin|Darwin arm64", txt):
             info["backends"].append("Metal")       # Apple Silicon builds use Metal without saying so
         h = subprocess.run([binary, "--help"], capture_output=True, text=True, timeout=30, env=_env_for(binary))
         htxt = (h.stdout or "") + (h.stderr or "")
