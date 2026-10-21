@@ -27,6 +27,9 @@ jobs:
           V="${GITHUB_REF_NAME#v}"
           mkdir -p "dist/pumpkin-$V"
           cp -r pumpkin packaging install.sh uninstall.sh README.md LICENSE NOTICE "dist/pumpkin-$V/"
+          # the release tag is the version, so the app and the update check always agree
+          sed -i "s/^__version__ = .*/__version__ = \"$V\"/" "dist/pumpkin-$V/pumpkin/__init__.py"
+          grep -q "__version__ = \"$V\"" "dist/pumpkin-$V/pumpkin/__init__.py"
           find "dist/pumpkin-$V" -name __pycache__ -prune -exec rm -rf {} +
           tar -C dist -czf "dist/pumpkin-$V.tar.gz" "pumpkin-$V"
       - uses: softprops/action-gh-release@v2
