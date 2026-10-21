@@ -12,6 +12,7 @@ import time
 import urllib.error
 import urllib.request
 import zipfile
+from http.client import HTTPException
 
 from . import config, hardware
 
@@ -214,7 +215,7 @@ def http(port, path, payload=None, timeout=60, method=None):
         if isinstance(err, dict):
             err = err.get("message")
         return {"error": err or f"HTTP {e.code}: {body[:300]}", "status": e.code}
-    except (urllib.error.URLError, OSError) as e:
+    except (urllib.error.URLError, OSError, HTTPException) as e:
         return {"error": f"llama-server is not reachable ({e})", "status": 0}
 
 
@@ -224,7 +225,7 @@ def health(port):
             return r.status == 200
     except urllib.error.HTTPError as e:
         return False if e.code == 503 else False
-    except (urllib.error.URLError, OSError):
+    except (urllib.error.URLError, OSError, HTTPException):
         return False
 
 
@@ -236,8 +237,8 @@ def metrics(port):
                 m = re.match(r"^llamacpp:(\w+)\s+([0-9.eE+-]+)", line)
                 if m:
                     out[m.group(1)] = float(m.group(2))
-    except (urllib.error.URLError, OSError, ValueError):
-        pass
+    except (urllib.error.URLError, OSError, ValueError, HTTPException):
+        pass                                   # the model may be stopping or switching right now
     return out
 
 
@@ -369,7 +370,7 @@ class ServerManager:
         p = self.proc
         if p and p.poll() is None:
             try:
-                os.killpg(os.getpgid(p.pid), signal.SIGINT)
+                os.killpg(os.getpgid(p.pid), signal.SIGTERM)
             except (ProcessLookupError, PermissionError):
                 pass
             for _ in range(40):

@@ -211,5 +211,28 @@ class TestUpdates(unittest.TestCase):
                 os.remove(marker)
 
 
+class TestModelStopsMidReply(unittest.TestCase):
+    def test_metrics_and_health_survive_a_cut_off_reply(self):
+        import socket
+        from pumpkin import llama
+        srv = socket.socket()
+        srv.bind(("127.0.0.1", 0))
+        srv.listen(5)
+        port = srv.getsockname()[1]
+
+        def serve():
+            for _ in range(3):
+                c, _ = srv.accept()
+                c.recv(4096)
+                c.sendall(b"HTTP/1.1 200 OK\r\nContent-Length: 74\r\n\r\n")   # then the model dies
+                c.close()
+
+        threading.Thread(target=serve, daemon=True).start()
+        self.assertEqual(llama.metrics(port), {})
+        llama.health(port)                                        # must not raise
+        self.assertIn("error", llama.http(port, "/props"))
+        srv.close()
+
+
 if __name__ == "__main__":
     unittest.main()

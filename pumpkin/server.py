@@ -234,6 +234,8 @@ class Web:
             return self.json(h, {"error": str(e)}, e.code)
         except (RuntimeError, ValueError, KeyError, OSError) as e:
             return self.json(h, {"error": str(e)}, 400)
+        except Exception as e:  # noqa: BLE001 - always answer, never drop the connection
+            return self.json(h, {"error": f"Something went wrong: {e}"}, 500)
 
     def route(self, method, name, q, body):  # noqa: C901 - one flat table is easier to follow
         core = self.core
@@ -543,8 +545,8 @@ class Web:
                     break
                 h.wfile.write(chunk)
                 h.wfile.flush()
-        except (BrokenPipeError, ConnectionResetError):
-            pass
+        except (BrokenPipeError, ConnectionResetError, http.client.HTTPException):
+            pass                                   # the browser left, or the model stopped mid-reply
         finally:
             conn.close()
 
