@@ -17,6 +17,8 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
       - name: Tests
+        env:
+          PUMPKIN_ONLINE: "1"
         run: |
           set +e
           python -m unittest discover -s tests -v > test-output.txt 2>&1

@@ -74,7 +74,7 @@ Optional extras:
 | For | Install |
 |---|---|
 | Pumpkin's own window instead of a browser tab | `sudo apt install python3-gi gir1.2-webkit2-4.1` |
-| The agent sandbox (running commands, editing files) | `sudo apt install docker.io && sudo usermod -aG docker $USER`, then log out and in |
+| The agent sandbox (running commands, editing files) | `sudo apt install docker.io && sudo usermod -aG docker $USER`, then log out and in (see [Security](#security)) |
 | Phone access from anywhere | [Tailscale](https://tailscale.com/download) on the computer and the phone |
 | Running at login, so schedules work with the window closed | Settings > *Start Pumpkin when I log in*, or `pumpkin service install` |
 
@@ -121,6 +121,28 @@ pumpkin stop                stop Pumpkin and the model
   `~/.local/share/pumpkin`.
 - Everything is behind a private key, stored in `~/.config/pumpkin/token`. The server only listens on
   127.0.0.1 unless you turn on home-network access.
+
+## Security
+
+- **Access key.** Every page and API call needs Pumpkin's key (192 bits, readable only by you). Sign-in
+  sets an `HttpOnly`, `SameSite` cookie, and changes need a header other websites cannot send.
+- **The model server is private too.** llama-server gets its own random key through its environment
+  (so it never shows in `ps`), and only Pumpkin knows it. Other programs and web pages cannot use your
+  model or run its tools, even though it listens on 127.0.0.1.
+- **Web pages cannot reach in.** Pumpkin refuses requests addressed to unknown domain names (DNS
+  rebinding), cannot be framed by other sites, and never sends its address in a referrer. If you put
+  Pumpkin behind your own domain, list it in `PUMPKIN_ALLOWED_HOSTS`.
+- **Verified downloads.** The installer, the update button and the llama.cpp download check the SHA-256
+  that GitHub publishes for each release file, and stop if it does not match. Updates install the
+  tagged release, never unreleased code.
+- **The agent sandbox.** Commands run in a throwaway Docker container with none of your folders. It does
+  have internet access, and a web page the model reads can try to steer it, so treat agent output like
+  anything else from the internet. MCP servers you add run as you, outside the sandbox.
+- **Docker access means root.** Being in the `docker` group lets your user control the computer as root.
+  That is how Docker works; rootless Docker or Podman avoid it.
+- **Home-network mode is unencrypted.** Use it only on a network you trust. Tailscale mode is encrypted.
+
+Found a problem? Please open a private security advisory on GitHub instead of a public issue.
 - Pumpkin pins the llama.cpp release its UI is built from and downloads the same release of
   llama-server, so the two always match. You can point it at your own build in Settings.
 

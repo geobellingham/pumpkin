@@ -3,6 +3,7 @@ import gzip
 import hmac
 import html
 import http.client
+import ipaddress
 import json
 import mimetypes
 import os
@@ -85,6 +86,14 @@ class Web:
             def log_message(self, *a):
                 pass
 
+            def end_headers(self):
+                # no other site may put Pumpkin in a frame, and links never leak the address (it can hold the key)
+                self.send_header("X-Frame-Options", "SAMEORIGIN")
+                self.send_header("Content-Security-Policy", "frame-ancestors 'self'")
+                self.send_header("X-Content-Type-Options", "nosniff")
+                self.send_header("Referrer-Policy", "no-referrer")
+                super().end_headers()
+
             def do_GET(self):
                 web.handle(self)
 
@@ -119,7 +128,6 @@ class Web:
         h.send_header("Content-Type", ctype)
         h.send_header("Content-Length", str(len(body)))
         h.send_header("Cache-Control", "no-store")
-        h.send_header("X-Content-Type-Options", "nosniff")
         for k, v in (headers or {}).items():
             h.send_header(k, v)
         h.end_headers()
@@ -185,8 +193,31 @@ class Web:
             h.wfile.write(body)
 
     # ------------------------------------------------------------ routing
+    @staticmethod
+    def host_ok(value):
+        """Guards against DNS rebinding: a web page on some domain that suddenly points at 127.0.0.1.
+        Pumpkin is only ever opened by IP address, localhost, a plain machine name, .local or Tailscale."""
+        host = (value or "").strip().lower()
+        if not host:
+            return True
+        if host.startswith("["):
+            host = host[1:host.find("]")] if "]" in host else host
+        elif host.count(":") == 1:
+            host = host.split(":")[0]
+        try:
+            ipaddress.ip_address(host)
+            return True
+        except ValueError:
+            pass
+        extra = [x.strip().lower() for x in os.environ.get("PUMPKIN_ALLOWED_HOSTS", "").split(",") if x.strip()]
+        return (host == "localhost" or host.endswith(".localhost") or "." not in host or host.endswith(".local")
+                or host.endswith(".ts.net") or host in extra)
+
     def handle(self, h):
         try:
+            if not self.host_ok(h.headers.get("Host")):
+                return self.send(h, 421, "<p>Pumpkin does not answer to this address. Open it with "
+                                         "http://127.0.0.1 or the link from <code>pumpkin link</code>.</p>")
             u = urlparse(h.path)
             path, q = u.path, parse_qs(u.query)
             if path == "/login":
@@ -514,6 +545,7 @@ class Web:
             if body:
                 fwd["Content-Length"] = str(len(body))
             fwd["Host"] = f"127.0.0.1:{port}"
+            fwd.update(llama.auth_header())          # llama-server only answers Pumpkin
             conn = http.client.HTTPConnection("127.0.0.1", port, timeout=3600)
             conn.request(h.command, h.path, body=body or None, headers=fwd)
             resp = conn.getresponse()

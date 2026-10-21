@@ -62,9 +62,13 @@ def cached_status():
 
 
 def apply():
-    """Runs the installer in the background. It stops this server, installs, and starts the new one."""
+    """Runs the installer of the new release in the background. It checks the download's checksum, stops this
+    server, installs, and starts the new one."""
+    tag = check().get("tag") or ""
+    if not re.fullmatch(r"v?\d+(\.\d+){1,3}", tag):
+        raise RuntimeError("No new release to update to.")
     script = os.environ.get("PUMPKIN_INSTALL_CMD") or (
-        f"curl -fsSL https://raw.githubusercontent.com/{REPO}/main/install.sh | bash -s -- --no-open")
+        f"curl -fsSL https://raw.githubusercontent.com/{REPO}/{tag}/install.sh | PUMPKIN_TAG={tag} bash -s -- --no-open")
     bin_pumpkin = os.path.join(config.HOME, ".local", "bin", "pumpkin")
     cmd = f"sleep 1; {script}"
     if not os.environ.get("PUMPKIN_INSTALL_CMD"):          # a custom command (tests) is left to do its own thing

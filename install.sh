@@ -29,11 +29,27 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd || true)"
 if [ -n "$HERE" ] && [ -f "$HERE/pumpkin/__init__.py" ]; then
   SRC="$HERE"
 else
-  say "Downloading the latest Pumpkin release"
   TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
-  TAG="$(curl -fsSLI -o /dev/null -w '%{url_effective}' "https://github.com/$REPO/releases/latest" | sed 's#.*/tag/##')"
+  TAG="${PUMPKIN_TAG:-}"
+  if [ -z "$TAG" ]; then
+    TAG="$(curl -fsSLI -o /dev/null -w '%{url_effective}' "https://github.com/$REPO/releases/latest" | sed 's#.*/tag/##')"
+  fi
   [ -n "$TAG" ] || die "Could not find a release of $REPO."
-  curl -fsSL "https://github.com/$REPO/releases/download/$TAG/pumpkin-${TAG#v}.tar.gz" | tar -xz -C "$TMP"
+  FILE="pumpkin-${TAG#v}.tar.gz"
+  say "Downloading Pumpkin $TAG"
+  curl -fsSL -o "$TMP/$FILE" "https://github.com/$REPO/releases/download/$TAG/$FILE" || die "Download failed."
+  # check the file against the SHA-256 GitHub publishes for it
+  WANT="$(curl -fsSL -H 'Accept: application/vnd.github+json' "https://api.github.com/repos/$REPO/releases/tags/$TAG" \
+    | python3 -c 'import json,sys; f=sys.argv[1]; print(next((a.get("digest") or "" for a in json.load(sys.stdin).get("assets", []) if a.get("name") == f), ""))' "$FILE" \
+    2>/dev/null || true)"
+  GOT="sha256:$(python3 -c 'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1],"rb").read()).hexdigest())' "$TMP/$FILE")"
+  if [ -n "$WANT" ]; then
+    [ "$WANT" = "$GOT" ] || die "The download does not match its published checksum. Nothing was installed."
+    say "Checksum verified"
+  elif [ -z "${PUMPKIN_SKIP_VERIFY:-}" ]; then
+    die "Could not get the checksum from GitHub to verify the download. Try again in a minute (or set PUMPKIN_SKIP_VERIFY=1)."
+  fi
+  tar -xzf "$TMP/$FILE" -C "$TMP"
   SRC="$(find "$TMP" -maxdepth 2 -name install.sh -printf '%h\n' | head -1)"
 fi
 

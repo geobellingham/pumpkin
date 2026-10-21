@@ -236,6 +236,16 @@ class TestServer(unittest.TestCase):
         self.assertIn(b["name"], names)
         code, j = get("/v1/chat/completions", {"model": a["name"], "messages": [{"role": "user", "content": "hi"}]})
         self.assertEqual(code, 200, j)                   # started Switch A, then answered
+        # llama-server itself refuses anyone without Pumpkin's private key, and the key is not on its command line
+        direct = urllib.request.Request("http://127.0.0.1:18191/v1/chat/completions",
+                                        data=b'{"messages": [{"role": "user", "content": "hi"}]}',
+                                        headers={"Content-Type": "text/plain"})
+        with self.assertRaises(urllib.error.HTTPError) as e:
+            urllib.request.urlopen(direct, timeout=10)
+        self.assertEqual(e.exception.code, 401)
+        from pumpkin import llama
+        self.assertNotIn(llama.api_key(), open(os.path.join(config.STATE_DIR, "llama-server.log")).read())
+        self.assertEqual(oct(os.stat(llama.KEY_PATH).st_mode & 0o777), "0o600")
         self.assertEqual(self.call("GET", "/pumpkin/api/state")[1]["server"]["preset"]["id"], a["id"])
         code, j = get("/v1/chat/completions", {"model": b["name"], "messages": [{"role": "user", "content": "hi"}]})
         self.assertEqual(code, 200, j)
@@ -268,6 +278,18 @@ class TestServer(unittest.TestCase):
         req = urllib.request.Request(self.base + "/", headers={"Accept": "text/html"})
         with urllib.request.urlopen(req) as r:
             self.assertIn(b"Access key", r.read())
+            self.assertEqual(r.headers["X-Frame-Options"], "SAMEORIGIN")
+            self.assertEqual(r.headers["Referrer-Policy"], "no-referrer")
+            self.assertIn("frame-ancestors", r.headers["Content-Security-Policy"])
+
+    def test_6b_dns_rebinding_is_refused(self):
+        import http.client
+        c = http.client.HTTPConnection("127.0.0.1", 18190, timeout=5)
+        c.request("GET", "/pumpkin/api/state", headers={"Host": "evil.example.com", "Authorization": f"Bearer {self.tok}"})
+        self.assertEqual(c.getresponse().status, 421)
+        c = http.client.HTTPConnection("127.0.0.1", 18190, timeout=5)
+        c.request("GET", "/pumpkin/api/state", headers={"Host": "localhost:18190", "Authorization": f"Bearer {self.tok}"})
+        self.assertEqual(c.getresponse().status, 200)
 
 
 if __name__ == "__main__":

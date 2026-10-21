@@ -1,8 +1,10 @@
 """Finding, downloading and running llama-server."""
 import glob
+import hashlib
 import json
 import os
 import re
+import secrets
 import shutil
 import signal
 import subprocess
@@ -20,6 +22,28 @@ RELEASES = "https://github.com/ggml-org/llama.cpp/releases"
 LLAMA_DIR = os.path.join(config.DATA_DIR, "llama")
 LOG_PATH = os.path.join(config.STATE_DIR, "llama-server.log")
 USER_AGENT = "pumpkin"
+KEY_PATH = os.path.join(config.STATE_DIR, "llama-key")
+
+
+def api_key():
+    """A private key llama-server requires, so only Pumpkin can use it (not other programs or web pages)."""
+    try:
+        with open(KEY_PATH) as f:
+            k = f.read().strip()
+        if len(k) >= 32:
+            return k
+    except OSError:
+        pass
+    os.makedirs(config.STATE_DIR, exist_ok=True)
+    k = secrets.token_urlsafe(32)
+    fd = os.open(KEY_PATH, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as f:
+        f.write(k)
+    return k
+
+
+def auth_header():
+    return {"Authorization": f"Bearer {api_key()}"}
 
 # llama-server options Pumpkin knows how to use, checked against `llama-server --help`
 KNOWN_FLAGS = ["--agent", "--tools-runtime", "-fit", "-fitt", "--reasoning-budget", "--no-reasoning-preserve",
@@ -114,6 +138,40 @@ def asset_names(tag, backend, arch="x64"):
     return [f"llama-{tag}-bin-ubuntu-{arch}.tar.gz", f"llama-{tag}-bin-ubuntu-{arch}.zip"]
 
 
+GITHUB_API = os.environ.get("PUMPKIN_GITHUB_API", "https://api.github.com")
+
+
+def release_digests(tag):
+    """SHA-256 of every file in a llama.cpp release, as GitHub publishes them."""
+    req = urllib.request.Request(f"{GITHUB_API}/repos/ggml-org/llama.cpp/releases/tags/{tag}",
+                                 headers={"User-Agent": USER_AGENT, "Accept": "application/vnd.github+json"})
+    try:
+        with urllib.request.urlopen(req, timeout=20) as r:
+            assets = json.loads(r.read().decode()).get("assets") or []
+    except (urllib.error.URLError, OSError, ValueError, HTTPException) as e:
+        if os.environ.get("PUMPKIN_SKIP_VERIFY"):
+            return {}
+        raise RuntimeError(f"Could not check the llama.cpp download against GitHub ({e}). Try again in a minute.")
+    return {a.get("name"): (a.get("digest") or "") for a in assets}
+
+
+def verify(path, digest):
+    """Refuses a download whose SHA-256 differs from the published one."""
+    if not digest:
+        return                                  # GitHub has no checksum for this file (older releases)
+    algo, _, want = digest.partition(":")
+    if algo != "sha256":
+        return
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            h.update(chunk)
+    if h.hexdigest() != want.lower():
+        os.remove(path)
+        raise RuntimeError(f"{os.path.basename(path).replace('.part', '')} did not match its published checksum, "
+                           "so Pumpkin deleted it. Try the download again.")
+
+
 def machine_arch():
     m = os.uname().machine
     return "arm64" if m in ("aarch64", "arm64") else "x64"
@@ -154,6 +212,7 @@ def download_release(backend, tag=None, progress=None, cancelled=lambda: False):
     arch = machine_arch()
     os.makedirs(LLAMA_DIR, exist_ok=True)
     target = os.path.join(LLAMA_DIR, f"{tag}-{backend}")
+    digests = release_digests(tag)
     last_err = None
     for name in asset_names(tag, backend, arch):
         url = f"{RELEASES}/download/{tag}/{name}"
@@ -163,6 +222,7 @@ def download_release(backend, tag=None, progress=None, cancelled=lambda: False):
         except urllib.error.HTTPError as e:
             last_err = f"{name}: HTTP {e.code}"
             continue
+        verify(tmp, digests.get(name))
         shutil.rmtree(target, ignore_errors=True)
         _extract(tmp, target)
         os.remove(tmp)
@@ -171,8 +231,9 @@ def download_release(backend, tag=None, progress=None, cancelled=lambda: False):
             cud = f"cudart-llama-bin-ubuntu-cuda-{label}-{arch}.tar.gz"
             try:
                 rt = os.path.join(LLAMA_DIR, cud + ".part")
-                _fetch(f"{RELEASES}/download/{tag}/cudart-llama-{tag}-bin-ubuntu-cuda-{label}-{arch}.tar.gz", rt,
-                       None, cancelled)
+                cname = f"cudart-llama-{tag}-bin-ubuntu-cuda-{label}-{arch}.tar.gz"
+                _fetch(f"{RELEASES}/download/{tag}/{cname}", rt, None, cancelled)
+                verify(rt, digests.get(cname))
                 _extract(rt, target)
                 os.remove(rt)
             except (urllib.error.URLError, OSError):
@@ -199,7 +260,7 @@ def download_release(backend, tag=None, progress=None, cancelled=lambda: False):
 def http(port, path, payload=None, timeout=60, method=None):
     data = json.dumps(payload).encode() if payload is not None else None
     req = urllib.request.Request(f"http://127.0.0.1:{port}{path}", data=data,
-                                 headers={"Content-Type": "application/json"},
+                                 headers={"Content-Type": "application/json", **auth_header()},
                                  method=method or ("POST" if payload is not None else "GET"))
     try:
         with urllib.request.urlopen(req, timeout=timeout) as r:
@@ -232,7 +293,8 @@ def health(port):
 def metrics(port):
     out = {}
     try:
-        with urllib.request.urlopen(f"http://127.0.0.1:{port}/metrics", timeout=1) as r:
+        req = urllib.request.Request(f"http://127.0.0.1:{port}/metrics", headers=auth_header())
+        with urllib.request.urlopen(req, timeout=1) as r:
             for line in r.read().decode().splitlines():
                 m = re.match(r"^llamacpp:(\w+)\s+([0-9.eE+-]+)", line)
                 if m:
@@ -333,8 +395,10 @@ class ServerManager:
             log = open(LOG_PATH, "w")
             log.write("$ " + " ".join(cmd) + "\n\n")
             log.flush()
+            env = _env_for(binary)
+            env["LLAMA_API_KEY"] = api_key()          # through the environment, so it never shows up in `ps`
             self.proc = subprocess.Popen(cmd, stdout=log, stderr=subprocess.STDOUT, start_new_session=True,
-                                         env=_env_for(binary), cwd=config.STATE_DIR)
+                                         env=env, cwd=config.STATE_DIR)
             log.close()
             self.preset, self.state, self.error, self.started_at = dict(preset), "loading", None, time.time()
             self._inhibit(True)

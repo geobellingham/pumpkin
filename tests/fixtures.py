@@ -67,9 +67,15 @@ class H(BaseHTTPRequestHandler):
     def j(s, o, code=200):
         b = json.dumps(o).encode(); s.send_response(code); s.send_header("Content-Type", "application/json")
         s.send_header("Content-Length", str(len(b))); s.end_headers(); s.wfile.write(b)
+    def denied(s):
+        key = os.environ.get("LLAMA_API_KEY")
+        if key and s.headers.get("Authorization") != "Bearer " + key:
+            s.j({"error": {"code": 401, "message": "Invalid API Key"}}, 401); return True
+        return False
     def do_GET(s):
         p = s.path.split("?")[0]
         if p == "/health": return s.j({"status": "ok"})
+        if s.denied(): return
         if p == "/metrics":
             b = b"llamacpp:predicted_tokens_seconds 37.5\nllamacpp:prompt_tokens_seconds 900\n"
             s.send_response(200); s.send_header("Content-Length", str(len(b))); s.end_headers(); s.wfile.write(b); return
@@ -78,6 +84,7 @@ class H(BaseHTTPRequestHandler):
         s.j({"error": {"code": 404, "message": "nf"}}, 404)
     def do_POST(s):
         n = int(s.headers.get("Content-Length") or 0); body = json.loads(s.rfile.read(n) or b"{}")
+        if s.denied(): return
         p = s.path.split("?")[0]
         if p == "/tools":
             return s.j({"plain_text_response": "1. Result about " + body["params"].get("query", "?")})

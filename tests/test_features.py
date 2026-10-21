@@ -155,6 +155,28 @@ class TestGoals(unittest.TestCase):
 
 
 class TestUpdates(unittest.TestCase):
+    def test_refuses_odd_tags(self):
+        old = updates.CACHE
+        updates.CACHE = tempfile.mktemp()
+        try:
+            with open(updates.CACHE, "w") as f:
+                json.dump({"at": time.time(), "tag": "v1.0; rm -rf ~"}, f)
+            with self.assertRaises(RuntimeError):
+                updates.apply()
+        finally:
+            os.remove(updates.CACHE)
+            updates.CACHE = old
+
+    def test_download_checksum(self):
+        from pumpkin import llama
+        p = tempfile.mktemp()
+        with open(p, "wb") as f:
+            f.write(b"hello")
+        llama.verify(p, "sha256:2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824")   # passes
+        with self.assertRaises(RuntimeError):
+            llama.verify(p, "sha256:" + "0" * 64)
+        self.assertFalse(os.path.exists(p))                    # a bad download is deleted
+
     def test_version_compare(self):
         self.assertGreater(updates._ver("v0.1.10"), updates._ver("0.1.9"))
         self.assertGreater(updates._ver("v1.0.0"), updates._ver("0.9.9"))
@@ -194,10 +216,13 @@ class TestUpdates(unittest.TestCase):
     def test_apply_runs_the_installer(self):
         marker = tempfile.mktemp()
         os.environ["PUMPKIN_INSTALL_CMD"] = f"touch {marker}"
-        old_home, old_state = config.HOME, config.STATE_DIR
+        old_home, old_state, old_cache = config.HOME, config.STATE_DIR, updates.CACHE
         config.STATE_DIR = tempfile.mkdtemp()
         config.HOME = tempfile.mkdtemp()                      # keeps the follow-up restart away from the real install
+        updates.CACHE = os.path.join(config.STATE_DIR, "update-check.json")
         try:
+            with open(updates.CACHE, "w") as f:
+                json.dump({"at": time.time(), "tag": "v9.9.9"}, f)
             updates.apply()
             for _ in range(60):
                 if os.path.exists(marker):
@@ -206,7 +231,7 @@ class TestUpdates(unittest.TestCase):
             self.assertTrue(os.path.exists(marker))
         finally:
             del os.environ["PUMPKIN_INSTALL_CMD"]
-            config.HOME, config.STATE_DIR = old_home, old_state
+            config.HOME, config.STATE_DIR, updates.CACHE = old_home, old_state, old_cache
             if os.path.exists(marker):
                 os.remove(marker)
 
@@ -232,6 +257,18 @@ class TestModelStopsMidReply(unittest.TestCase):
         llama.health(port)                                        # must not raise
         self.assertIn("error", llama.http(port, "/props"))
         srv.close()
+
+
+@unittest.skipUnless(os.environ.get("PUMPKIN_ONLINE"), "needs the internet (runs in CI)")
+class TestOnline(unittest.TestCase):
+    def test_pinned_llama_release_publishes_checksums(self):
+        from pumpkin import llama
+        tag = open(os.path.join(os.path.dirname(HERE), "web", "LLAMA_TAG")).read().strip()
+        digests = llama.release_digests(tag)
+        for backend in ("vulkan", "cpu"):
+            names = [n for n in llama.asset_names(tag, backend) if n in digests]
+            self.assertTrue(names, f"no {backend} build in {tag}")
+            self.assertTrue(digests[names[0]].startswith("sha256:"), names[0])
 
 
 if __name__ == "__main__":
