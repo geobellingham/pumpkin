@@ -244,14 +244,16 @@ def _fetch(url, dest, progress=None, cancelled=lambda: False):
                 progress(done, total)
 
 
-def _extract(archive, dest):
-    if archive.endswith(".zip") and shutil.which("unzip"):
+def _extract(archive, dest, name=None):
+    # name is the file's real name: the download is still "...zip.part" while it is on disk
+    kind = name or archive
+    if kind.endswith(".zip") and shutil.which("unzip"):
         # unzip keeps the symlinks and execute bits that Python's zipfile drops (macOS builds have both)
         os.makedirs(dest, exist_ok=True)
         r = subprocess.run(["unzip", "-q", "-o", archive, "-d", dest], capture_output=True, text=True)
         if r.returncode == 0:
             return
-    if archive.endswith(".zip"):
+    if kind.endswith(".zip"):
         with zipfile.ZipFile(archive) as z:
             z.extractall(dest)
         return
@@ -280,7 +282,7 @@ def download_release(backend, tag=None, progress=None, cancelled=lambda: False):
             continue
         verify(tmp, digests.get(name))
         shutil.rmtree(target, ignore_errors=True)
-        _extract(tmp, target)
+        _extract(tmp, target, name)
         os.remove(tmp)
         if backend == "cuda":
             label = name.split("-cuda-")[1].split("-")[0]
@@ -293,7 +295,7 @@ def download_release(backend, tag=None, progress=None, cancelled=lambda: False):
                     rt = os.path.join(LLAMA_DIR, cname + ".part")
                 _fetch(f"{RELEASES}/download/{tag}/{cname}", rt, None, cancelled)
                 verify(rt, digests.get(cname))
-                _extract(rt, target)
+                _extract(rt, target, cname)
                 os.remove(rt)
             except (urllib.error.URLError, OSError):
                 pass                           # the system CUDA runtime may be enough

@@ -7,6 +7,6 @@ if raw.startswith((b"\xff\xfe", b"\xfe\xff")):          # Windows PowerShell 5 w
     text = raw.decode("utf-16", "replace")
 else:
     text = raw.decode("utf-8-sig", "replace")
-lines = [l.rstrip() for l in text.splitlines() if "ResourceWarning" not in l and not l.startswith("  ")]
+lines = [l.rstrip() for l in text.splitlines() if "ResourceWarning" not in l]
 msg = "\n".join(lines[-80:]).replace("%", "%25").replace("\r", "").replace("\n", "%0A")
 print(f"::{level} title={title}::{msg}")
