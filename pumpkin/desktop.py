@@ -1,7 +1,7 @@
 """A plain app window around the web UI (GTK + WebKit). Closing it leaves Pumpkin running."""
 import os
 
-from . import APP_NAME
+from . import APP_NAME, __version__
 
 ICON = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "pumpkin.svg")
 
@@ -52,6 +52,7 @@ def run(url):
     web = WebKit2.WebView()
     st = web.get_settings()
     st.set_enable_developer_extras(True)
+    st.set_user_agent_with_application_details("PumpkinApp", __version__)   # Settings > Signed-in devices
     try:
         st.set_media_playback_requires_user_gesture(False)
     except AttributeError:

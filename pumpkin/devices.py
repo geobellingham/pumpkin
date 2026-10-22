@@ -144,6 +144,10 @@ def key_ok(given):
 
 
 # ------------------------------------------------------------------ requests from other devices
+class Busy(Exception):
+    """Too many requests from other devices right now (HTTP 429)."""
+
+
 class Helper:
     """Answers other Pumpkins' requests with the model on this device."""
 
@@ -151,6 +155,7 @@ class Helper:
         self.core = core
         self.recent = []                    # last requests, shown on the Devices page
         self.busy = 0
+        self._times = []                    # when recent requests came in, for the hourly limit
         self._lock = threading.Lock()
 
     def info(self):
@@ -176,6 +181,14 @@ class Helper:
         max_tokens = max(16, min(int(body.get("max_tokens") or 2048), 8192))
         entry = {"at": time.time(), "from": str(who)[:60], "task": task[:200], "state": "running"}
         with self._lock:
+            # a paired device must not be able to tie up this model: a few at once, and so many per hour
+            now = time.time()
+            self._times = [t for t in self._times if now - t < 3600]
+            if self.busy >= max(1, int(core.settings["share_parallel"] or 2)):
+                raise Busy(f"{device_name(core.settings)} is busy with other requests. Try again in a minute.")
+            if len(self._times) >= max(1, int(core.settings["share_per_hour"] or 60)):
+                raise Busy(f"{device_name(core.settings)} has reached its limit of requests per hour.")
+            self._times.append(now)
             self.recent = ([entry] + self.recent)[:20]
             self.busy += 1
         t0 = time.time()
@@ -262,6 +275,8 @@ def call(dev, path, payload=None, timeout=10):
                 msg = None
             if e.code in (401, 403):
                 raise PermissionError(msg or "The other device did not accept the key. Pair it again.") from None
+            if e.code == 429:
+                raise RuntimeError(msg or "The other device is busy. Try again later.") from None
             if e.code in (400, 404, 500, 503):
                 raise RuntimeError(msg or f"The other device answered with an error ({e.code}).") from None
             last = f"HTTP {e.code}"

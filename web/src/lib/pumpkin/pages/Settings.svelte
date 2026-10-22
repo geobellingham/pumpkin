@@ -9,6 +9,7 @@
 	import { api, pumpkin } from '../store.svelte';
 	import type { Settings } from '../types';
 	import LlamaCard from './LlamaCard.svelte';
+	import SignIns from './SignIns.svelte';
 	import { onMount } from 'svelte';
 
 	interface UpdateInfo {
@@ -91,12 +92,6 @@
 		document.body.innerHTML = '<p style="font:16px system-ui;padding:3rem;text-align:center">Pumpkin has stopped.</p>';
 	}
 
-	async function resetKey() {
-		if (!confirm('Make a new access key? Phones and browsers signed in with the old one will need the new link.')) return;
-
-		await pumpkin.run(() => api('token/reset', { body: {} }), 'New key made');
-		location.href = './login';
-	}
 </script>
 
 <div class="flex flex-col gap-4">
@@ -199,11 +194,12 @@
 			</ul>
 		</Card>
 
+		<SignIns />
+
 		<Card title="Pumpkin">
 			<p class="text-sm text-muted-foreground">Free and open source under the MIT license.</p>
 			<div class="mt-3 flex flex-wrap gap-2">
 				<Button class="rounded-full" href="#/pumpkin/setup" size="sm" variant="secondary">Run setup again</Button>
-				<Button class="rounded-full" onclick={resetKey} size="sm" variant="ghost">New access key</Button>
 				{#if pumpkin.state?.platform !== 'android'}
 					<Button class="rounded-full" onclick={quit} size="sm" variant="ghost">Quit Pumpkin</Button>
 				{/if}

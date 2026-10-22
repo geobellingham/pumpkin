@@ -58,6 +58,7 @@ class MainActivity : Activity() {
             mediaPlaybackRequiresUserGesture = false
             allowFileAccess = false
             setSupportZoom(false)
+            userAgentString = "$userAgentString PumpkinApp"   // listed as "Pumpkin app" under signed-in devices
         }
         CookieManager.getInstance().setAcceptCookie(true)
         setContentView(web)

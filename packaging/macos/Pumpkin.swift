@@ -45,6 +45,7 @@ final class Delegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKU
         conf.websiteDataStore = .default()                 // keeps the sign-in cookie between launches
         conf.mediaTypesRequiringUserActionForPlayback = []  // spoken replies in voice chat
         conf.preferences.setValue(true, forKey: "developerExtrasEnabled")
+        conf.applicationNameForUserAgent = "PumpkinApp"    // listed as "Pumpkin app" under signed-in devices
         web = WKWebView(frame: .zero, configuration: conf)
         web.navigationDelegate = self
         web.uiDelegate = self

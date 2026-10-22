@@ -14,7 +14,7 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, quote, unquote, urlparse
 
-from . import APP_NAME, __version__, agent, config, devices, discover, doctor, hardware, llama, models, remote, updates, workspace
+from . import APP_NAME, __version__, agent, config, devices, discover, sessions, doctor, hardware, llama, models, remote, updates, workspace
 
 COOKIE = "pumpkin_key"
 API = "/pumpkin/api/"
@@ -179,14 +179,40 @@ class Web:
         self.send(h, code, json.dumps(obj, default=str), "application/json")
 
     def authed(self, h):
+        """Signed in with this browser's own session (cookie), or with Pumpkin's key (the command line, the
+        desktop window, and cookies from before sessions existed). Remembers which session asked."""
+        h.session_id, h.old_cookie = None, False
         for part in (h.headers.get("Cookie") or "").split(";"):
             k, _, v = part.strip().partition("=")
-            if k == COOKIE and hmac.compare_digest(v, self.token):
+            if k != COOKIE:
+                continue
+            s = sessions.check(v)
+            if s:
+                h.session_id = s["id"]
+                return True
+            if hmac.compare_digest(v, self.token):
+                h.old_cookie = True
                 return True
         auth = h.headers.get("Authorization") or ""
-        if auth.startswith("Bearer ") and hmac.compare_digest(auth[7:].strip(), self.token):
-            return True
+        if auth.startswith("Bearer "):
+            given = auth[7:].strip()
+            if hmac.compare_digest(given, self.token):
+                return True
+            s = sessions.check(given)
+            if s:
+                h.session_id = s["id"]
+                return True
         return False
+
+    def new_session_cookie(self, h):
+        ip = h.client_address[0] if h.client_address else ""
+        local = ip in ("127.0.0.1", "::1")
+        fwd = (h.headers.get("X-Forwarded-For") or "").split(",")[0].strip()
+        if local and fwd:              # Tailscale serve hands requests from the phone over on this computer
+            ip, local = fwd, False
+        key = sessions.create(h.headers.get("User-Agent") or "", ip, local=local)
+        secure = "; Secure" if (h.headers.get("X-Forwarded-Proto") or "").lower() == "https" else ""
+        return f"{COOKIE}={key}; Path=/; HttpOnly; SameSite=Lax; Max-Age=31536000{secure}"
 
     def ui_file(self, path):
         d = self.ui_dir()
@@ -268,10 +294,8 @@ class Web:
                         time.sleep(1)
                     err = '<p class="err">That key is not right.</p>' if key else ""
                     return self.send(h, 401 if key else 200, LOGIN_HTML.format(app=APP_NAME, err=err))
-                secure = "; Secure" if (h.headers.get("X-Forwarded-Proto") or "").lower() == "https" else ""
-                return self.send(h, 302, b"", headers={
-                    "Location": "/", "Set-Cookie": f"{COOKIE}={self.token}; Path=/; HttpOnly; SameSite=Lax; "
-                                                   f"Max-Age=31536000{secure}"})
+                # this browser gets its own session key; Pumpkin's key itself never goes into a cookie
+                return self.send(h, 302, b"", headers={"Location": "/", "Set-Cookie": self.new_session_cookie(h)})
             if path.startswith("/pumpkin/peer/"):
                 return self.peer(h, path[len("/pumpkin/peer/"):])
             ui = self.ui_file(path)
@@ -281,6 +305,9 @@ class Web:
                 if path.startswith(API) or "text/html" not in (h.headers.get("Accept") or ""):
                     return self.json(h, {"error": {"code": 401, "message": "Sign in to Pumpkin first."}}, 401)
                 return self.send(h, 200, LOGIN_HTML.format(app=APP_NAME, err=""))
+            if h.old_cookie and h.command == "GET" and "text/html" in (h.headers.get("Accept") or ""):
+                # signed in before sessions existed: swap the cookie for a session of its own, same page
+                return self.send(h, 302, b"", headers={"Location": h.path, "Set-Cookie": self.new_session_cookie(h)})
             if path.startswith(API):
                 return self.api(h, path[len(API):].strip("/"), q)
             if ui:
@@ -312,6 +339,8 @@ class Web:
                 body = json.loads(h.rfile.read(n).decode() or "{}") if n else {}
                 return self.json(h, core.helper.ask(body, who=h.headers.get("X-Pumpkin-From") or ""))
             return self.json(h, {"error": "Not found."}, 404)
+        except devices.Busy as e:
+            return self.json(h, {"error": str(e)}, 429)
         except ValueError as e:
             return self.json(h, {"error": str(e)}, 400)
         except Exception as e:  # noqa: BLE001 - always answer
@@ -340,7 +369,7 @@ class Web:
                     raise ApiError("Missing X-Pumpkin header.", 403)
                 raw = _read_body(h)
                 body = json.loads(raw.decode() or "{}") if raw else {}
-            result = self.route(method, name, q, body)
+            result = self.route(method, name, q, body, getattr(h, "session_id", None))
             return self.json(h, result if result is not None else {"ok": True})
         except ApiError as e:
             return self.json(h, {"error": str(e)}, e.code)
@@ -353,7 +382,7 @@ class Web:
         except Exception as e:  # noqa: BLE001 - always answer, never drop the connection
             return self.json(h, {"error": f"Something went wrong: {e}"}, 500)
 
-    def route(self, method, name, q, body):  # noqa: C901 - one flat table is easier to follow
+    def route(self, method, name, q, body, session_id=None):  # noqa: C901 - one flat table is easier to follow
         core = self.core
         arg = lambda k, d=None: (q.get(k) or [d])[0]
         parts = name.split("/")
@@ -618,6 +647,16 @@ class Web:
             elif method == "POST" and ident == "uninstall":
                 service.disable()
             return service.status()
+        if head == "sessions":
+            if method == "GET":
+                return {"sessions": sessions.listing(session_id)}
+            if ident == "clear" and method == "POST":
+                sessions.clear(keep=session_id if body.get("keep_this", True) else None)
+                return {"sessions": sessions.listing(session_id)}
+            if ident and method == "DELETE":
+                if not sessions.remove(ident):
+                    raise ApiError("That sign-in is gone already.", 404)
+                return {"sessions": sessions.listing(session_id)}
         if head == "token" and ident == "reset" and method == "POST":
             self.token = config.reset_token()
             return {"ok": True}

@@ -42,6 +42,8 @@ DEFAULT_SETTINGS = {
     "share": False,                    # other Pumpkins may ask this one's model (Devices page)
     "share_opened_lan": False,         # sharing turned on home-network listening, so turning it off undoes that
     "device_name": "",                 # how other devices see this one; empty = the computer's name
+    "share_parallel": 2,               # requests from other devices at once; more get "busy, try later"
+    "share_per_hour": 60,              # requests from other devices per hour
 }
 
 DEFAULT_PERSONAS = [

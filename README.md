@@ -167,8 +167,11 @@ pumpkin stop                stop Pumpkin and the model
 
 ## Security
 
-- **Access key.** Every page and API call needs Pumpkin's key (192 bits, readable only by you). Sign-in
-  sets an `HttpOnly`, `SameSite` cookie, and changes need a header other websites cannot send.
+- **Access key.** Every page and API call needs Pumpkin's key (192 bits, readable only by you). Signing in
+  gives each browser and phone its own session key in an `HttpOnly`, `SameSite` cookie, and only hashes of
+  them are stored. *Settings > Signed-in devices* lists them: sign out a lost phone on its own, sign out
+  everything else, or make a new access key so old links and QR codes stop working. Changes need a header
+  other websites cannot send.
 - **The model server is private too.** llama-server gets its own random key through its environment
   (so it never shows in `ps`), and only Pumpkin knows it. Other programs and web pages cannot use your
   model or run its tools, even though it listens on 127.0.0.1.
@@ -189,10 +192,13 @@ pumpkin stop                stop Pumpkin and the model
   endpoints (the device's name and models, and "answer this"), nothing else: no settings, files, tools or
   chats. Sharing is off until you turn it on, *Make a new code* cuts off every device paired so far, and
   turning on sharing also opens Pumpkin to your home network (the rest still needs your sign-in key).
-  The helper only sees the task text, never your chat.
+  The helper only sees the task text, never your chat. A paired device can ask 2 things at once and 60 per
+  hour (change `share_parallel` and `share_per_hour` in settings.json), so it cannot tie up your model, and
+  its answers reach your model marked as information to weigh, not instructions.
 - **Home-network mode is unencrypted.** Use it only on a network you trust. Tailscale mode is encrypted.
 
-Found a problem? Please open a private security advisory on GitHub instead of a public issue.
+Found a problem? See [SECURITY.md](SECURITY.md) and open a private security advisory on GitHub instead of a
+public issue. Releases are built by GitHub Actions pinned to exact commits, and Dependabot keeps them current.
 - Pumpkin pins the llama.cpp release its UI is built from and downloads the same release of
   llama-server, so the two always match. You can point it at your own build in Settings.
 
