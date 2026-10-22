@@ -264,10 +264,14 @@ jobs:
       - name: Uninstall
         shell: powershell
         run: |
-          & "$env:LOCALAPPDATA\Programs\Pumpkin\uninstall.ps1" *>&1 | Out-File -Encoding utf8 un.txt
+          $ErrorActionPreference = 'Continue'
+          $bad = $null
+          try { & "$env:LOCALAPPDATA\Programs\Pumpkin\uninstall.ps1" *>&1 | Out-File -Encoding utf8 un.txt } catch { "FAILED: $_" | Out-File -Append -Encoding utf8 un.txt; $bad = 'Uninstall threw' }
           Get-Content un.txt
-          if (Test-Path "$env:LOCALAPPDATA\Programs\Pumpkin") { python .github/annotate.py error "Uninstall left files" un.txt; exit 1 }
-          if (Test-Path "$([Environment]::GetFolderPath('Programs'))\Pumpkin.lnk") { python .github/annotate.py error "Uninstall left the shortcut" un.txt; exit 1 }
+          if (Test-Path "$env:LOCALAPPDATA\Programs\Pumpkin") { $bad = 'Uninstall left files' }
+          if (Test-Path "$([Environment]::GetFolderPath('Programs'))\Pumpkin.lnk") { $bad = 'Uninstall left the shortcut' }
+          if ($bad) { python .github/annotate.py error $bad un.txt; exit 1 }
+          exit 0
       - uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
         if: always()
         with:
