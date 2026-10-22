@@ -31,6 +31,7 @@
 	let step = $state(1);
 	let goal = $state('chat');
 	let picks = $state<Pick[]>([]);
+	let slow = $state(false);
 	let loadingPicks = $state(false);
 	let mine = $state<LocalModel | null>(null);
 	let working = $state(false);
@@ -55,13 +56,16 @@
 	async function loadPicks() {
 		loadingPicks = true;
 
-		const r = await pumpkin.run(() => api<{ gpu: Pick[]; moe: Pick[] }>(`recommend?goal=${goal}`));
+		const r = await pumpkin.run(() => api<{ gpu: Pick[]; moe: Pick[]; slow?: Pick[] }>(`recommend?goal=${goal}`));
 		const m = await api<{ models: LocalModel[] }>('models').catch(() => null);
 
 		picks = r ? [...r.gpu.slice(0, 2), ...r.moe.slice(0, 1)] : [];
+		// no graphics card for AI: there is still always something that runs, slowly, on the processor
+		slow = !!r && !picks.length && !!r.slow?.length;
+		if (r && !picks.length) picks = (r.slow ?? []).slice(0, 3);
 		mine =
 			(m?.models ?? [])
-				.filter((x) => x.kind === 'model' && x.complete && ['gpu', 'moe'].includes(x.fit?.level ?? ''))
+				.filter((x) => x.kind === 'model' && x.complete && (['gpu', 'moe'].includes(x.fit?.level ?? '') || (!!x.fit?.cpu && x.fit?.level === 'split')))
 				.sort((a, b) => b.size_gb - a.size_gb)[0] ?? null;
 		loadingPicks = false;
 	}
@@ -205,7 +209,12 @@
 					</Card>
 				{/if}
 
-				<Card description="Chosen for your computer and what you want to do." title={mine ? 'Or install one' : 'Pick a model'}>
+				<Card
+					description={slow
+						? 'This computer has no graphics card Pumpkin can use for AI, so these run on the processor. They work, but answers come slowly, a few words a second. Smaller ones answer faster.'
+						: 'Chosen for your computer and what you want to do.'}
+					title={mine ? 'Or install one' : 'Pick a model'}
+				>
 					<div class="flex flex-col divide-y divide-border/60">
 						{#each picks as p, i (p.id)}
 							<div class="flex items-center gap-3 py-3">

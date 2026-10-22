@@ -52,7 +52,7 @@ def auth_header():
 # llama-server options Pumpkin knows how to use, checked against `llama-server --help`
 KNOWN_FLAGS = ["--agent", "--tools-runtime", "-fit", "-fitt", "--reasoning-budget", "--no-reasoning-preserve",
                "--webui-config-file", "--mcp-servers-config", "--mmproj", "--metrics", "-fa", "-ctk",
-               "--sleep-idle-seconds", "--n-cpu-moe", "--jinja"]
+               "--sleep-idle-seconds", "--n-cpu-moe", "--jinja", "--spec-default"]
 
 
 def candidates(settings):
@@ -418,6 +418,11 @@ class ServerManager:
             cmd += ["-ngl", str(preset["gpu_layers"])]
         if has("-fa"):
             cmd += ["-fa", "on"]
+        if preset.get("spec", True) and not mm and "--spec-default" in flags:
+            # self-speculative decoding (n-gram): guesses the next words from what is already in the conversation
+            # and checks them in one step. Same answers, faster when text repeats (quotes, code edits, summaries)
+            # and no extra model or memory. Left out for image models, where llama.cpp supports it less.
+            cmd += ["--spec-default"]
         if has("--metrics"):
             cmd += ["--metrics"]
         kv = preset.get("kv") or ""

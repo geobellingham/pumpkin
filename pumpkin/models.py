@@ -66,7 +66,7 @@ def fit(model_gb, info, ctx, kv_type, hw):
         usable_vram, usable_ram = max(0.0, vram - 1.0), 0.0
     else:
         usable_vram = max(0.0, vram - 0.8)                 # desktop and driver
-        usable_ram = max(0.0, ram * 0.75 - 4)              # leave room for the system
+        usable_ram = max(0.0, ram * 0.8 - 2.5)             # leave room for the system and a browser
     if vram and need <= usable_vram:
         level = "gpu"
     elif need <= usable_vram + usable_ram:
@@ -79,6 +79,8 @@ def fit(model_gb, info, ctx, kv_type, hw):
            "ram_gb": round(ram, 1), "moe": moe}
     if hw.get("phone"):
         out["phone"] = True
+    if not vram and not hw.get("unified"):
+        out["cpu"] = True                                  # no graphics card for AI: the processor does the work
     return out
 
 
@@ -86,6 +88,9 @@ def fit_label(f):
     """The sentence for a fit result. A phone has no GPU to speak of, so it says memory there."""
     if f.get("phone"):
         return {"gpu": "Fits in your phone's memory", "no": "Too big for this phone"}.get(f["level"], FIT_TEXT[f["level"]])
+    if f.get("cpu"):
+        return {"split": "Runs on the processor: works, but slowly", "moe": "Runs on the processor (MoE, usable speed)",
+                "tight": "Barely fits in RAM: slow, may fail"}.get(f["level"], FIT_TEXT[f["level"]])
     return FIT_TEXT[f["level"]]
 
 
@@ -501,8 +506,22 @@ def pick_quant(choices, hw, ctx, moe=False, kv="q8_0"):
             pick = ok[-1]
             # do not go below Q3 when a larger option would at least run
             return pick
+        if not hw.get("vram_total") and want == ("split", "tight"):
+            # the processor does the work: Q4_K_M is the usual sweet spot of speed and quality, smaller if needed
+            q4 = quant_rank("Q4_K_M")
+            calm = [cf for cf in ok if cf[1]["level"] == "split"] or ok
+            calm.sort(key=lambda cf: (abs(quant_rank(cf[0]["quant"]) - q4) if quant_rank(cf[0]["quant"]) >= 0 else 99,
+                                      cf[0]["size_gb"]))
+            return calm[0]
         ok.sort(key=lambda cf: cf[0]["size_gb"])
         return ok[0]                                   # smallest that runs at all
+    if not hw.get("vram_total") and not hw.get("unified"):
+        # a small computer: the smallest file that needs at most 60% of all RAM still runs with little else open
+        last = [(c, f) for c, f in scored if f["need_gb"] <= (hw.get("ram_total") or 0) * 0.6]
+        if last:
+            last.sort(key=lambda cf: cf[0]["size_gb"])
+            c, f = last[0]
+            return c, dict(f, level="tight")
     return None, None
 
 

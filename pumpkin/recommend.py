@@ -165,7 +165,7 @@ def plan_route(d, hw):
         if f["level"] == "gpu":
             return {"route": "gpu", "quant": q, "size_gb": round(s, 1), "fit": f}
     if not d["moe"]:
-        return None
+        return slow_route(d, hw)
     for q in MOE_QUANTS:
         s = size_gb(d["params_b"], q)
         f = models.fit(s, hint_moe, 32768, "q8_0", hw)
@@ -173,12 +173,36 @@ def plan_route(d, hw):
             vram = max(0.1, (hw.get("vram_total") or 0) - 0.8)
             in_ram = max(0.0, min(1.0, (f["need_gb"] - vram) / f["need_gb"]))
             return {"route": "moe", "quant": q, "size_gb": round(s, 1), "fit": f, "ram_share": round(in_ram, 2)}
+    return slow_route(d, hw)
+
+
+SLOW_QUANTS = ["Q4_K_M", "IQ4_XS", "Q3_K_M"]
+
+
+def slow_route(d, hw, tight=False):
+    """No graphics card for AI (or a built-in one that shares the RAM): a model that fits in RAM still works on the
+    processor, just slowly. Only offered there, and only up to a size that answers at a bearable pace."""
+    if hw.get("vram_total") or hw.get("unified"):
+        return None
+    for q in SLOW_QUANTS:
+        s = size_gb(d["params_b"], q)
+        if s > 9:                                      # past this the processor manages about a word a second
+            continue
+        f = models.fit(s, {"experts": 8} if d["moe"] else {"experts": 0}, 4096 if tight else 8192, "q8_0", hw)
+        if tight and f["level"] == "no" and f["need_gb"] <= (hw.get("ram_total") or 0) * 0.6:
+            f["level"] = "tight"                       # last resort on a small computer: close other programs first
+        if f["level"] in (("split", "moe", "tight") if tight else ("split", "moe")):
+            return {"route": "slow", "quant": q, "size_gb": round(s, 1), "fit": f, "ram_share": 1.0}
     return None
 
 
 def score(d, plan):
     s = 3.0 * math.log2(max(1.0, d["params_b"]))                 # bigger models answer better
-    if plan["route"] == "moe":
+    if plan["route"] == "slow":
+        # on the processor every gigabyte costs speed: small models first, but not so small they are useless
+        active = d["active_b"] or d["params_b"]
+        s = 3.0 * math.log2(max(1.0, d["params_b"])) - max(0.0, plan["size_gb"] - 2.5) * 1.6 - max(0.0, active - 4) * 0.8
+    elif plan["route"] == "moe":
         s = 3.0 * math.log2(max(1.0, d["params_b"])) * 0.85
         if d["active_b"]:
             s -= max(0.0, d["active_b"] - 6) * 0.35              # many active params are slow from RAM
@@ -209,6 +233,8 @@ def blurb(d, plan):
         parts.append("understands images")
     if plan["route"] == "moe":
         parts.append(f"about {round(plan['ram_share'] * 100)}% in RAM")
+    elif plan["route"] == "slow":
+        parts.append("runs on the processor")
     text = ", ".join(parts)
     return text[:1].upper() + text[1:]
 
@@ -232,7 +258,17 @@ def recommend(items, hw, local_files=(), curated=(), per_route=8):
         if k not in best or d["score"] > best[k]["score"]:
             best[k] = d
     picks = {c["repo"].lower(): c for c in curated}
-    out = {"gpu": [], "moe": []}
+    if not best and not hw.get("vram_total") and not hw.get("unified"):
+        # nothing runs comfortably: offer the smallest models that run at all, even if barely
+        for it in items:
+            d = describe(it)
+            if d:
+                plan = slow_route(d, hw, tight=True)
+                if plan:
+                    d.update(plan)
+                    d["score"] = -d["params_b"]
+                    best[("slow", d["key"])] = d
+    out = {"gpu": [], "moe": [], "slow": []}
     for d in best.values():
         c = picks.get(d["repo"].lower())
         if c:
@@ -242,7 +278,7 @@ def recommend(items, hw, local_files=(), curated=(), per_route=8):
         d["blurb"] = blurb(d, d)
         d["fit"]["text"] = models.fit_label(d["fit"])
         d["installed"] = any(d["key"] and d["key"] in f for f in local_files)
-        d["ctx"] = 32768 if d["route"] == "moe" else 16384
+        d["ctx"] = 32768 if d["route"] == "moe" else 8192 if d["route"] == "slow" else 16384
         out[d["route"]].append(d)
     for r in out:
         out[r].sort(key=lambda x: -x["score"])

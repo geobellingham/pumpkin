@@ -197,13 +197,19 @@
 				{/if}
 
 				<div class="flex flex-col gap-1 rounded-xl border border-border/60 px-3 py-2">
-					<Toggle bind:checked={editing.tools as boolean} description="Lets the model run commands and edit files in a Docker sandbox." label="Tools" />
+					<Toggle bind:checked={editing.tools as boolean} description="Your documents, memory, saving files and your other devices. With Docker, also commands and file edits in a sandbox." label="Tools" />
 					<Toggle bind:checked={editing.web as boolean} description="Built-in web search and page reading, no API key needed." disabled={!editing.tools} label="Web search" />
 				</div>
 
 				<details class="rounded-xl border border-border/60 px-3 py-2 text-sm">
 					<summary class="cursor-pointer py-1 font-medium">Advanced</summary>
 					<div class="mt-3 flex flex-col gap-4 pb-2">
+						<Toggle
+							checked={editing.spec !== false}
+							description="Guesses the next words from what is already in the chat and checks several at once. Same answers, faster when text repeats: quoting documents, editing code, summaries. Off for models that read images."
+							label="Faster replies (speculative decoding)"
+							onchange={(v) => editing && (editing.spec = v)}
+						/>
 						<Field hint="Caps how long the model thinks before answering. Empty means no limit, 0 turns thinking off." label="Thinking budget (tokens)">
 							<Input bind:value={editing.think_budget} min="0" placeholder="No limit" type="number" />
 						</Field>

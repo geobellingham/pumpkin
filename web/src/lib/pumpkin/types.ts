@@ -12,6 +12,7 @@ export interface Preset {
 	model: string;
 	name: string;
 	sandbox?: boolean;
+	spec?: boolean;
 	think_budget?: number | null;
 	tools?: boolean;
 	web?: boolean;
@@ -61,6 +62,7 @@ export interface State {
 }
 
 export interface Fit {
+	cpu?: boolean;
 	phone?: boolean;
 	ctx?: number;
 	kv_gb: number;

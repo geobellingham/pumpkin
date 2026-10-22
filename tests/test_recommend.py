@@ -61,6 +61,30 @@ class TestRecommend(unittest.TestCase):
         self.assertEqual(r["gpu"], [])
         self.assertTrue(all(x["moe"] for x in r["moe"]))
 
+    def test_no_graphics_card_still_gets_models(self):
+        """A laptop with only RAM (or a built-in GPU that shares it) always gets something that runs, marked slow."""
+        cat = models.catalog()
+        for ram in (8.0, 16.0):
+            r = recommend.recommend(recommend.curated_items(cat), {"vram_total": 0.0, "ram_total": ram}, curated=cat)
+            self.assertTrue(r["slow"], ram)
+            self.assertTrue(all(x["size_gb"] <= 9 for x in r["slow"]))
+            self.assertEqual(r["slow"][0]["fit"]["text"], "Runs on the processor: works, but slowly")
+            self.assertIn("runs on the processor", r["slow"][0]["blurb"])
+        tiny = recommend.recommend(recommend.curated_items(cat), {"vram_total": 0.0, "ram_total": 4.0}, curated=cat)
+        self.assertEqual(tiny["slow"][0]["name"], "Gemma 3 1B")                  # the last resort: smallest first
+        self.assertIn("may fail", tiny["slow"][0]["fit"]["text"])
+        # with a real GPU the slow route stays empty: the GPU and MoE lists are better
+        gpu = recommend.recommend(recommend.curated_items(cat), SMALL, curated=cat)
+        self.assertEqual(gpu["slow"], [])
+
+    def test_processor_picks_q4(self):
+        choices = [{"kind": "model", "name": f"m-{q}.gguf", "quant": q, "size_gb": s, "files": [f"m-{q}.gguf"]}
+                   for q, s in (("Q3_K_M", 0.9), ("Q4_K_M", 1.1), ("Q6_K", 1.4), ("Q8_0", 1.8))]
+        pick, f = models.pick_quant(choices, {"vram_total": 0.0, "ram_total": 16.0}, 8192)
+        self.assertEqual((pick["quant"], f["level"]), ("Q4_K_M", "split"))
+        pick, f = models.pick_quant(choices, {"vram_total": 0.0, "ram_total": 4.0}, 4096)
+        self.assertEqual((pick["quant"], f["level"]), ("Q3_K_M", "tight"))
+
     def test_offline_falls_back_to_catalog(self):
         r = recommend.recommend(recommend.curated_items(models.catalog()), BIG, curated=models.catalog())
         self.assertTrue(r["gpu"] and r["moe"])

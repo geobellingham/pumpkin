@@ -237,6 +237,28 @@ class TestUpdates(unittest.TestCase):
                 os.remove(marker)
 
 
+class TestSpeculativeDecoding(unittest.TestCase):
+    def cmd(self, preset, flags, mmproj=False):
+        from unittest import mock
+        from pumpkin import llama
+        lib = mock.Mock()
+        lib.resolve.side_effect = lambda p: {"path": p, "info": {}} if p else None
+        sm = llama.ServerManager.__new__(llama.ServerManager)
+        sm.settings = {"threads": 4, "sandbox_image": "ubuntu:24.04", "llama_port": 8080, "files_dir": tempfile.mkdtemp()}
+        sm.library = lib
+        sm.mcp_config = lambda p: None
+        p = {"model": "/m/x.gguf", **preset}
+        if mmproj:
+            p["mmproj"] = "/m/mmproj.gguf"
+        return sm.build_cmd(p, "/bin/llama-server", {"flags": flags})
+
+    def test_on_by_default_when_llama_server_has_it(self):
+        self.assertIn("--spec-default", self.cmd({}, ["--spec-default", "-fa"]))
+        self.assertNotIn("--spec-default", self.cmd({"spec": False}, ["--spec-default"]))
+        self.assertNotIn("--spec-default", self.cmd({}, ["--spec-default"], mmproj=True))     # image models
+        self.assertNotIn("--spec-default", self.cmd({}, ["-fa"]))                            # older llama-server
+
+
 class TestToolsNeedTheSandbox(unittest.TestCase):
     def cmd(self, docker):
         from unittest import mock

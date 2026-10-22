@@ -10,6 +10,9 @@
 		tight: 'Barely fits',
 		no: 'Too big'
 	};
+
+	// no graphics card for AI: the processor does the work
+	const CPU: Record<string, string> = { moe: 'Works, a bit slow', split: 'Works, slowly', tight: 'Barely fits' };
 </script>
 
 {#if fit}
@@ -23,6 +26,6 @@
 		]}
 		title="{fit.text} · needs about {fit.need_gb} GB"
 	>
-		{short ? (fit.phone && fit.level === 'gpu' ? 'Fits' : SHORT[fit.level]) : fit.text}
+		{short ? (fit.phone && fit.level === 'gpu' ? 'Fits' : fit.cpu && CPU[fit.level] ? CPU[fit.level] : SHORT[fit.level]) : fit.text}
 	</span>
 {/if}

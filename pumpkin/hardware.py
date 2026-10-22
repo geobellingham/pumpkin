@@ -290,7 +290,21 @@ def _pci_name(slot):
     return name or None
 
 
+_nv_cache = {"at": 0.0, "value": []}
+
+
 def _nvidia():
+    """NVIDIA GPUs from nvidia-smi. Every open window and phone asks for live numbers every couple of seconds, so
+    one reading is shared for a moment instead of starting nvidia-smi for each of them."""
+    now = time.time()
+    if now - _nv_cache["at"] < 1.5:
+        return [dict(g) for g in _nv_cache["value"]]
+    value = _nvidia_read()
+    _nv_cache.update(at=time.time(), value=value)
+    return [dict(g) for g in value]
+
+
+def _nvidia_read():
     if not shutil.which("nvidia-smi"):
         return []
     try:

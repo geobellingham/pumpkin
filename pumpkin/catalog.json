@@ -94,6 +94,32 @@
       "min_memory_gb": 4,
       "params_b": 3.9,
       "tools": false
+    },
+    {
+      "id": "qwen3-1.7b",
+      "name": "Qwen3 1.7B",
+      "repo": "ggml-org/Qwen3-1.7B-GGUF",
+      "blurb": "Small and quick enough for a computer without a graphics card. Can use tools.",
+      "tags": [
+        "small"
+      ],
+      "ctx": 8192,
+      "min_memory_gb": 4,
+      "params_b": 1.7,
+      "tools": true
+    },
+    {
+      "id": "gemma-3-1b",
+      "name": "Gemma 3 1B",
+      "repo": "ggml-org/gemma-3-1b-it-GGUF",
+      "blurb": "The smallest pick: runs on almost anything, for simple questions and short texts.",
+      "tags": [
+        "small"
+      ],
+      "ctx": 8192,
+      "min_memory_gb": 2,
+      "params_b": 1.0,
+      "tools": false
     }
   ]
 }

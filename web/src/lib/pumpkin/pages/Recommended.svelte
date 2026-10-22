@@ -21,7 +21,7 @@
 		quant: string;
 		ram_share?: number;
 		repo: string;
-		route: 'gpu' | 'moe';
+		route: 'gpu' | 'moe' | 'slow';
 		size_gb: number;
 		tested?: boolean;
 		tools: boolean;
@@ -33,6 +33,7 @@
 		gpu: Rec[];
 		hardware: { phone?: boolean; ram_total: number; unified?: boolean; vram_total: number };
 		moe: Rec[];
+		slow?: Rec[];
 		source: 'huggingface' | 'offline';
 		stale: boolean;
 		updated: number | null;
@@ -122,7 +123,7 @@
 	</div>
 {/snippet}
 
-{#snippet route(key: 'gpu' | 'moe', title: string, description: string, empty: string)}
+{#snippet route(key: 'gpu' | 'moe' | 'slow', title: string, description: string, empty: string)}
 	{@const list = recs?.[key] ?? []}
 	{@const shown = expanded[key] ? list : list.slice(0, 4)}
 	<Card {description} {title}>
@@ -185,5 +186,14 @@
 		'Mixture-of-experts models only use a few billion parameters for each word, so they stay quick with part of the model in RAM. Smarter, a little slower.',
 		'No mixture-of-experts model fits this computer well right now.'
 	)}
+	{/if}
+
+	{#if recs?.slow?.length}
+		{@render route(
+			'slow',
+			'Runs on your processor',
+			'No graphics card Pumpkin can use for AI here, so these run on the processor (and built-in graphics, when it helps). They work, but answer slowly: a few words a second. Smaller ones are faster.',
+			''
+		)}
 	{/if}
 </div>

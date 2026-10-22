@@ -25,6 +25,9 @@ cd "$UI"
 export NODE_OPTIONS="${NODE_OPTIONS:---max-old-space-size=8192}"
 # the app is called Pumpkin in page titles, the manifest and the home screen icon
 sed -i "s/|| 'llama-ui'/|| 'Pumpkin'/" src/lib/constants/app.constants.ts
+# llama.cpp ships its UI as one file so it fits inside llama-server; Pumpkin serves files, so it is split into
+# pieces and a phone only loads the code for the page it opens
+sed -i "s/bundleStrategy: 'single'/bundleStrategy: 'split'/" svelte.config.js
 npm ci --no-audit --no-fund
 npm install --no-save --no-audit --no-fund qrcode-generator@1.4.4
 npm run build
