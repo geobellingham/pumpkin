@@ -14,7 +14,7 @@
 		pumpkinVoice.init();
 	});
 
-	// on a phone: no animations, they make older devices feel jumpy
+	// phone-only layout rules (see the style block)
 	$effect(() => {
 		document.documentElement.classList.toggle('pumpkin-phone', pumpkin.state?.platform === 'android');
 	});
@@ -34,32 +34,13 @@
 </script>
 
 <style>
-	:global(html.pumpkin-phone *),
-	:global(html.pumpkin-phone *::before),
-	:global(html.pumpkin-phone *::after) {
-		animation-duration: 0s !important;
-		animation-delay: 0s !important;
-		transition-duration: 0s !important;
-		transition-delay: 0s !important;
-		scroll-behavior: auto !important;
-	}
-
-	/* nothing may be wider than the screen, otherwise the page wobbles sideways under the finger */
+	/* nothing may be wider than the screen, otherwise the page wobbles sideways under the finger.
+	   clip (not hidden) so the page keeps scrolling normally and sticky headers keep working */
 	:global(html.pumpkin-phone),
 	:global(html.pumpkin-phone body) {
 		max-width: 100%;
-		overflow-x: hidden;
-		overscroll-behavior: none;
-	}
-
-	:global(html.pumpkin-phone pre),
-	:global(html.pumpkin-phone code),
-	:global(html.pumpkin-phone p) {
-		overflow-wrap: anywhere;
-	}
-
-	:global(html.pumpkin-phone pre) {
-		white-space: pre-wrap;
+		overflow-x: clip;
+		overscroll-behavior-x: none;
 	}
 </style>
 
@@ -73,7 +54,7 @@
 	{#if pumpkin.toast}
 		<div
 			class="pointer-events-none fixed inset-x-0 top-16 z-[60] flex justify-center px-4"
-			transition:fly={{ duration: pumpkin.state?.platform === 'android' ? 0 : 150, y: -8 }}
+			transition:fly={{ duration: 150, y: -8 }}
 		>
 			<div
 				class={[
