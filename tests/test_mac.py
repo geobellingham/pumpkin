@@ -90,6 +90,7 @@ class TestPinnedLlama(unittest.TestCase):
         self.assertEqual(llama.pinned_tag(), want)
 
 
+@unittest.skipIf(os.name == "nt", "the fake llama-server here is a shell script")
 class TestProbe(unittest.TestCase):
     def test_new_version_format_and_metal(self):
         d = tempfile.mkdtemp()

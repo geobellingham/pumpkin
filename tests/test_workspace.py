@@ -37,11 +37,11 @@ class TestWorkFolder(unittest.TestCase):
         top = workspace.listing(self.s)
         self.assertEqual([i["name"] for i in top["items"] if i["dir"]], ["notes"])
         inner = workspace.listing(self.s, "notes")
-        self.assertEqual(inner["items"][0]["path"], os.path.join("notes", "a.md"))
+        self.assertEqual(inner["items"][0]["path"], "notes/a.md")      # always / for the UI, also on Windows
         self.assertIn("a.md", [r["name"] for r in workspace.recent(self.s)])
 
     def test_upload_never_overwrites(self):
-        self.assertEqual(workspace.save_upload(self.s, "notes", "a.md", b"new"), os.path.join("notes", "a (2).md"))
+        self.assertEqual(workspace.save_upload(self.s, "notes", "a.md", b"new"), "notes/a (2).md")
         with open(os.path.join(self.base, "notes", "a.md")) as f:
             self.assertEqual(f.read(), "# hi")
         with self.assertRaises(ValueError):

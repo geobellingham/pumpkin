@@ -57,6 +57,22 @@ jobs:
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
         with:
           python-version: "3.12"
+      - name: Sparse files (diagnostic)
+        continue-on-error: true
+        timeout-minutes: 3
+        run: |
+          python - <<'PY'
+          import os, subprocess, tempfile, time
+          d = tempfile.mkdtemp(); out = [f"dir {d}"]
+          p = os.path.join(d, "a.gguf"); open(p, "wb").write(b"GGUF")
+          t = time.time(); r = subprocess.run(["fsutil", "sparse", "setflag", p], capture_output=True, text=True)
+          out.append(f"setflag rc={r.returncode} {time.time()-t:.1f}s {r.stderr.strip()[:100]}")
+          for gb in (1, 20):
+              t = time.time(); os.truncate(p, gb * 2**30); out.append(f"truncate {gb} GB {time.time()-t:.1f}s")
+          r = subprocess.run(["fsutil", "sparse", "queryflag", p], capture_output=True, text=True); out.append(r.stdout.strip())
+          r = subprocess.run(["fsutil", "fsinfo", "volumeinfo", d[:3]], capture_output=True, text=True); out.append(r.stdout[:300])
+          print("::notice title=sparse diagnostic::" + "%0A".join(out))
+          PY
       - name: tests/test_android.py
         id: android
         continue-on-error: true

@@ -248,7 +248,8 @@ class TestToolsNeedTheSandbox(unittest.TestCase):
         sm.mcp_config = lambda p: None
         info = {"flags": ["--agent", "--tools-runtime", "--mcp-servers-config"]}
         with mock.patch.object(llama.shutil, "which", lambda b: "/usr/bin/docker" if docker and b == "docker" else None), \
-                mock.patch.object(llama.workspace, "ensure", lambda s: "pumpkin-workspace"):
+                mock.patch.object(llama.workspace, "ensure", lambda s: "pumpkin-workspace"), \
+                mock.patch.object(llama.workspace, "docker_usable", lambda: docker):
             return sm.build_cmd({"model": "x", "tools": True, "sandbox": True}, "/bin/llama-server", info)
 
     def test_no_docker_means_no_command_tools(self):

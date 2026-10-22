@@ -34,7 +34,7 @@ class TestMigrate(unittest.TestCase):
                   open(os.path.join(old, "settings.json"), "w"))
         open(os.path.join(home, "mcp.json"), "w").write('{"mcpServers": {}}')
         os.makedirs(os.path.join(home, "llm-reports"))
-        env = dict(os.environ, HOME=home, PYTHONPATH=ROOT, XDG_CONFIG_HOME=os.path.join(home, ".config"),
+        env = dict(os.environ, HOME=home, USERPROFILE=home, PYTHONPATH=ROOT, XDG_CONFIG_HOME=os.path.join(home, ".config"),
                    XDG_DATA_HOME=os.path.join(home, ".local/share"), XDG_STATE_HOME=os.path.join(home, ".local/state"))
         out = subprocess.run([sys.executable, "-c", SCRIPT], env=env, capture_output=True, text=True, check=True)
         r = json.loads(out.stdout)

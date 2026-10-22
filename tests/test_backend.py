@@ -13,8 +13,8 @@ sys.path.insert(0, os.path.dirname(HERE))
 sys.path.insert(0, HERE)
 
 TMP = tempfile.mkdtemp(prefix="pumpkin-test-")
-os.environ.update(HOME=TMP, XDG_CONFIG_HOME=f"{TMP}/.config", XDG_DATA_HOME=f"{TMP}/.local/share",
-                  XDG_STATE_HOME=f"{TMP}/.local/state", PATH=f"{TMP}/bin:" + os.environ["PATH"])
+os.environ.update(HOME=TMP, USERPROFILE=TMP, XDG_CONFIG_HOME=f"{TMP}/.config", XDG_DATA_HOME=f"{TMP}/.local/share",
+                  XDG_STATE_HOME=f"{TMP}/.local/state", PATH=f"{TMP}/bin" + os.pathsep + os.environ["PATH"])
 os.makedirs(f"{TMP}/bin")
 
 import fixtures  # noqa: E402
