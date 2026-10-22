@@ -215,7 +215,8 @@ class TestUpdates(unittest.TestCase):
 
     def test_apply_runs_the_installer(self):
         marker = tempfile.mktemp()
-        os.environ["PUMPKIN_INSTALL_CMD"] = f"touch {marker}"
+        os.environ["PUMPKIN_INSTALL_CMD"] = (f"New-Item -ItemType File -Path '{marker}' | Out-Null" if os.name == "nt"
+                                             else f"touch {marker}")
         old_home, old_state, old_cache = config.HOME, config.STATE_DIR, updates.CACHE
         config.STATE_DIR = tempfile.mkdtemp()
         config.HOME = tempfile.mkdtemp()                      # keeps the follow-up restart away from the real install
@@ -224,7 +225,7 @@ class TestUpdates(unittest.TestCase):
             with open(updates.CACHE, "w") as f:
                 json.dump({"at": time.time(), "tag": "v9.9.9"}, f)
             updates.apply()
-            for _ in range(60):
+            for _ in range(300):                              # PowerShell takes a few seconds to start
                 if os.path.exists(marker):
                     break
                 time.sleep(0.1)

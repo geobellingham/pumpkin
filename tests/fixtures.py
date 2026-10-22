@@ -44,7 +44,14 @@ def make_gguf(path, arch="qwen3moe", size_gb=0.0, name="Test Model", layers=48, 
             # NTFS only makes a file sparse when told to; otherwise a 40 GB fake model is 40 GB of written zeros
             import subprocess
             subprocess.run(["fsutil", "sparse", "setflag", path], check=True, capture_output=True)
-        os.truncate(path, int(size_gb * 2 ** 30))      # sparse: no real disk use
+        size = int(size_gb * 2 ** 30)
+        if os.name == "nt":
+            # os.truncate zero-fills on Windows (minutes for 20 GB); writing one byte at the end of a sparse file is instant
+            with open(path, "r+b") as f:
+                f.seek(size - 1)
+                f.write(b"\0")
+        else:
+            os.truncate(path, size)                    # sparse: no real disk use
     return path
 
 
