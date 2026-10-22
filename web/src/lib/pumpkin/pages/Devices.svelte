@@ -51,6 +51,8 @@
 
 	let list = $state<Device[] | null>(null);
 	let hasTools = $state<boolean | null>(null);
+	let presetTools = $state<boolean | null>(null);
+	let presetId = $state<string | null>(null);
 	let share = $state<Share | null>(null);
 	let code = $state('');
 	let name = $state('');
@@ -59,11 +61,15 @@
 	let answers = $state<Record<string, string>>({});
 
 	async function load() {
-		const r = await pumpkin.run(() => api<{ devices: Device[]; model_has_tools: boolean | null }>('devices'));
+		const r = await pumpkin.run(() =>
+			api<{ devices: Device[]; model_has_tools: boolean | null; preset_id: string | null; preset_tools: boolean | null }>('devices')
+		);
 
 		if (r) {
 			list = r.devices;
 			hasTools = r.model_has_tools;
+			presetTools = r.preset_tools;
+			presetId = r.preset_id;
 		}
 	}
 
@@ -132,11 +138,12 @@
 	}
 
 	async function restartModel() {
-		const p = pumpkin.state?.server.preset as { id?: string } | null | undefined;
+		if (!presetId) return;
 
-		if (!p?.id) return;
+		const id = presetId;
 
-		await pumpkin.run(() => api('llama/start', { body: { preset: p.id } }), 'Restarting the model');
+		if (presetTools === false) await pumpkin.run(() => api(`presets/${id}`, { body: { tools: true }, method: 'PUT' }));
+		await pumpkin.run(() => api('llama/start', { body: { preset: id } }), 'Restarting the model');
 		setTimeout(load, 4000);
 	}
 
@@ -241,8 +248,15 @@
 
 					{#if hasTools === false}
 						<div class="mt-3 flex flex-wrap items-center gap-3 rounded-xl bg-muted/50 p-3 text-sm">
-							<span class="min-w-0 flex-1">The running model started before you paired, so it does not have the device tools yet.</span>
-							<Button class="rounded-full" onclick={restartModel} size="sm"><RefreshCw class="h-4 w-4" /> Restart the model</Button>
+							<span class="min-w-0 flex-1">
+								{presetTools === false
+									? 'Tools are off in the running preset, so the model cannot ask your devices.'
+									: 'The running model started before you paired, so it does not have the device tools yet.'}
+							</span>
+							<Button class="rounded-full" onclick={restartModel} size="sm">
+								<RefreshCw class="h-4 w-4" />
+								{presetTools === false ? 'Turn on tools and restart' : 'Restart the model'}
+							</Button>
 						</div>
 					{/if}
 				{/if}

@@ -584,7 +584,10 @@ class Web:
                 return core.share_status()
             if not ident:
                 if method == "GET":
-                    return {"devices": devices.statuses(), "model_has_tools": core.devices_loaded()}
+                    cur = core.server.preset if core.server.state == "ready" else None
+                    return {"devices": devices.statuses(), "model_has_tools": core.devices_loaded(),
+                            "preset_tools": bool(cur.get("tools")) if cur else None,
+                            "preset_id": cur.get("id") if cur else None}
                 if method == "POST":
                     return devices.add(body.get("code", ""))
             if ident and len(parts) > 2 and parts[2] == "test" and method == "POST":

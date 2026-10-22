@@ -130,7 +130,7 @@ different model.
 1. On the device that should help, open **Devices** and turn on *Let my other devices use this one*.
    Copy its pairing code (or scan the QR code).
 2. On the device you chat on, open **Devices** and paste the code under *Add a device*.
-3. Start (or restart) a model. It now has two tools: `devices_list` and `devices_ask`. Ask it something
+3. Start (or restart) a model with *Tools* on in its preset. It now has two tools: `devices_list` and `devices_ask`. Ask it something
    like "Have my Mac write the first draft, then you check it." Each request shows in the chat like a
    web search, and the helper lists it under *Recent requests*.
 

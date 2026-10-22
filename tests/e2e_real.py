@@ -118,7 +118,9 @@ try:
     code = call("GET", "/pumpkin/api/devices/share")["code"]
     dev = call("POST", "/pumpkin/api/devices", {"code": code})
     print("paired:", dev["name"], dev["urls"])
-    call("POST", "/pumpkin/api/llama/start", {"preset": preset["id"]})       # the tools come with a fresh start
+    # the device tools come with the preset's Tools switch and a fresh start
+    call("PUT", f"/pumpkin/api/presets/{preset['id']}", {"tools": True, "sandbox": False, "web": False})
+    call("POST", "/pumpkin/api/llama/start", {"preset": preset["id"]})
     st = wait(lambda: (s := call("GET", "/pumpkin/api/state")["server"])["state"] in ("ready", "error") and s,
               "the model with the devices tools", 300)
     if st["state"] != "ready":
@@ -138,6 +140,7 @@ try:
     assert call("GET", "/pumpkin/api/devices/share")["recent"][0]["state"] == "done"
     call("POST", "/pumpkin/api/devices/share", {"on": False})
     call("DELETE", f"/pumpkin/api/devices/{dev['id']}")
+    call("PUT", f"/pumpkin/api/presets/{preset['id']}", {"tools": False})
 
     import shutil
     if shutil.which("docker") and subprocess.run(["docker", "info"], capture_output=True).returncode == 0:
