@@ -94,6 +94,8 @@
 				<span class="min-w-0 flex-1 break-all">{s.server.error}</span>
 				<a class="shrink-0 underline" href="#/pumpkin/settings">See log</a>
 			</p>
+		{:else if s?.server.notice && (s.server.state === 'ready' || s.server.state === 'loading')}
+			<p class="mt-4 rounded-xl bg-muted/50 p-3 text-sm text-muted-foreground">{s.server.notice}</p>
 		{/if}
 
 		<div class="mt-4 flex flex-wrap gap-2">

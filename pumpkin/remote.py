@@ -39,6 +39,29 @@ def tailscale_host():
         return None
 
 
+def tailscale_state():
+    """Where Tailscale is on this computer, step by step: installed, signed in, MagicDNS and HTTPS turned on."""
+    out = {"installed": bool(ts()), "running": False, "signed_in": False, "magic_dns": False, "https": False,
+           "host": None, "tailnet": None}
+    if not out["installed"]:
+        return out
+    code, raw, _ = _run([ts(), "status", "--json"], timeout=10)
+    try:
+        j = json.loads(raw) if raw else {}
+    except ValueError:
+        j = {}
+    state = j.get("BackendState") or ""
+    out["running"] = state not in ("", "Stopped", "NoState")
+    out["signed_in"] = state == "Running"
+    cur = j.get("CurrentTailnet") or {}
+    out["tailnet"] = cur.get("Name")
+    out["magic_dns"] = bool(cur.get("MagicDNSEnabled"))
+    out["https"] = bool(j.get("CertDomains"))
+    host = ((j.get("Self") or {}).get("DNSName") or "").rstrip(".")
+    out["host"] = host or None
+    return out
+
+
 def tailscale_on(port):
     """Publishes Pumpkin at https://<machine>.<tailnet>.ts.net (tailnet only)."""
     if not ts():
@@ -85,4 +108,5 @@ def status(settings, token):
         ip = lan_ip()
         base = f"http://{ip}:{port}" if ip else None
     return {"mode": mode, "base": base, "link": f"{base}/login?key={token}" if base else None,
-            "tailscale_installed": bool(ts()), "lan_ip": lan_ip()}
+            "tailscale_installed": bool(ts()), "lan_ip": lan_ip(),
+            "tailscale": tailscale_state() if mode == "tailscale" or ts() else None}

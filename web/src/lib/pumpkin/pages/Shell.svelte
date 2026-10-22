@@ -3,6 +3,7 @@
 		AudioLines,
 		Bot,
 		Boxes,
+		Brain,
 		ChevronLeft,
 		Clock,
 		FileText,
@@ -22,6 +23,7 @@
 	import Devices from './Devices.svelte';
 	import Doctor from './Doctor.svelte';
 	import Files from './Files.svelte';
+	import Memory from './Memory.svelte';
 	import Models from './Models.svelte';
 	import Overview from './Overview.svelte';
 	import Phone from './Phone.svelte';
@@ -45,6 +47,7 @@
 		{ icon: Bot, id: 'agent', label: 'Agent', page: Agent },
 		{ icon: Clock, id: 'tasks', label: 'Tasks', page: Tasks },
 		{ icon: FolderOpen, id: 'files', label: 'Files', page: Files },
+		{ icon: Brain, id: 'memory', label: 'Memory', page: Memory },
 		{ icon: MessageSquareText, id: 'prompts', label: 'Prompts', page: Prompts },
 		{ icon: FileText, id: 'reports', label: 'Reports', page: Reports },
 		{ icon: AudioLines, id: 'voice', label: 'Voice', page: Voice },

@@ -168,18 +168,10 @@ class Helper:
                 "models": [p.get("name") for p in core.presets.all() if p.get("name")],
                 "busy": self.busy, "ram_total": live.get("ram_total") if isinstance(live, dict) else None}
 
-    def ask(self, body, who=""):
-        from . import llama
+    def begin(self, who, what):
+        """Takes one of the slots other devices may use, or refuses with Busy. Returns the entry for the list."""
         core = self.core
-        task = str(body.get("task") or "").strip()
-        if not task:
-            raise ValueError("The task is empty.")
-        if len(task) > MAX_TASK:
-            raise ValueError(f"The task is too long (over {MAX_TASK} characters).")
-        system = str(body.get("system") or "").strip()[:20_000]
-        want = str(body.get("model") or "").strip()
-        max_tokens = max(16, min(int(body.get("max_tokens") or 2048), 8192))
-        entry = {"at": time.time(), "from": str(who)[:60], "task": task[:200], "state": "running"}
+        entry = {"at": time.time(), "from": str(who)[:60], "task": str(what)[:200], "state": "running"}
         with self._lock:
             # a paired device must not be able to tie up this model: a few at once, and so many per hour
             now = time.time()
@@ -191,19 +183,42 @@ class Helper:
             self._times.append(now)
             self.recent = ([entry] + self.recent)[:20]
             self.busy += 1
+        return entry
+
+    def end(self):
+        with self._lock:
+            self.busy -= 1
+
+    def ready_model(self, want):
+        """Starts the model the other device asked for (or this device's usual one) and waits for it."""
+        core = self.core
+        want = str(want or "").strip()
+        if want:
+            if not core.ensure_preset(want):
+                raise ValueError(f"This device has no model called {want}.")
+        elif core.server.state not in ("ready", "loading"):
+            p = core.default_preset()
+            if not p:
+                raise RuntimeError("This device has no model installed.")
+            core.ensure_preset(p.get("name") or p.get("id"))
+        if not core.server.wait_ready(timeout=900):
+            raise RuntimeError(core.server.error or "The model here did not start.")
+        return (core.server.preset or {}).get("name")
+
+    def ask(self, body, who=""):
+        from . import llama
+        core = self.core
+        task = str(body.get("task") or "").strip()
+        if not task:
+            raise ValueError("The task is empty.")
+        if len(task) > MAX_TASK:
+            raise ValueError(f"The task is too long (over {MAX_TASK} characters).")
+        system = str(body.get("system") or "").strip()[:20_000]
+        max_tokens = max(16, min(int(body.get("max_tokens") or 2048), 8192))
+        entry = self.begin(who, task)
         t0 = time.time()
         try:
-            if want:
-                if not core.ensure_preset(want):
-                    raise ValueError(f"This device has no model called {want}.")
-            elif core.server.state not in ("ready", "loading"):
-                p = core.default_preset()
-                if not p:
-                    raise RuntimeError("This device has no model installed.")
-                core.ensure_preset(p.get("name") or p.get("id"))
-            if not core.server.wait_ready(timeout=900):
-                raise RuntimeError(core.server.error or "The model here did not start.")
-            name = (core.server.preset or {}).get("name")
+            name = self.ready_model(body.get("model"))
             msgs = ([{"role": "system", "content": system}] if system else []) + [{"role": "user", "content": task}]
             r = llama.http(core.server.port, "/v1/chat/completions",
                            {"messages": msgs, "max_tokens": max_tokens, "temperature": 0.6}, timeout=1800)
@@ -218,8 +233,7 @@ class Helper:
             entry.update(state="error", error=str(e)[:200])
             raise
         finally:
-            with self._lock:
-                self.busy -= 1
+            self.end()
 
 
 # ------------------------------------------------------------------ devices this Pumpkin can ask
@@ -281,6 +295,35 @@ def call(dev, path, payload=None, timeout=10):
                 raise RuntimeError(msg or f"The other device answered with an error ({e.code}).") from None
             last = f"HTTP {e.code}"
         except (urllib.error.URLError, OSError, HTTPException, ValueError) as e:
+            last = str(getattr(e, "reason", e))
+    raise ConnectionError(f"{dev.get('name', 'The device')} is not reachable ({last or 'no address'}). Is Pumpkin "
+                          f"open there, with sharing on?")
+
+
+def open_chat(dev, body, timeout=3600):
+    """Starts a chat on a paired device's model and returns the open response, to be streamed back as it comes.
+    Tried on each of the device's addresses until one answers."""
+    data = json.dumps(body).encode()
+    last = None
+    urls = list(dev.get("urls") or [])
+    if dev.get("url") in urls:
+        urls.remove(dev["url"])
+        urls.insert(0, dev["url"])
+    for base in urls:
+        req = urllib.request.Request(base.rstrip("/") + "/pumpkin/peer/chat", data=data, method="POST",
+                                     headers={"Authorization": "Bearer " + dev["key"], "Content-Type": "application/json",
+                                              "X-Pumpkin-From": dev.get("from", "")[:60]})
+        try:
+            r = _open(req, timeout=timeout)
+            dev["url"] = base
+            return r
+        except urllib.error.HTTPError as e:
+            try:
+                msg = json.loads(e.read().decode("utf-8", "replace")).get("error")
+            except ValueError:
+                msg = None
+            raise RuntimeError(msg or f"{dev.get('name', 'The device')} answered with an error ({e.code}).") from None
+        except (urllib.error.URLError, OSError, HTTPException) as e:
             last = str(getattr(e, "reason", e))
     raise ConnectionError(f"{dev.get('name', 'The device')} is not reachable ({last or 'no address'}). Is Pumpkin "
                           f"open there, with sharing on?")

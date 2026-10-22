@@ -381,9 +381,13 @@ class ServerManager:
         self.preset = None             # dict of the preset that is running or loading
         self.state = "off"             # off | loading | ready | error | external
         self.error = None
+        self.notice = None             # what Pumpkin did by itself, like starting with a shorter context
         self.started_at = None
         self.lock = threading.RLock()
         self.on_change = []
+        self.on_recover = None         # the app saves a context that worked back into the preset
+        self._tries = 0                # automatic retries for the preset that is loading
+        self._crashes = []             # when a running model stopped by itself
         threading.Thread(target=self._watch, daemon=True).start()
 
     @property
@@ -456,8 +460,10 @@ class ServerManager:
     mcp_config = lambda self, preset: None
 
     # ---- lifecycle
-    def start(self, preset):
+    def start(self, preset, _retry=False):
         with self.lock:
+            if not _retry:
+                self._tries, self.notice = 0, None
             binary = find_server(self.settings)
             if not binary:
                 raise RuntimeError("llama-server was not found. Open Settings to download it.")
@@ -485,7 +491,7 @@ class ServerManager:
     def stop(self):
         with self.lock:
             self._stop_locked()
-            self.preset, self.state, self.error = None, "off", None
+            self.preset, self.state, self.error, self.notice = None, "off", None, None
         self._changed()
 
     def _inhibit(self, on):
@@ -600,14 +606,20 @@ class ServerManager:
                     if p is not None and p.poll() is not None:
                         self.proc = None
                         self.exit_code = p.returncode
-                        if self.state in ("loading", "ready"):
-                            self.state, self.error = "error", self._explain_failure()
+                        was = self.state
+                        if was in ("loading", "ready"):
+                            err = self._explain_failure()
+                            if not self._recover(was):        # retrying shows as loading, never as an error
+                                self.state, self.error = "error", err
                             changed = True
                         self._inhibit(False)
                     ok = health(self.port)
                     if self.proc is not None:
                         if ok and self.state == "loading":
                             self.state, changed = "ready", True
+                            worked, self._worked = getattr(self, "_worked", None), None
+                            if worked and self.on_recover:
+                                self.on_recover(worked)
                     elif ok and self.state in ("off", "error"):
                         self.state, self.preset, changed = "external", None, True
                     elif not ok and self.state == "external":
@@ -618,6 +630,51 @@ class ServerManager:
                 pass
             time.sleep(1.0)
 
+    def _out_of_memory(self):
+        if getattr(self, "exit_code", None) == -getattr(signal, "SIGKILL", 9):
+            return True
+        tail = "".join(self.log_tail(120))
+        return bool(re.search(r"out of memory|ErrorOutOfDeviceMemory|failed to allocate|cudaMalloc failed|"
+                              r"unable to allocate|not enough memory", tail, re.I))
+
+    def _recover(self, was):
+        """Fixes the common failures without asking: a model that runs out of memory while loading starts again
+        with half the context (twice at most), and a model that stops by itself while running starts again once."""
+        preset = dict(self.preset or {})
+        if not preset:
+            return False
+        if was == "loading" and self._out_of_memory():
+            ctx = int(preset.get("ctx") or 8192)
+            if self._tries >= 2 or ctx <= 2048:
+                return False
+            new = max(2048, ctx // 2)
+            self._tries += 1
+            preset["ctx"] = new
+            note = (f"{preset.get('name')} did not fit in memory with {ctx:,} tokens of context, so Pumpkin started it "
+                    f"with {new:,}.")
+        elif was == "ready":
+            now = time.time()
+            self._crashes = [t for t in self._crashes if now - t < 600]
+            if self._crashes:
+                return False                        # twice in ten minutes: something is wrong, say so instead
+            self._crashes.append(now)
+            note = f"{preset.get('name')} stopped unexpectedly, so Pumpkin started it again."
+        else:
+            return False
+
+        def again():
+            time.sleep(1.5)
+            try:
+                self.start(preset, _retry=True)
+                self.notice = note
+                self._worked = preset if was == "loading" else None     # saved once it is ready
+            except Exception:  # noqa: BLE001 - the first error stays on screen
+                pass
+            self._changed()
+        self.state, self.error, self.notice = "loading", None, note
+        threading.Thread(target=again, daemon=True).start()
+        return True
+
     def _changed(self):
         for cb in list(self.on_change):
             try:
@@ -626,7 +683,7 @@ class ServerManager:
                 pass
 
     def status(self):
-        return {"state": self.state, "error": self.error, "preset": self.preset,
+        return {"state": self.state, "error": self.error, "notice": self.notice, "preset": self.preset,
                 "uptime": time.time() - self.started_at if self.started_at and self.state == "ready" else None,
                 "port": self.port}
 

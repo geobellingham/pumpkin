@@ -7,6 +7,7 @@ import ipaddress
 import json
 import mimetypes
 import os
+import secrets
 import shutil
 import sys
 import threading
@@ -14,7 +15,8 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, quote, unquote, urlparse
 
-from . import APP_NAME, __version__, agent, config, devices, discover, sessions, doctor, hardware, llama, models, remote, updates, workspace
+from . import (APP_NAME, __version__, agent, config, devices, discover, docs, doctor, hardware, llama, memory, models,
+               remote, sessions, updates, workspace)
 
 COOKIE = "pumpkin_key"
 API = "/pumpkin/api/"
@@ -70,6 +72,7 @@ class Web:
         self.host = None
         self.gz_cache = {}
         self.stopped = threading.Event()
+        self.once = {}                      # single-use sign-in codes for the phone's QR: code -> expiry
 
     # ------------------------------------------------------------ lifecycle
     def ui_dir(self):
@@ -287,6 +290,16 @@ class Web:
                                          "http://127.0.0.1 or the link from <code>pumpkin link</code>.</p>")
             u = urlparse(h.path)
             path, q = u.path, parse_qs(u.query)
+            if path == "/login" and q.get("once"):
+                # the phone scanned a QR: a code that works once, for ten minutes; the real key never leaves
+                code = (q.get("once") or [""])[0].strip()
+                exp = self.once.pop(code, 0) if code else 0
+                if exp < time.time():
+                    time.sleep(1)
+                    err = ('<p class="err">That code was already used or is too old. Make a new one on Pumpkin\'s '
+                           'Phone page, or sign in with the key.</p>')
+                    return self.send(h, 401, LOGIN_HTML.format(app=APP_NAME, err=err))
+                return self.send(h, 302, b"", headers={"Location": "/", "Set-Cookie": self.new_session_cookie(h)})
             if path == "/login":
                 key = (q.get("key") or [""])[0].strip()
                 if not key or not hmac.compare_digest(key, self.token):
@@ -332,6 +345,27 @@ class Web:
         try:
             if name == "info" and h.command == "GET":
                 return self.json(h, core.helper.info())
+            if name == "chat" and h.command == "POST":
+                # the other device's chat uses the model here: an OpenAI-style request, streamed back as it comes
+                n = int(h.headers.get("Content-Length") or 0)
+                if n > 30_000_000:
+                    return self.json(h, {"error": "The conversation is too long."}, 413)
+                body = json.loads(h.rfile.read(n).decode() or "{}") if n else {}
+                msgs = body.get("messages")
+                if not isinstance(msgs, list) or not msgs:
+                    return self.json(h, {"error": "The chat has no messages."}, 400)
+                last = next((m.get("content") for m in reversed(msgs) if isinstance(m, dict) and m.get("role") == "user"), "")
+                entry = core.helper.begin(h.headers.get("X-Pumpkin-From") or "", f"Chat: {str(last)[:180]}")
+                try:
+                    body["model"] = core.helper.ready_model(body.get("model"))
+                    self.to_llama(h, json.dumps(body).encode())
+                    entry.update(state="done", model=body["model"])
+                except Exception as e:
+                    entry.update(state="error", error=str(e)[:200])
+                    raise
+                finally:
+                    core.helper.end()
+                return None
             if name == "ask" and h.command == "POST":
                 n = int(h.headers.get("Content-Length") or 0)
                 if n > 1_000_000:
@@ -362,6 +396,8 @@ class Web:
                                    f"the folder directly.", 413)
                 data = h.rfile.read(n) if n else b""
                 rel = workspace.save_upload(core.settings, (q.get("dir") or [""])[0], (q.get("name") or [""])[0], data)
+                if core.indexer:
+                    core.indexer.poke()                  # searchable within seconds
                 return self.json(h, {"path": rel})
             body = {}
             if method in ("POST", "PUT", "PATCH", "DELETE"):
@@ -401,7 +437,19 @@ class Web:
             changes = {k: v for k, v in body.items() if k in config.DEFAULT_SETTINGS}
             if "hf_token" in changes and changes["hf_token"] == "set":
                 changes.pop("hf_token")
+            if "doc_folders" in changes:
+                dirs = []
+                for d in changes["doc_folders"] or []:
+                    d = os.path.expanduser(str(d).strip())
+                    if not d:
+                        continue
+                    if not os.path.isdir(d):
+                        raise ApiError(f"{d} is not a folder on this computer.")
+                    dirs.append(d)
+                changes["doc_folders"] = dirs
             core.settings.update(changes)
+            if core.indexer and ({"doc_folders", "doc_index", "files_dir"} & set(changes)):
+                core.indexer.poke()
             return core.settings.public()
 
         # ---- llama-server
@@ -614,11 +662,13 @@ class Web:
             if not ident:
                 if method == "GET":
                     cur = core.server.preset if core.server.state == "ready" else None
-                    return {"devices": devices.statuses(), "model_has_tools": core.devices_loaded(),
+                    return {"devices": core.refresh_peers(devices.statuses()), "model_has_tools": core.devices_loaded(),
                             "preset_tools": bool(cur.get("tools")) if cur else None,
                             "preset_id": cur.get("id") if cur else None}
                 if method == "POST":
-                    return devices.add(body.get("code", ""))
+                    added = devices.add(body.get("code", ""))
+                    threading.Thread(target=core.refresh_peers, daemon=True).start()   # its models show up in the chat
+                    return added
             if ident and len(parts) > 2 and parts[2] == "test" and method == "POST":
                 d = devices.find(ident)
                 if not d:
@@ -626,13 +676,25 @@ class Web:
                 return devices.ask(d["id"], "Reply with one short friendly sentence saying you are ready to help.",
                                    sender=devices.device_name(core.settings), timeout=900)
             if ident and method in ("PUT", "PATCH"):
-                return devices.update(ident, body)
+                changed = devices.update(ident, body)
+                threading.Thread(target=core.refresh_peers, daemon=True).start()
+                return changed
             if ident and method == "DELETE":
                 devices.remove(ident)
+                threading.Thread(target=core.refresh_peers, daemon=True).start()
                 return {"ok": True}
         if head == "remote":
             if method == "GET":
-                return remote.status(core.settings, self.token)
+                return core.remote_status()
+            if ident == "qr" and method == "POST":
+                st = core.remote_status()
+                if not st["base"]:
+                    raise ApiError("Turn on phone access first: home network or Tailscale.")
+                now = time.time()
+                self.once = {c: e for c, e in self.once.items() if e > now}
+                code = secrets.token_urlsafe(18)
+                self.once[code] = now + 600
+                return {"link": f"{st['base']}/login?once={code}", "expires": int(now + 600)}
             mode = body.get("mode", "off")
             if mode not in ("off", "tailscale", "lan"):
                 raise ApiError("Unknown mode.")
@@ -657,6 +719,34 @@ class Web:
                 if not sessions.remove(ident):
                     raise ApiError("That sign-in is gone already.", 404)
                 return {"sessions": sessions.listing(session_id)}
+        # ---- what Pumpkin remembers about you
+        if head == "memory":
+            if method == "GET" and not ident:
+                return {"enabled": bool(core.settings["memory"]), "items": memory.load()}
+            if method == "POST" and ident == "clear":
+                memory.clear()
+                return {"items": []}
+            if method == "POST" and not ident:
+                return memory.add(body.get("text"), source="you")
+            if method == "PUT" and ident:
+                return memory.update(ident, body.get("text"))
+            if method == "DELETE" and ident:
+                memory.remove(ident)
+                return {"ok": True}
+
+        # ---- your documents, searchable by the model
+        if head == "docs":
+            if method == "GET" and not ident:
+                return docs.status(core.settings)
+            if method == "GET" and ident == "list":
+                return {"items": docs.listing(core.settings, 500)}
+            if method == "GET" and ident == "search":
+                return {"hits": docs.search(core.settings, arg("q", ""), int(arg("n", "8")))}
+            if method == "POST" and ident == "refresh":
+                if core.indexer:
+                    core.indexer.poke()
+                return docs.status(core.settings)
+
         if head == "token" and ident == "reset" and method == "POST":
             self.token = config.reset_token()
             return {"ok": True}
@@ -679,17 +769,19 @@ class Web:
         try:
             body = _read_body(h)
             path = urlparse(h.path).path
-            if h.command == "GET" and path in ("/v1/models", "/models") and self.core.presets.all() \
-                    and self.core.server.state != "external":
+            if h.command == "GET" and path in ("/v1/models", "/models") and self.core.server.state != "external" \
+                    and (self.core.presets.all() or self.core.peer_models()):
                 data = self.core.model_list()
                 if data:
                     return self.json(h, {"object": "list", "data": data, "models": data})
-            if h.command == "POST" and path in ("/models/load", "/models/unload") and self.core.presets.all() \
-                    and self.core.server.state != "external":
+            if h.command == "POST" and path in ("/models/load", "/models/unload") and self.core.server.state != "external" \
+                    and (self.core.presets.all() or self.core.peer_models()):
                 try:
                     ref = (json.loads(body.decode() or "{}") or {}).get("model")
                 except (ValueError, AttributeError):
                     ref = None
+                if self.core.find_peer_model(ref):
+                    return self.json(h, {"success": True})      # it starts over there when the chat asks it
                 preset = self.core.find_preset(ref)
                 if preset is None:
                     return self.json(h, {"error": {"code": 404, "message": "That model is not one of your presets."}}, 404)
@@ -703,6 +795,9 @@ class Web:
                     want = json.loads(body.decode() or "{}").get("model")
                 except (ValueError, AttributeError):
                     want = None
+                peer = self.core.find_peer_model(want) if want else None
+                if peer:
+                    return self.to_device(h, peer, body)
                 if want:
                     try:
                         self.core.ensure_preset(want)
@@ -728,6 +823,11 @@ class Web:
             # the chat UI shows "Loading model" for 503, and an error with this message otherwise
             code = 503 if st == "loading" else 502
             return self.json(h, {"error": {"code": code, "message": msg, "type": "unavailable_error"}}, code)
+        self.relay(h, resp, conn)
+
+    @staticmethod
+    def relay(h, resp, conn=None):
+        """Sends a response on to the browser as it arrives, so a streamed answer appears word by word."""
         h.send_response(resp.status)
         for k, v in resp.getheaders():
             if k.lower() in HOP or k.lower() in ("server", "date", "content-length"):
@@ -739,20 +839,45 @@ class Web:
         h.send_header("Connection", "close")
         h.end_headers()
         h.close_connection = True
-        if h.command == "HEAD":
-            conn.close()
-            return
         try:
+            if h.command == "HEAD":
+                return
             while True:
                 chunk = resp.read1(65536)
                 if not chunk:
                     break
                 h.wfile.write(chunk)
                 h.wfile.flush()
-        except (BrokenPipeError, ConnectionResetError, http.client.HTTPException):
+        except (BrokenPipeError, ConnectionResetError, OSError, http.client.HTTPException):
             pass                                   # the browser left, or the model stopped mid-reply
         finally:
-            conn.close()
+            (conn or resp).close()
+
+    def to_llama(self, h, body, path="/v1/chat/completions"):
+        """A request straight to this device's llama-server, answered as it streams."""
+        port = int(self.core.settings["llama_port"])
+        fwd = {"Content-Type": "application/json", "Content-Length": str(len(body)), "Host": f"127.0.0.1:{port}"}
+        fwd.update(llama.auth_header())
+        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=3600)
+        conn.request("POST", path, body=body, headers=fwd)
+        self.relay(h, conn.getresponse(), conn)
+
+    def to_device(self, h, peer, body):
+        """The chat picked a model on a paired device: ask that device and stream its answer back here."""
+        dev = devices.find(peer["device"])
+        if not dev or not dev.get("enabled", True):
+            return self.json(h, {"error": {"code": 404, "message": f"{peer['device_name']} is not paired any more."}}, 404)
+        try:
+            req = json.loads(body.decode() or "{}")
+        except ValueError:
+            return self.json(h, {"error": {"code": 400, "message": "The request is not valid JSON."}}, 400)
+        req["model"] = peer["model"]
+        dev["from"] = devices.device_name(self.core.settings)
+        try:
+            resp = devices.open_chat(dev, req)
+        except (RuntimeError, ConnectionError) as e:
+            return self.json(h, {"error": {"code": 502, "message": str(e), "type": "unavailable_error"}}, 502)
+        self.relay(h, resp)
 
 
 def escape(s):

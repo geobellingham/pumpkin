@@ -46,9 +46,11 @@ export interface State {
 	migrated: string[];
 	persona: string;
 	persona_prompt: string;
+	platform: string;
 	remote: string;
 	server: {
 		error: string | null;
+		notice?: string | null;
 		port: number;
 		preset: Preset | null;
 		state: 'off' | 'loading' | 'ready' | 'error' | 'external';
@@ -173,12 +175,15 @@ export interface Check {
 export interface Settings {
 	autostart_model: boolean;
 	check_updates: boolean;
+	doc_folders: string[];
+	doc_index: boolean;
 	download_dir: string;
 	hf_token: string;
 	keep_awake: boolean;
 	llama_port: number;
 	llama_server: string;
 	max_steps: number;
+	memory: boolean;
 	models_dirs: string[];
 	notifications: boolean;
 	ntfy_server: string;

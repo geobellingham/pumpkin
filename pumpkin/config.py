@@ -51,6 +51,9 @@ DEFAULT_SETTINGS = {
     "device_name": "",                 # how other devices see this one; empty = the computer's name
     "share_parallel": 2,               # requests from other devices at once; more get "busy, try later"
     "share_per_hour": 60,              # requests from other devices per hour
+    "memory": True,                    # remember facts about you across chats (Memory page), kept on this device
+    "doc_index": True,                 # keep your documents searchable for the model (Files page)
+    "doc_folders": [],                 # more folders to make searchable, besides the work folder
 }
 
 DEFAULT_PERSONAS = [

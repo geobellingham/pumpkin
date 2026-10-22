@@ -14,7 +14,7 @@ from . import APP_NAME, config, llama
 
 TASK_SUFFIX = ("\n\nYou are running an autonomous task. Use your tools to do the work. Read pages when you need "
                "details, do not repeat identical calls, and finish with a clear Markdown answer that includes "
-               "source URLs.")
+               "source URLs. If the task asks for a document, save it with files_save as well.")
 DAYS = {"daily": range(7), "weekdays": range(5), "weekends": (5, 6)}
 DAY_NAMES = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
 

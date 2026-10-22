@@ -7,10 +7,26 @@ import sys
 import threading
 import time
 
-from . import __version__, agent, config, devices, hardware, llama, migrate, models, recommend, remote, updates, workspace
+from . import (__version__, agent, config, devices, docs, hardware, llama, memory, migrate, models, recommend, remote,
+               updates, workspace)
+
+
+def _python():
+    """The Python for tool servers. On Windows that is python.exe even when Pumpkin itself runs windowless with
+    pythonw.exe, so the servers' pipes work; llama-server starts them without a window either way."""
+    exe = sys.executable
+    if os.name == "nt" and os.path.basename(exe).lower() == "pythonw.exe":
+        alt = os.path.join(os.path.dirname(exe), "python.exe")
+        if os.path.exists(alt):
+            return alt
+    return exe
 
 
 class Core:
+    peers = ()                               # paired devices as they answered lately (filled in the background)
+    peers_at = 0
+    indexer = None
+
     def __init__(self):
         config.ensure_dirs()
         self.migrated = []
@@ -29,9 +45,14 @@ class Core:
         self.server = llama.ServerManager(self.settings, self.library)
         self.server.persona_prompt = self.persona_prompt
         self.server.mcp_config = self.mcp_config
+        self.server.on_recover = self._keep_working_ctx
         self.reports = agent.Reports(self.settings)
         self.runner = agent.Runner(self)
         self.helper = devices.Helper(self)
+        self.indexer = None if hardware.ANDROID else docs.Indexer(self.settings)
+        self.peers = []                      # paired devices as they answered lately: online, models
+        self.peers_at = 0
+        threading.Thread(target=self._watch_peers, daemon=True).start()
         self.jobs = {}                       # background jobs like downloading llama-server
         self.bench_state = {"running": False, "error": None, "last": None}
         self.hw = None
@@ -41,6 +62,12 @@ class Core:
             p = self.presets.get(self.settings["last_preset"])
             if p:
                 threading.Thread(target=self._safe_start, args=(p,), daemon=True).start()
+
+    def _keep_working_ctx(self, preset):
+        """A model loaded only with a shorter context: keep that in its preset, so next time it starts first try."""
+        pid = preset.get("id")
+        if pid and self.presets.get(pid):
+            self.presets.update(pid, {"ctx": int(preset["ctx"])})
 
     def _check_update(self):
         time.sleep(20)
@@ -74,13 +101,78 @@ class Core:
         return out
 
     def persona_prompt(self):
+        """The chat's system message: the persona, what the tools are for, and what Pumpkin remembers about you."""
         p = self.personas.get(self.settings["persona"])
         text = (p or {}).get("prompt", "")
         pre = (self.server.preset or {}) if self.server.state in ("loading", "ready") else {}
+        tools = bool(pre.get("tools")) and not hardware.ANDROID
+        if tools:
+            text += ("\n\nThe user's own documents are searchable with files_search. When a question may be about "
+                     "their files (contracts, reports, letters, notes), search them first, answer from the passages "
+                     "and cite each fact as (file, page). When they ask you to write a document, report, letter or "
+                     "table, save it with files_save (Word unless they want another format) and tell them the name.")
+            if self.settings["memory"]:
+                text += (" When they tell you a lasting fact about themselves or ask you to remember something, save "
+                         "it with memory_save; when they ask you to forget it, use memory_forget.")
+            hint = self.devices_hint()
+            if hint:
+                text += "\n\n" + hint
         if pre.get("tools") and pre.get("sandbox", True) and workspace.docker_usable():
-            text += ("\n\nSave files you make for the user in /workspace (your working folder). "
-                     "They can open them on the Files page.")
-        return text
+            text += ("\n\nYour sandbox's /workspace is the same folder as the user's Files. Save files you make "
+                     "there.")
+        if self.settings["memory"]:
+            block = memory.prompt_block()
+            if block:
+                text += "\n\n" + block
+        return text.strip()
+
+    # ---- paired devices: their models in the chat, and when the model should ask them
+    def refresh_peers(self, statuses=None):
+        if statuses is None:
+            statuses = devices.statuses(timeout=4) if any(d.get("enabled", True) for d in devices.load()) else []
+        self.peers = statuses
+        self.peers_at = time.time()
+        return statuses
+
+    def _watch_peers(self):
+        time.sleep(3)
+        while True:
+            try:
+                self.refresh_peers()
+            except Exception:  # noqa: BLE001 - try again next round
+                pass
+            time.sleep(60)
+
+    def peer_models(self):
+        """Models on paired devices that answer right now, as the chat names them: "Qwen3 27B (on Gaming PC)"."""
+        out = []
+        for d in self.peers:
+            if not d.get("online") or not d.get("enabled", True):
+                continue
+            info = d.get("info") or {}
+            for m in info.get("models") or []:
+                out.append({"id": f"{m} (on {d.get('name')})", "device": d["id"], "device_name": d.get("name"),
+                            "model": m, "loaded": info.get("model") == m and info.get("state") == "ready"})
+        return out
+
+    def find_peer_model(self, ref):
+        ref = (ref or "").strip().lower()
+        if not ref or "(on " not in ref:
+            return None
+        return next((m for m in self.peer_models() if m["id"].lower() == ref), None)
+
+    def devices_hint(self):
+        """Tells the model which stronger devices it can hand work to, when there are any online."""
+        online = [d for d in self.peers if d.get("online") and d.get("enabled", True)]
+        if not online:
+            return ""
+        lines = []
+        for d in online:
+            models = ", ".join((d.get("info") or {}).get("models") or []) or "its usual model"
+            lines.append(f"- {d.get('name')}: {models}")
+        return ("Paired devices you can hand work to with devices_ask:\n" + "\n".join(lines) + "\nAsk one when a "
+                "question needs more knowledge or careful reasoning than you are sure of, or a long text needs "
+                "summarising, and its model is bigger than yours. Say which device answered.")
 
     # ---- switching models from the chat
     _switch_lock = threading.Lock()
@@ -116,6 +208,9 @@ class Core:
             data.append({"id": name, "object": "model", "created": 0, "owned_by": "pumpkin",
                          "status": {"value": "loaded" if cur.get("id") == p.get("id") and self.server.state == "ready"
                                     else "loading" if cur.get("id") == p.get("id") else "unloaded"}})
+        for m in self.peer_models():                 # the models of paired devices, answered over there
+            data.append({"id": m["id"], "object": "model", "created": 0, "owned_by": "device",
+                         "status": {"value": "loaded" if m["loaded"] else "unloaded"}})
         return data
 
     def default_preset(self):
@@ -140,22 +235,35 @@ class Core:
             for k in ("PUMPKIN_SEARXNG", "BRAVE_API_KEY"):
                 if os.environ.get(k):
                     env[k] = os.environ[k]
-            servers.setdefault("web", {"command": sys.executable, "args": ["-m", "pumpkin.mcp_web"], "env": env})
+            servers.setdefault("web", {"command": _python(), "args": ["-m", "pumpkin.mcp_web"], "env": env})
+        if not hardware.ANDROID:
+            # your documents and files the model saves for you, and what it remembers about you
+            servers.setdefault("files", self._builtin("pumpkin.mcp_files", 300_000))
+            if self.settings["memory"]:
+                servers.setdefault("memory", self._builtin("pumpkin.mcp_memory"))
         if any(d.get("enabled", True) for d in devices.load()) and not hardware.ANDROID:
-            pkg_parent = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-            env = {"PYTHONPATH": pkg_parent}
-            for k in ("HOME", "XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_STATE_HOME"):
-                if os.environ.get(k):
-                    env[k] = os.environ[k]
             # a phone can take minutes, so the call may wait up to 30 minutes
-            servers.setdefault("devices", {"command": sys.executable, "args": ["-m", "pumpkin.mcp_devices"],
-                                           "env": env, "timeout_ms": 1_800_000})
+            servers.setdefault("devices", self._builtin("pumpkin.mcp_devices", 1_800_000))
         if not servers:
             return None
         path = os.path.join(config.STATE_DIR, "mcp-effective.json")
         with open(path, "w") as f:
             json.dump({"mcpServers": servers}, f, indent=2)
         return path
+
+    @staticmethod
+    def _builtin(module, timeout_ms=None):
+        """One of Pumpkin's own tool servers, run with this Python and these settings folders."""
+        pkg_parent = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        env = {"PYTHONPATH": pkg_parent, "PYTHONUTF8": "1"}
+        for k in ("HOME", "USERPROFILE", "APPDATA", "LOCALAPPDATA", "XDG_CONFIG_HOME", "XDG_DATA_HOME",
+                  "XDG_STATE_HOME"):
+            if os.environ.get(k):
+                env[k] = os.environ[k]
+        out = {"command": _python(), "args": ["-m", module], "env": env}
+        if timeout_ms:
+            out["timeout_ms"] = timeout_ms
+        return out
 
     # ---- presets
     def preset_from_model(self, path, name=None):
@@ -359,14 +467,32 @@ class Core:
         threading.Thread(target=run, daemon=True).start()
 
     # ---- remote access
+    _ts_on = False
+
     def set_remote(self, mode):
-        port = int(self.settings["port"])
-        if mode == "tailscale":
-            remote.tailscale_on(port)
-        elif self.settings["remote"] == "tailscale":
+        """Tailscale can be picked before it is ready: the Phone page then shows the steps left, and Pumpkin
+        publishes itself on the tailnet as soon as they are done."""
+        if mode != "tailscale" and self.settings["remote"] == "tailscale":
             remote.tailscale_off()
+        self._ts_on = False
         self.settings.update({"remote": mode})
-        return remote.status(self.settings, config.token())
+        return self.remote_status()
+
+    def remote_status(self):
+        st = remote.status(self.settings, config.token())
+        st["error"] = None
+        if st["mode"] == "tailscale":
+            t = st.get("tailscale") or {}
+            if not (t.get("signed_in") and t.get("magic_dns") and t.get("https")):
+                st["base"] = st["link"] = None
+            elif not self._ts_on:
+                try:
+                    remote.tailscale_on(int(self.settings["port"]))
+                    self._ts_on = True
+                except RuntimeError as e:
+                    st["base"] = st["link"] = None
+                    st["error"] = str(e)
+        return st
 
     def set_share(self, on):
         """Sharing needs Pumpkin to listen beyond this computer. If it only listened here, open it to the home

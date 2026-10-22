@@ -197,10 +197,31 @@ class TestServer(unittest.TestCase):
             p = self.core.presets.all()[0]
             self.call("POST", "/pumpkin/api/llama/start", {"preset": p["id"]})
             self.assertTrue(self.wait(lambda: self.call("GET", "/pumpkin/api/state")[1]["server"]["state"] == "error"))
-            err = self.call("GET", "/pumpkin/api/state")[1]["server"]["error"]
-            self.assertIn("did not fit", err)
+            srv = self.call("GET", "/pumpkin/api/state")[1]["server"]
+            self.assertIn("did not fit", srv["error"])
+            # before giving up, Pumpkin tried by itself with a shorter context, down to 2,048 tokens
+            self.assertIn("so Pumpkin started it with", srv["notice"] or "")
+            ctx = int(p.get("ctx") or 8192)
+            self.assertIn(f"-c {max(2048, ctx // 4)} ", open(os.path.join(config.STATE_DIR, "llama-server.log")).read())
+            self.assertEqual(self.core.presets.get(p["id"])["ctx"], p.get("ctx"))   # nothing worked: preset unchanged
         finally:
             del os.environ["FAKE_LLAMA_FAIL"]
+
+    def test_4b_a_smaller_context_is_tried_and_kept(self):
+        p = self.core.presets.all()[0]
+        self.core.presets.update(p["id"], {"ctx": 16384})
+        os.environ["FAKE_LLAMA_FAIL_ABOVE"] = "4096"
+        try:
+            self.call("POST", "/pumpkin/api/llama/start", {"preset": p["id"]})
+            self.assertTrue(self.wait(lambda: self.call("GET", "/pumpkin/api/state")[1]["server"]["state"] == "ready",
+                                      30))
+            srv = self.call("GET", "/pumpkin/api/state")[1]["server"]
+            self.assertIn("with 4,096", srv["notice"])
+            self.assertEqual(self.core.presets.get(p["id"])["ctx"], 4096)     # starts first try next time
+        finally:
+            del os.environ["FAKE_LLAMA_FAIL_ABOVE"]
+            self.core.presets.update(p["id"], {"ctx": p.get("ctx")})
+            self.core.server.stop()
 
     def test_5_crud_and_doctor(self):
         code, per = self.call("POST", "/pumpkin/api/personas", {"name": "Pirate", "prompt": "Arr."})

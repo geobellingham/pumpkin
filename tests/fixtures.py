@@ -67,6 +67,9 @@ if "--help" in args:
           "--mcp-servers-config\n--reasoning-budget\n--no-reasoning-preserve\n--webui-config-file\n"
           "--sleep-idle-seconds\n--mmproj"); sys.exit(0)
 port = int(args[args.index("--port") + 1])
+if os.environ.get("FAKE_LLAMA_FAIL_ABOVE") and "-c" in args and \
+        int(args[args.index("-c") + 1]) > int(os.environ["FAKE_LLAMA_FAIL_ABOVE"]):
+    print("ggml_vulkan: ErrorOutOfDeviceMemory\nfailed to allocate buffer"); sys.exit(1)
 if os.environ.get("FAKE_LLAMA_FAIL"):
     print("ggml_vulkan: ErrorOutOfDeviceMemory\nfailed to allocate buffer"); sys.exit(1)
 time.sleep(float(os.environ.get("FAKE_LLAMA_LOAD", "1.0")))

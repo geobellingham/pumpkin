@@ -4,6 +4,7 @@
 	import * as Dialog from '$lib/components/ui/dialog';
 	import Card from '../components/Card.svelte';
 	import Empty from '../components/Empty.svelte';
+	import Documents from './Documents.svelte';
 	import { api, pumpkin } from '../store.svelte';
 	import { onDestroy, onMount } from 'svelte';
 
@@ -116,7 +117,7 @@
 </script>
 
 <div class="flex flex-col gap-4">
-	<Card description={data ? `What the AI makes is saved here. On this computer: ${data.display}. The AI sees it as ${data.sandbox}.` : ''} title="Files">
+	<Card description={data ? `Your files and what the AI makes for you. On this computer: ${data.display}. The AI sees it as ${data.sandbox}.` : ''} title="Files">
 		{#snippet actions()}
 			{#if local}
 				<Button class="rounded-full" onclick={() => api('files/reveal', { body: { path: dir } }).catch((e) => pumpkin.say(e.message, 'error'))} size="sm" variant="ghost">
@@ -174,6 +175,10 @@
 			</div>
 		{/if}
 	</Card>
+
+	{#if pumpkin.state?.platform !== 'android'}
+		<Documents />
+	{/if}
 </div>
 
 <Dialog.Root bind:open={previewOpen}>

@@ -23,3 +23,12 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+----------------------------------------------------------------------------
+
+pumpkin/vendor/pypdf: pypdf 6.21.2 (https://github.com/py-pdf/pypdf), unchanged.
+BSD-3-Clause License, Copyright (c) 2006-2008, Mathieu Fenniak and contributors.
+Full text in pumpkin/vendor/LICENSE-pypdf.txt.
+
+pumpkin/vendor/typing_extensions.py: typing_extensions 4.16.0, unchanged.
+Python Software Foundation License. Full text in pumpkin/vendor/LICENSE-typing_extensions.txt.

@@ -166,6 +166,33 @@ class TestDevices(unittest.TestCase):
             _open(req, timeout=10)
         self.assertEqual(e.exception.code, 401)
 
+    def test_2b_chat_with_the_other_devices_model(self):
+        """The boss has no model of its own, yet its chat lists the helper's model and answers with it."""
+        def raw(path, body=None):
+            req = urllib.request.Request(f"http://127.0.0.1:{self.boss.port}{path}",
+                                         data=json.dumps(body).encode() if body is not None else None,
+                                         headers={"Authorization": "Bearer " + self.boss.token,
+                                                  "Content-Type": "application/json"})
+            with _open(req, timeout=60) as r:
+                return r.read().decode()
+
+        self.boss.api("devices")                                    # refreshes the list the chat uses
+        ids = [m["id"] for m in json.loads(raw("/v1/models"))["data"]]
+        self.assertIn("Tiny helper Q8_0 (on Helper)", ids)
+        out = raw("/v1/chat/completions", {"model": "Tiny helper Q8_0 (on Helper)", "stream": True,
+                                           "messages": [{"role": "user", "content": "Hi there"}]})
+        words = "".join(json.loads(l[6:])["choices"][0]["delta"]["content"] for l in out.splitlines()
+                        if l.startswith("data: {"))
+        self.assertEqual(words, "Hello from the fake model.")
+        r = json.loads(raw("/v1/chat/completions", {"model": "Tiny helper Q8_0 (on Helper)",
+                                                     "messages": [{"role": "user", "content": "Hi"}]}))
+        self.assertIn("Pumpkins are great", r["choices"][0]["message"]["content"])
+        recent = self.helper.api("devices/share")["recent"]
+        self.assertEqual((recent[0]["from"], recent[0]["state"]), ("Boss", "done"))
+        self.assertTrue(recent[0]["task"].startswith("Chat: Hi"))
+        # loading a device's model from the chat is fine (it starts over there when asked)
+        self.assertIn("success", raw("/models/load", {"model": "Tiny helper Q8_0 (on Helper)"}))
+
     def test_3_model_tools(self):
         """The MCP server the boss's model uses: list and ask."""
         env = dict(self.boss.env)

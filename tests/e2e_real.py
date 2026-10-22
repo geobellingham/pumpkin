@@ -141,6 +141,29 @@ try:
     assert call("GET", "/pumpkin/api/devices/share")["recent"][0]["state"] == "done"
     call("POST", "/pumpkin/api/devices/share", {"on": False})
     call("DELETE", f"/pumpkin/api/devices/{dev['id']}")
+
+    step("Your documents, saved files and memory: the model's own tools, run by the real llama-server")
+    assert {"files_search", "files_read", "files_list", "files_save", "memory_save", "memory_forget"} <= set(names), names
+    files = call("GET", "/pumpkin/api/settings")["files_dir"]
+    os.makedirs(files, exist_ok=True)
+    with open(os.path.join(files, "e2e-manual.md"), "w", encoding="utf-8") as f:
+        f.write("# Router\n\nTo reset the Pumpkin router, hold the blue button for twelve seconds.\n")
+    r = call("POST", "/tools", {"tool": "files_search", "params": {"query": "reset router button"}}, 120)
+    print("files_search:", json.dumps(r)[:400])
+    assert "(e2e-manual.md" in json.dumps(r) and "twelve seconds" in json.dumps(r), r
+    r = call("POST", "/tools", {"tool": "files_save", "params": {"name": "E2E summary", "content": "# Done\n\n- one"}}, 60)
+    print("files_save:", json.dumps(r)[:300])
+    saved = os.path.join(files, "outputs", "E2E summary.docx")
+    assert os.path.exists(saved), r
+    r = call("POST", "/tools", {"tool": "memory_save", "params": {"fact": "Runs Pumpkin in CI"}}, 60)
+    assert any(m["text"] == "Runs Pumpkin in CI" for m in call("GET", "/pumpkin/api/memory")["items"]), r
+    assert "Runs Pumpkin in CI" in call("GET", "/pumpkin/api/state")["persona_prompt"]
+    call("POST", "/tools", {"tool": "memory_forget", "params": {"what": "runs pumpkin in ci"}}, 60)
+    assert call("GET", "/pumpkin/api/memory")["items"] == []
+    print("documents:", call("GET", "/pumpkin/api/docs"))
+    for p in (saved, os.path.join(files, "e2e-manual.md")):
+        os.remove(p)
+
     call("PUT", f"/pumpkin/api/presets/{preset['id']}", {"tools": False})
 
     import shutil

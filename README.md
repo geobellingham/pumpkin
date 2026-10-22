@@ -18,6 +18,15 @@ chat with tools, web search, scheduled agent tasks, voice and phone access, all 
 - **One-click models.** Pick a model and Pumpkin chooses the best quant for your GPU and RAM, downloads it,
   makes a preset and starts it. Every other GGUF on Hugging Face is a search away, each file marked
   *fits your GPU*, *runs with RAM offload* or *too big*.
+- **Answers from your documents.** Put PDFs, Word files, slides, spreadsheets, notes and emails in
+  `~/Pumpkin/files` (or add your own folders) and ask about them. The model finds the right passages and
+  says where each fact came from, like *(lease.pdf, p. 4)*, so even a small model answers from your papers
+  instead of guessing. Everything is read on your computer.
+- **It makes real files.** Ask for a report, letter, summary or table and the model saves it as a Word
+  document, web page, Markdown or CSV file you can open and send. No Docker needed.
+- **It remembers you.** Tell it your name, your work or how you like answers, and every new chat knows.
+  The Memory page shows each fact so you can edit or delete it, or switch memory off. It stays on this
+  device.
 - **Agents with tools.** Models can search the web and read pages (built in, no API key), run
   commands in a Docker sandbox, and use any MCP server you add.
 - **Switch models from the chat.** Every preset shows up in the chat's model list. Pick another one
@@ -29,15 +38,18 @@ chat with tools, web search, scheduled agent tasks, voice and phone access, all 
 - **Tasks on a schedule.** "Every weekday at 8:00, brief me on the news." Start from a template (news,
   security, weather, price watch, a daily lesson) or write your own. Each run saves a Markdown
   report and can push a notification to your phone.
-- **Phone access.** Scan a QR code and the whole app, chat included, works on your phone over
-  Tailscale or your home Wi-Fi. Add it to your home screen and it behaves like an app.
-- **Your devices work together.** Pair the Pumpkins on your PC, Mac and phone. The model on your
-  strongest machine can hand tasks to the others and use their answers, right from the chat.
+- **Phone access.** Scan a QR code and the whole app, chat included, works on your phone with the models
+  on your computer, over your home Wi-Fi or anywhere with Tailscale. Add it to your home screen and it
+  behaves like an app.
+- **Your devices work together.** Pair the Pumpkins on your PC, Mac and phone. Your phone's chat can use
+  the big model on your PC, and a model can hand hard questions to a stronger device and use its answer.
 - **Voice chat.** Talk hands-free and hear replies sentence by sentence as they stream.
 - **Presets.** Each preset is a model plus how to run it: context size, KV cache type, thinking budget,
   tools, unload when idle. A live estimate shows whether it fits before you start it.
-- **It explains problems.** When a model fails to start you get "the model did not fit in memory, try a
-  smaller quant or a shorter context" instead of a log dump. The Doctor page checks the GPU driver,
+- **It fixes and explains problems.** When a model runs out of memory while loading, Pumpkin starts it
+  again with a shorter context and keeps the setting that worked. When a running model crashes, it starts
+  it again. When it still fails you get "the model did not fit in memory, try a smaller quant or a shorter
+  context" instead of a log dump. The Doctor page checks the GPU driver,
   Vulkan, Docker permissions, disk space and Tailscale, and gives the command that fixes each one.
 - **Updates and privacy.** Pumpkin tells you when a new version is out and updates in one click. The
   Settings page lists exactly what it sends over the network and when. There are no accounts, no
@@ -139,13 +151,16 @@ To use Pumpkin on your computer from your phone instead, see the next section.
 
 Open **Phone** in Pumpkin and choose:
 
-- **Tailscale:** works anywhere and is encrypted. Install Tailscale on both devices and sign in. The first
-  time, Tailscale may ask you to run `sudo tailscale set --operator=$USER` and to turn on HTTPS
-  certificates in its admin page; Pumpkin tells you if so.
-- **Home network:** any device on your Wi-Fi can open it with the key. The traffic is not encrypted,
-  so only use this on a network you trust.
+- **Home network:** nothing to install. Any device on your Wi-Fi can open it after signing in. The
+  traffic is not encrypted, so only use this on a network you trust.
+- **Anywhere (Tailscale):** encrypted, and works away from home. Pumpkin shows what is left to do
+  (install Tailscale, sign in, turn on MagicDNS and HTTPS, install it on the phone) and ticks each step
+  off as it notices it. On Linux, Tailscale may also ask you to run `sudo tailscale set --operator=$USER`
+  once; Pumpkin tells you if so.
 
-Scan the QR code. It signs your phone in, and *Share > Add to Home Screen* gives you an app icon.
+Scan the QR code with the phone's camera. It signs your phone in, and *Share > Add to Home Screen* gives
+you an app icon. The code works once and for ten minutes, and a new one appears by itself, so a photo of
+your screen is useless to anyone else. Your permanent link is still there under *Show the permanent link*.
 For task notifications, install the free [ntfy](https://ntfy.sh) app and paste your topic under
 *Phone notifications*.
 
@@ -158,9 +173,14 @@ different model.
 1. On the device that should help, open **Devices** and turn on *Let my other devices use this one*.
    Copy its pairing code (or scan the QR code).
 2. On the device you chat on, open **Devices** and paste the code under *Add a device*.
-3. Start (or restart) a model with *Tools* on in its preset. It now has two tools: `devices_list` and `devices_ask`. Ask it something
-   like "Have my Mac write the first draft, then you check it." Each request shows in the chat like a
-   web search, and the helper lists it under *Recent requests*.
+3. The helper's models now show up in your chat's model list, like *Qwen3 27B (on Gaming PC)*. Pick one and
+   you chat with that model directly: it runs over there and the answer streams back here, while your
+   documents, memory and tools stay on this device.
+4. Start (or restart) a model with *Tools* on in its preset. It now has two tools: `devices_list` and
+   `devices_ask`, and it knows which devices are online and what they run. It asks a stronger device by
+   itself when a question needs it, or when you say something like "Have my Mac write the first draft,
+   then you check it." Each request shows in the chat like a web search, and the helper lists it under
+   *Recent requests*.
 
 The devices need to reach each other: same Wi-Fi, or Tailscale on both (works anywhere). A phone can
 help, but can't hand out tasks yet. A model that is good with tools gives the best results.
@@ -189,7 +209,12 @@ pumpkin stop                stop Pumpkin and the model
 ```
 
 - Settings live in `~/.config/pumpkin`, models and reports in `~/Pumpkin`, and llama.cpp builds in
-  `~/.local/share/pumpkin`.
+  `~/.local/share/pumpkin`. What Pumpkin remembers about you is `~/.config/pumpkin/memory.json`, and the
+  search index of your documents is `~/.local/share/pumpkin/documents.sqlite`. On Windows these are under
+  `%APPDATA%\pumpkin` and `%LOCALAPPDATA%\pumpkin`.
+- The model's own tools are small MCP servers that come with Pumpkin: web search (`mcp_web`), your
+  documents and saved files (`mcp_files`), memory (`mcp_memory`) and paired devices (`mcp_devices`).
+  PDFs are read with [pypdf](https://github.com/py-pdf/pypdf), included in `pumpkin/vendor`.
 - Everything is behind a private key, stored in `~/.config/pumpkin/token`. The server only listens on
   127.0.0.1 unless you turn on home-network access.
 
@@ -216,13 +241,20 @@ pumpkin stop                stop Pumpkin and the model
   anything else from the internet. MCP servers you add run as you, outside the sandbox.
 - **Docker access means root.** Being in the `docker` group lets your user control the computer as root.
   That is how Docker works; rootless Docker or Podman avoid it.
-- **Shared devices get answers only.** The pairing code holds a separate device key. It opens two
-  endpoints (the device's name and models, and "answer this"), nothing else: no settings, files, tools or
-  chats. Sharing is off until you turn it on, *Make a new code* cuts off every device paired so far, and
-  turning on sharing also opens Pumpkin to your home network (the rest still needs your sign-in key).
-  The helper only sees the task text, never your chat. A paired device can ask 2 things at once and 60 per
-  hour (change `share_parallel` and `share_per_hour` in settings.json), so it cannot tie up your model, and
-  its answers reach your model marked as information to weigh, not instructions.
+- **Shared devices get answers only.** The pairing code holds a separate device key. It opens three
+  endpoints (the device's name and models, "answer this", and "continue this chat"), nothing else: no
+  settings, files, memory, tools or other chats. Sharing is off until you turn it on, *Make a new code* cuts
+  off every device paired so far, and turning on sharing also opens Pumpkin to your home network (the rest
+  still needs your sign-in key). The helper sees only what is sent to it: the task, or the conversation
+  when you pick its model in the chat. A paired device can ask 2 things at once and 60 per hour (change
+  `share_parallel` and `share_per_hour` in settings.json), so it cannot tie up your model, and its answers
+  reach your model marked as information to weigh, not instructions.
+- **Phone QR codes work once.** The QR on the Phone page holds a sign-in code that works a single time and
+  for ten minutes, never your key.
+- **Your documents and memory stay put.** The document tools can only read files in the folders you chose
+  and only write into `~/Pumpkin/files/outputs`; they never change your own files. Memory is one file
+  readable only by you, and the model is told not to save passwords or card numbers. Like web pages, a
+  document can try to steer the model, so a model reading an untrusted file is like one reading the web.
 - **Home-network mode is unencrypted.** Use it only on a network you trust. Tailscale mode is encrypted.
 
 Found a problem? See [SECURITY.md](SECURITY.md) and open a private security advisory on GitHub instead of a
@@ -237,6 +269,7 @@ MCP config, reports folder and speed history on first start, and finds models in
 
 ## Roadmap
 
+- Reading scanned documents and photos of paper with a vision model
 - More natural voices generated on your computer (Kokoro, Orpheus)
 - "Look at my screen" for vision models
 - Quality benchmarks in the app

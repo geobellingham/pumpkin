@@ -56,6 +56,39 @@ class TestSessions(unittest.TestCase):
         cookie = headers["Set-Cookie"].split(";")[0].split("=", 1)[1]
         return cookie
 
+    def test_phone_qr_code_works_once(self):
+        # no code while only this computer can open Pumpkin
+        code, _, body = self.req("/pumpkin/api/remote/qr", bearer=self.p.token, body={})
+        self.assertEqual(code, 400)
+        self.assertIn("Turn on phone access", json.loads(body)["error"])
+        self.req("/pumpkin/api/remote", bearer=self.p.token, body={"mode": "lan"})
+        try:
+            self.wait_listening()                              # it re-listens on all addresses
+            r = json.loads(self.req("/pumpkin/api/remote/qr", bearer=self.p.token, body={})[2])
+            self.assertNotIn(self.p.token, r["link"])          # the real key never goes into the QR
+            once = r["link"].split("once=", 1)[1]
+            code, headers, _ = self.req("/login?once=" + once, accept="text/html")
+            self.assertEqual(code, 302)
+            cookie = headers["Set-Cookie"].split(";")[0].split("=", 1)[1]
+            self.assertEqual(self.req("/pumpkin/api/state", cookie=cookie)[0], 200)
+            code, _, body = self.req("/login?once=" + once, accept="text/html")     # used up
+            self.assertEqual(code, 401)
+            self.assertIn(b"already used", body)
+            self.assertEqual(self.req("/login?once=made-up-code", accept="text/html")[0], 401)
+        finally:
+            self.req("/pumpkin/api/remote", bearer=self.p.token, body={"mode": "off"})
+            self.wait_listening()
+
+    def wait_listening(self):
+        time.sleep(0.8)
+        for _ in range(100):
+            try:
+                if self.req("/pumpkin/api/state", bearer=self.p.token)[0] == 200:
+                    return
+            except (urllib.error.URLError, OSError):         # refused or cut off while it re-listens
+                pass
+            time.sleep(0.1)
+
     def test_login_gives_own_key(self):
         c = self.login()
         self.assertNotEqual(c, self.p.token)
