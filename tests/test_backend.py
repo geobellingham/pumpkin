@@ -245,7 +245,8 @@ class TestServer(unittest.TestCase):
         self.assertEqual(e.exception.code, 401)
         from pumpkin import llama
         self.assertNotIn(llama.api_key(), open(os.path.join(config.STATE_DIR, "llama-server.log")).read())
-        self.assertEqual(oct(os.stat(llama.KEY_PATH).st_mode & 0o777), "0o600")
+        if os.name != "nt":                                   # Windows has no permission bits; the user profile is private
+            self.assertEqual(oct(os.stat(llama.KEY_PATH).st_mode & 0o777), "0o600")
         self.assertEqual(self.call("GET", "/pumpkin/api/state")[1]["server"]["preset"]["id"], a["id"])
         code, j = get("/v1/chat/completions", {"model": b["name"], "messages": [{"role": "user", "content": "hi"}]})
         self.assertEqual(code, 200, j)
