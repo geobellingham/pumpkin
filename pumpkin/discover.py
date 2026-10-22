@@ -118,7 +118,11 @@ def add(settings, ids):
             for name, blob, _ in ollama_models(d["path"]):
                 link = os.path.join(target, f"{name}.gguf")
                 if not os.path.lexists(link):
-                    os.symlink(blob, link)
+                    try:
+                        os.symlink(blob, link)
+                    except OSError:
+                        # Windows allows symlinks only in Developer Mode; a hard link also takes no extra space
+                        os.link(blob, link)
         elif d["path"] not in dirs:
             dirs.append(d["path"])
         added.append(d["source"])

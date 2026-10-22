@@ -6,11 +6,162 @@ import re
 import shutil
 import subprocess
 import sys
+import threading
+import time
 
 GiB = 2 ** 30
 VENDORS = {"0x1002": "AMD", "0x10de": "NVIDIA", "0x8086": "Intel"}
 MAC = sys.platform == "darwin"
 ANDROID = hasattr(sys, "getandroidapilevel") or sys.platform == "android"
+WINDOWS = sys.platform == "win32"
+NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)      # Windows: helper programs never flash a console
+
+
+# ---------------------------------------------------------------- Windows
+_DISPLAY_CLASS = r"SYSTEM\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}"
+
+
+def _win_vendor(text):
+    t = (text or "").lower()
+    if "nvidia" in t:
+        return "NVIDIA"
+    if "amd" in t or "radeon" in t or "advanced micro" in t:
+        return "AMD"
+    if "intel" in t:
+        return "Intel"
+    return None
+
+
+def _win_gpus():
+    """Display adapters from the registry. HardwareInformation.qwMemorySize is the real VRAM (the WMI field
+    stops at 4 GB). NVIDIA cards are listed by nvidia-smi instead, which also reports what is in use."""
+    import winreg
+    found = []
+    try:
+        root = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, _DISPLAY_CLASS)
+    except OSError:
+        return []
+    i = 0
+    while True:
+        try:
+            sub = winreg.EnumKey(root, i)
+        except OSError:
+            break
+        i += 1
+        if not sub.isdigit():
+            continue
+        try:
+            k = winreg.OpenKey(root, sub)
+        except OSError:
+            continue
+
+        def val(name):
+            try:
+                return winreg.QueryValueEx(k, name)[0]
+            except OSError:
+                return None
+        name = val("DriverDesc") or ""
+        vendor = _win_vendor(name) or _win_vendor(val("ProviderName"))
+        if not vendor or "basic display" in name.lower() or "remote" in name.lower():
+            continue
+        mem = val("HardwareInformation.qwMemorySize")
+        if mem is None:
+            mem = val("HardwareInformation.MemorySize")
+            if isinstance(mem, bytes):
+                mem = int.from_bytes(mem[:8], "little")
+        mem = int(mem or 0)
+        integrated = vendor == "Intel" and mem < 2 * GiB or mem < 1 * GiB
+        found.append({"vendor": vendor, "name": name, "vram_total": 0.0 if integrated else mem / GiB,
+                      "vram_used": None, "busy": None, "integrated": integrated})
+    return found
+
+
+def _win_memory():
+    import ctypes
+
+    class MEMORYSTATUSEX(ctypes.Structure):
+        _fields_ = [("dwLength", ctypes.c_ulong), ("dwMemoryLoad", ctypes.c_ulong),
+                    ("ullTotalPhys", ctypes.c_ulonglong), ("ullAvailPhys", ctypes.c_ulonglong),
+                    ("ullTotalPageFile", ctypes.c_ulonglong), ("ullAvailPageFile", ctypes.c_ulonglong),
+                    ("ullTotalVirtual", ctypes.c_ulonglong), ("ullAvailVirtual", ctypes.c_ulonglong),
+                    ("ullAvailExtendedVirtual", ctypes.c_ulonglong)]
+    m = MEMORYSTATUSEX()
+    m.dwLength = ctypes.sizeof(m)
+    if not ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(m)):
+        return {"ram_total": 0.0, "ram_used": 0.0, "ram_available": 0.0}
+    return {"ram_total": m.ullTotalPhys / GiB, "ram_used": (m.ullTotalPhys - m.ullAvailPhys) / GiB,
+            "ram_available": m.ullAvailPhys / GiB}
+
+
+def _win_physical_cores():
+    """Physical cores from GetLogicalProcessorInformationEx (no PowerShell, no WMI)."""
+    import ctypes
+    k32 = ctypes.windll.kernel32
+    size = ctypes.c_ulong(0)
+    k32.GetLogicalProcessorInformationEx(0, None, ctypes.byref(size))      # RelationProcessorCore = 0
+    if not size.value:
+        return None
+    buf = ctypes.create_string_buffer(size.value)
+    if not k32.GetLogicalProcessorInformationEx(0, buf, ctypes.byref(size)):
+        return None
+    n, off = 0, 0
+    while off < size.value:
+        rel, length = int.from_bytes(buf.raw[off:off + 4], "little"), int.from_bytes(buf.raw[off + 4:off + 8], "little")
+        if rel == 0:
+            n += 1
+        off += length or size.value
+    return n or None
+
+
+def _win_cpu():
+    import winreg
+    model = None
+    try:
+        k = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"HARDWARE\DESCRIPTION\System\CentralProcessor\0")
+        model = winreg.QueryValueEx(k, "ProcessorNameString")[0].strip()
+    except OSError:
+        pass
+    logical = os.cpu_count() or 1
+    try:
+        physical = _win_physical_cores() or max(1, logical // 2)
+    except (OSError, AttributeError, ValueError):
+        physical = max(1, logical // 2)
+    try:
+        import ctypes
+        pf = ctypes.windll.kernel32.IsProcessorFeaturePresent
+        avx2 = bool(pf(40))                              # PF_AVX2_INSTRUCTIONS_AVAILABLE
+        avx512 = bool(pf(41))                            # PF_AVX512F_INSTRUCTIONS_AVAILABLE
+    except (OSError, AttributeError):
+        avx2 = avx512 = False
+    return {"model": model or platform.processor() or "CPU", "physical_cores": physical, "logical_cores": logical,
+            "avx2": avx2, "avx512": avx512}
+
+
+class _WinVram:
+    """VRAM in use on AMD and Intel GPUs comes from a Windows performance counter, which takes about a second
+    to read, so a background thread refreshes it while someone is looking."""
+    value, asked, _thread = None, 0.0, None
+
+    @classmethod
+    def get(cls):
+        cls.asked = time.time()
+        if cls._thread is None or not cls._thread.is_alive():
+            cls._thread = threading.Thread(target=cls._loop, daemon=True)
+            cls._thread.start()
+        return cls.value
+
+    @classmethod
+    def _loop(cls):
+        cmd = ["powershell", "-NoProfile", "-NonInteractive", "-Command",
+               "((Get-Counter '\\GPU Adapter Memory(*)\\Dedicated Usage' -ErrorAction SilentlyContinue)"
+               ".CounterSamples | Measure-Object CookedValue -Sum).Sum"]
+        while time.time() - cls.asked < 30:
+            try:
+                out = subprocess.run(cmd, capture_output=True, text=True, timeout=15, creationflags=NO_WINDOW).stdout
+                cls.value = float(out.strip()) / GiB if out.strip() else None
+            except (OSError, subprocess.SubprocessError, ValueError):
+                cls.value = None
+            time.sleep(3)
 
 
 # ---------------------------------------------------------------- Android (the Pumpkin app)
@@ -144,7 +295,8 @@ def _nvidia():
         return []
     try:
         out = subprocess.run(["nvidia-smi", "--query-gpu=name,memory.total,memory.used,utilization.gpu",
-                              "--format=csv,noheader,nounits"], capture_output=True, text=True, timeout=5).stdout
+                              "--format=csv,noheader,nounits"], capture_output=True, text=True, timeout=5,
+                             creationflags=NO_WINDOW).stdout
     except (OSError, subprocess.SubprocessError):
         return []
     gpus = []
@@ -167,6 +319,13 @@ def gpus():
         return _mac_gpus()
     if ANDROID:
         return _android_gpus()
+    if WINDOWS:
+        found = [g for g in _win_gpus() if g["vendor"] != "NVIDIA" or not shutil.which("nvidia-smi")]
+        nv = _nvidia()
+        found += nv
+        for i, g in enumerate(found):
+            g["index"] = i
+        return found
     found = []
     seen_nvidia = False
     for dev in sorted(glob.glob("/sys/class/drm/card[0-9]*/device")):
@@ -207,6 +366,8 @@ def main_gpu(gpu_list=None):
 def memory():
     if MAC:
         return _mac_memory()
+    if WINDOWS:
+        return _win_memory()
     mem = {}
     try:
         with open("/proc/meminfo") as f:
@@ -224,6 +385,8 @@ def cpu():
         return _mac_cpu()
     if ANDROID:
         return _android_cpu()
+    if WINDOWS:
+        return _win_cpu()
     model, flags, cores = None, set(), set()
     phys = None
     try:
@@ -266,6 +429,8 @@ def recommended_backend(gpu_list=None):
 def vulkan_loader():
     if MAC or ANDROID:
         return False
+    if WINDOWS:                         # GPU drivers install vulkan-1.dll into System32
+        return os.path.exists(os.path.join(os.environ.get("SystemRoot", r"C:\Windows"), "System32", "vulkan-1.dll"))
     for p in ("/usr/lib/x86_64-linux-gnu/libvulkan.so.1", "/usr/lib64/libvulkan.so.1", "/usr/lib/libvulkan.so.1",
               "/usr/lib/aarch64-linux-gnu/libvulkan.so.1"):
         if os.path.exists(p):
@@ -302,10 +467,18 @@ def disk_free(path=None):
     while path and not os.path.exists(path):
         path = os.path.dirname(path)
     try:
-        st = os.statvfs(path)
-        return st.f_bavail * st.f_frsize / GiB
+        return shutil.disk_usage(path).free / GiB
     except OSError:
         return None
+
+
+_win_gpu_cache = []
+
+
+def _win_gpus_cached():
+    if not _win_gpu_cache:
+        _win_gpu_cache.extend(_win_gpus())
+    return _win_gpu_cache
 
 
 def live():
@@ -322,6 +495,15 @@ def live():
         if g:
             # one pool of memory: show how much of the GPU's share is in use (everything in use counts)
             out["vram_total"], out["vram_used"], out["unified"] = g["vram_total"], min(out["ram_used"], g["vram_total"]), True
+        return out
+    if WINDOWS:
+        nv = _nvidia()
+        if nv:
+            out["vram_total"], out["vram_used"], out["gpu_busy"] = nv[0]["vram_total"], nv[0]["vram_used"], nv[0]["busy"]
+        else:
+            g = main_gpu(_win_gpus_cached())
+            if g and g.get("vram_total"):
+                out["vram_total"], out["vram_used"] = g["vram_total"], _WinVram.get()
         return out
     g = None
     for dev in sorted(glob.glob("/sys/class/drm/card[0-9]*/device")):

@@ -5,7 +5,7 @@
   pumpkin open         open the window (or your browser)
   pumpkin link         print the sign-in link for this computer and for your phone
   pumpkin doctor       check that everything needed is in place
-  pumpkin service install|uninstall|status    run Pumpkin at login (systemd on Linux, launchd on a Mac)
+  pumpkin service install|uninstall|status    run Pumpkin at login (systemd, launchd, or Windows sign-in)
   pumpkin stop         stop the background server and the model
 """
 import argparse
@@ -62,24 +62,65 @@ def cmd_serve(args):
         web.shutdown()
     signal.signal(signal.SIGTERM, stop)
     signal.signal(signal.SIGINT, stop)
-    web.stopped.wait()
+    if hasattr(signal, "SIGBREAK"):              # Windows: Ctrl+Break, and how the installer asks it to stop
+        signal.signal(signal.SIGBREAK, stop)
+    while not web.stopped.wait(1):               # a timeout keeps Ctrl+C working on Windows
+        pass
 
 
 def start_background():
     if running():
         return True
-    if service_installed():
+    if service_installed() and os.name != "nt":
         from . import service
         service.start()
     else:
-        log = open(os.path.join(config.STATE_DIR, "pumpkin.log"), "a")
-        subprocess.Popen([sys.executable, "-m", "pumpkin", "serve"], stdout=log, stderr=subprocess.STDOUT,
-                         start_new_session=True, cwd=config.HOME, env=_pkg_env())
+        start_background_direct()
     for _ in range(60):
         if running():
             return True
         time.sleep(0.25)
     return False
+
+
+def start_background_direct():
+    """Start the server as a separate background process."""
+    log = open(os.path.join(config.STATE_DIR, "pumpkin.log"), "a", encoding="utf-8")
+    if os.name == "nt":
+        # a hidden console that llama-server and other helpers share, so no black windows pop up
+        subprocess.Popen([console_python(), "-X", "utf8", "-m", "pumpkin", "serve"], stdout=log,
+                         stderr=subprocess.STDOUT, cwd=config.HOME, env=_pkg_env(),
+                         creationflags=subprocess.CREATE_NO_WINDOW | subprocess.CREATE_NEW_PROCESS_GROUP)
+    else:
+        subprocess.Popen([sys.executable, "-m", "pumpkin", "serve"], stdout=log, stderr=subprocess.STDOUT,
+                         start_new_session=True, cwd=config.HOME, env=_pkg_env())
+
+
+def console_python():
+    """python.exe next to pythonw.exe (the Start menu shortcut runs pythonw, which has no console to share)."""
+    exe = sys.executable
+    d, name = os.path.split(exe)
+    if name.lower() == "pythonw.exe" and os.path.exists(os.path.join(d, "python.exe")):
+        return os.path.join(d, "python.exe")
+    return exe
+
+
+def windows_window(url):
+    """Edge (on every Windows 10 and 11) or Chrome in app mode: a window of its own, no tabs or address bar.
+    A separate profile keeps Pumpkin's sign-in apart from your browsing."""
+    cands = [shutil.which("msedge"), shutil.which("chrome")]
+    for base in (os.environ.get("ProgramFiles(x86)"), os.environ.get("ProgramFiles"), os.environ.get("LOCALAPPDATA")):
+        if base:
+            cands += [os.path.join(base, "Microsoft", "Edge", "Application", "msedge.exe"),
+                      os.path.join(base, "Google", "Chrome", "Application", "chrome.exe")]
+    exe = next((c for c in cands if c and os.path.exists(c)), None)
+    if not exe:
+        return False
+    profile = os.path.join(config.DATA_DIR, "window")
+    subprocess.Popen([exe, f"--app={url}", f"--user-data-dir={profile}", "--no-first-run",
+                      "--no-default-browser-check", "--window-size=1280,860"],
+                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    return True
 
 
 def _pkg_env():
@@ -97,6 +138,10 @@ def cmd_open(args):
     if not getattr(args, "browser", False) and sys.platform == "darwin" and mac_window():
         # the Mac app starts Pumpkin and signs in by itself (pumpkin up, pumpkin url)
         subprocess.Popen(["open", mac_window()], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        return
+    if os.name == "nt":
+        if getattr(args, "browser", False) or not windows_window(login_url()):
+            os.startfile(login_url())                      # noqa: S606 - the default browser
         return
     if not getattr(args, "browser", False):
         try:
@@ -177,7 +222,7 @@ def cmd_service(args):
             urllib_post("quit")
             time.sleep(1.5)
         service.enable(start_now=True)
-        if sys.platform == "darwin":
+        if sys.platform in ("darwin", "win32"):
             print(f"{APP_NAME} now starts when you log in.")
         else:
             print(f"{APP_NAME} now starts when you log in. To keep it running while you are logged out "
@@ -210,6 +255,13 @@ def cmd_stop(args):
 
 
 def main(argv=None):
+    if os.name == "nt" and not sys.flags.utf8_mode:
+        # Windows reads text files in the local code page; Pumpkin's files are UTF-8. Python started without
+        # -X utf8 (a plain `python -m pumpkin`) runs again in UTF-8 mode, and so does everything it starts.
+        os.environ["PYTHONUTF8"] = "1"
+        sys.exit(subprocess.call([sys.executable, "-X", "utf8", "-m", "pumpkin"] + list(sys.argv[1:] if argv is None
+                                                                                     else argv)))
+    os.environ.setdefault("PYTHONUTF8", "1")      # helpers it starts (search, devices) too
     ap = argparse.ArgumentParser(prog=APP_ID, description=f"{APP_NAME} {__version__}: run local AI agents "
                                  "with llama.cpp.")
     ap.add_argument("--version", action="version", version=f"{APP_NAME} {__version__}")

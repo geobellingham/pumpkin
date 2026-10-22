@@ -55,6 +55,8 @@ The chat is the llama.cpp web UI you may already know, with Pumpkin's pages adde
 
 ## Install
 
+On Windows? See [Windows](#windows-beta). For Android, see [Android](#android-beta).
+
 Pumpkin runs on **Linux** (tested on Ubuntu 24.04 and newer) with an AMD, NVIDIA or Intel GPU, or on the
 CPU alone, and on **macOS** (beta) on Apple Silicon (M1 and newer) using the GPU through Metal. Intel Macs
 work too, on the CPU. You need Python 3.10 or newer: most Linux distributions have it, and on a Mac
@@ -91,6 +93,32 @@ Optional extras:
 | Running at login, so schedules work with the window closed | Settings > *Start Pumpkin when I log in*, or `pumpkin service install` |
 
 To remove it, run `~/.local/share/pumpkin/app/uninstall.sh`. Your models and reports stay in `~/Pumpkin`.
+
+## Windows (beta)
+
+Pumpkin runs on **Windows 10 and 11** (64-bit) with an NVIDIA, AMD or Intel GPU, or on the CPU alone.
+Nothing else is needed: it brings its own Python. In PowerShell:
+
+```powershell
+irm https://raw.githubusercontent.com/geobellingham/pumpkin/main/install.ps1 | iex
+```
+
+It downloads `pumpkin-<version>-windows-x64.zip` from the
+[latest release](https://github.com/geobellingham/pumpkin/releases/latest), checks it against its
+published SHA-256, installs it for your user only (no admin rights), and adds Pumpkin to the Start menu,
+the desktop and *Apps > Installed apps*.
+
+- **The window** is Microsoft Edge in app mode: Pumpkin's own window, without tabs or an address bar.
+- **GPUs:** NVIDIA cards get the CUDA build, AMD and Intel get Vulkan. Keep your GPU driver up to date;
+  the one Windows Update installs sometimes lacks Vulkan.
+- **The agent sandbox** needs [Docker Desktop](https://www.docker.com/products/docker-desktop/) set to
+  Linux containers (its default). Without it, command tools stay off and the rest works.
+- **Starting at sign-in:** Settings > *Start Pumpkin when I log in*.
+- **Updating:** Settings > Update, or run the install line again.
+- **Removing:** *Apps > Installed apps > Pumpkin > Uninstall*. Your models and files stay in
+  `%USERPROFILE%\Pumpkin`.
+
+Windows on ARM runs the x64 build through Windows' emulation, which works but is slower.
 
 ## Android (beta)
 
@@ -212,8 +240,7 @@ MCP config, reports folder and speed history on first start, and finds models in
 - More natural voices generated on your computer (Kokoro, Orpheus)
 - "Look at my screen" for vision models
 - Quality benchmarks in the app
-- Windows
-- A signed, downloadable Mac app
+- Signed Windows and Mac builds
 
 ## Contributing
 

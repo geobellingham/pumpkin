@@ -75,6 +75,8 @@ def apply():
     tag = check().get("tag") or ""
     if not re.fullmatch(r"v?\d+(\.\d+){1,3}", tag):
         raise RuntimeError("No new release to update to.")
+    if os.name == "nt":
+        return _apply_windows(tag)
     script = os.environ.get("PUMPKIN_INSTALL_CMD") or (
         f"curl -fsSL https://raw.githubusercontent.com/{REPO}/{tag}/install.sh | PUMPKIN_TAG={tag} bash -s -- --no-open")
     bin_pumpkin = os.path.join(config.HOME, ".local", "bin", "pumpkin")
@@ -91,6 +93,21 @@ def apply():
                 f"--setenv=HOME={config.HOME}", "bash", "-c", f"{cmd} >> {_log()} 2>&1"]
     subprocess.Popen(argv, stdout=log, stderr=subprocess.STDOUT, start_new_session=True, cwd=config.HOME)
     log.close()
+
+
+def _apply_windows(tag):
+    """Windows: the PowerShell installer of the new release, detached so it outlives this server, which it
+    stops before replacing the files (Windows cannot replace a running program)."""
+    script = os.environ.get("PUMPKIN_INSTALL_CMD") or (
+        f"$env:PUMPKIN_TAG='{tag}'; $env:PUMPKIN_NO_OPEN='1'; $env:PUMPKIN_START='1'; "
+        f"irm https://raw.githubusercontent.com/{REPO}/{tag}/install.ps1 | iex")
+    with open(_log(), "w", encoding="utf-8") as log:
+        log.write(f"Updating to {tag}\n")
+    ps = ["powershell", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command",
+          f"Start-Sleep 1; & {{ {script} }} *>> '{_log()}'"]
+    subprocess.Popen(ps, cwd=config.HOME, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                     stderr=subprocess.DEVNULL,
+                     creationflags=subprocess.CREATE_NO_WINDOW | subprocess.CREATE_NEW_PROCESS_GROUP)
 
 
 def log_tail(n=40):

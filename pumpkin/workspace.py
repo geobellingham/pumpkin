@@ -23,15 +23,33 @@ def files_dir(settings):
 
 def _docker(*args, timeout=60):
     try:
-        r = subprocess.run(["docker", *args], capture_output=True, text=True, timeout=timeout)
+        r = subprocess.run(["docker", *args], capture_output=True, text=True, timeout=timeout,
+                           creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
         return r.returncode, (r.stdout or "").strip(), (r.stderr or "").strip()
     except (OSError, subprocess.SubprocessError) as e:
         return -1, "", str(e)
 
 
+_usable = {"at": 0.0, "ok": False}
+
+
+def docker_usable():
+    """Docker is installed and can run the (Linux) sandbox. On Windows, Docker Desktop can be switched to
+    Windows containers, which cannot; that is checked at most once a minute."""
+    if not shutil.which("docker"):
+        return False
+    if os.name != "nt":
+        return True
+    import time
+    if time.time() - _usable["at"] > 60:
+        code, out, _ = _docker("info", "--format", "{{.OSType}}", timeout=15)
+        _usable.update(at=time.time(), ok=code == 0 and out.strip() == "linux")
+    return _usable["ok"]
+
+
 def ensure(settings):
     """Starts the sandbox with the work folder mounted, if Docker is there. Returns its name, or None."""
-    if not shutil.which("docker"):
+    if not docker_usable():
         return None
     folder = files_dir(settings)
     image = settings["sandbox_image"]
@@ -90,11 +108,11 @@ def listing(settings, rel=""):
         except OSError:
             continue
         isdir = os.path.isdir(p)
-        items.append({"name": name, "path": os.path.relpath(p, base), "dir": isdir,
+        items.append({"name": name, "path": _rel(p, base), "dir": isdir,
                       "size": 0 if isdir else st.st_size, "mtime": int(st.st_mtime),
                       "type": "" if isdir else (mimetypes.guess_type(name)[0] or "")})
     items.sort(key=lambda x: (not x["dir"], -x["mtime"]))
-    return {"path": os.path.relpath(d, base) if d != base else "", "items": items, "folder": base,
+    return {"path": _rel(d, base) if d != base else "", "items": items, "folder": base,
             "display": _short(base), "sandbox": MOUNT}
 
 
@@ -113,13 +131,25 @@ def recent(settings, limit=6):
             except OSError:
                 pass
     out.sort(reverse=True)
-    return [{"name": os.path.basename(p), "path": os.path.relpath(p, base), "mtime": int(t)} for t, p in out[:limit]]
+    return [{"name": os.path.basename(p), "path": _rel(p, base), "mtime": int(t)} for t, p in out[:limit]]
+
+
+WIN_RESERVED = {"con", "prn", "aux", "nul"} | {f"com{i}" for i in range(1, 10)} | {f"lpt{i}" for i in range(1, 10)}
+
+
+def _rel(p, base):
+    """Paths the UI sees always use /, also on Windows."""
+    return os.path.relpath(p, base).replace(os.sep, "/")
 
 
 def save_upload(settings, rel_dir, name, data):
     name = os.path.basename((name or "").replace("\\", "/")).strip()
     if not name or name.startswith("."):
         raise ValueError("Pick a file with a normal name.")
+    if os.name == "nt" and (any(c in name for c in '<>:"|?*') or name.split(".")[0].lower() in WIN_RESERVED
+                            or name.endswith((".", " "))):
+        # a colon would write into a hidden stream of another file; CON, NUL and friends are devices
+        raise ValueError("Windows does not allow that file name. Rename the file and try again.")
     d = safe_path(settings, rel_dir)
     os.makedirs(d, exist_ok=True)
     target = os.path.join(d, name)
@@ -130,7 +160,7 @@ def save_upload(settings, rel_dir, name, data):
         n += 1
     with open(target, "wb") as f:
         f.write(data)
-    return os.path.relpath(target, files_dir(settings))
+    return _rel(target, files_dir(settings))
 
 
 def delete(settings, rel):
@@ -147,6 +177,9 @@ def delete(settings, rel):
 def reveal(settings, rel=""):
     """Opens the folder in Files or Finder (on this computer)."""
     p = safe_path(settings, rel)
+    if os.name == "nt":
+        os.startfile(p if os.path.isdir(p) else os.path.dirname(p))       # noqa: S606 - File Explorer
+        return
     opener = "open" if sys.platform == "darwin" else "xdg-open"
     if not shutil.which(opener):
         raise RuntimeError("No file manager to open.")

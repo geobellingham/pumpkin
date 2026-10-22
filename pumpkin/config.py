@@ -11,9 +11,16 @@ import uuid
 from . import APP_ID
 
 HOME = os.path.expanduser("~")
-CONFIG_DIR = os.path.join(os.environ.get("XDG_CONFIG_HOME") or os.path.join(HOME, ".config"), APP_ID)
-DATA_DIR = os.path.join(os.environ.get("XDG_DATA_HOME") or os.path.join(HOME, ".local", "share"), APP_ID)
-STATE_DIR = os.path.join(os.environ.get("XDG_STATE_HOME") or os.path.join(HOME, ".local", "state"), APP_ID)
+if os.name == "nt" and not os.environ.get("XDG_CONFIG_HOME"):
+    # Windows: settings in %APPDATA% (they roam with the account), downloads and logs in %LOCALAPPDATA%
+    _local = os.environ.get("LOCALAPPDATA") or os.path.join(HOME, "AppData", "Local")
+    CONFIG_DIR = os.path.join(os.environ.get("APPDATA") or os.path.join(HOME, "AppData", "Roaming"), APP_ID)
+    DATA_DIR = os.path.join(_local, APP_ID)
+    STATE_DIR = os.path.join(_local, APP_ID, "state")
+else:
+    CONFIG_DIR = os.path.join(os.environ.get("XDG_CONFIG_HOME") or os.path.join(HOME, ".config"), APP_ID)
+    DATA_DIR = os.path.join(os.environ.get("XDG_DATA_HOME") or os.path.join(HOME, ".local", "share"), APP_ID)
+    STATE_DIR = os.path.join(os.environ.get("XDG_STATE_HOME") or os.path.join(HOME, ".local", "state"), APP_ID)
 USER_DIR = os.path.join(HOME, "Pumpkin")          # things people open themselves: models, reports
 
 DEFAULT_SETTINGS = {

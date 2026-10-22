@@ -50,7 +50,8 @@ def wait(cond, what, timeout=900):
     raise SystemExit(f"timed out waiting for {what}")
 
 
-server = subprocess.Popen([sys.executable, "-m", "pumpkin", "serve"], env=ENV, cwd=HOME,
+# E2E_PYTHON: run the server with another Python, e.g. the one inside the installed Windows package
+server = subprocess.Popen([os.environ.get("E2E_PYTHON") or sys.executable, "-m", "pumpkin", "serve"], env=ENV, cwd=HOME,
                           stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
 try:
     step("Pumpkin starts")
@@ -143,7 +144,9 @@ try:
     call("PUT", f"/pumpkin/api/presets/{preset['id']}", {"tools": False})
 
     import shutil
-    if shutil.which("docker") and subprocess.run(["docker", "info"], capture_output=True).returncode == 0:
+    ostype = subprocess.run(["docker", "info", "--format", "{{.OSType}}"], capture_output=True, text=True).stdout.strip() \
+        if shutil.which("docker") else ""
+    if ostype == "linux":                          # Windows runners have Docker with Windows containers only
         step("The AI's tools write into the work folder (Docker sandbox)")
         call("PUT", f"/pumpkin/api/presets/{preset['id']}", {"tools": True, "sandbox": True, "web": False})
         call("POST", "/pumpkin/api/llama/start", {"preset": preset["id"]})

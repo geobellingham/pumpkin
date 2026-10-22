@@ -13,6 +13,9 @@ def ts():
     w = shutil.which("tailscale")
     if w:
         return w
+    if os.name == "nt":
+        p = os.path.join(os.environ.get("ProgramFiles", r"C:\Program Files"), "Tailscale", "tailscale.exe")
+        return p if os.path.exists(p) else None
     return MAC_APP_CLI if os.path.exists(MAC_APP_CLI) else None
 
 

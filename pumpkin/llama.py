@@ -19,6 +19,9 @@ from http.client import HTTPException
 
 from . import config, hardware, workspace
 
+WINDOWS = os.name == "nt"
+EXE = "llama-server.exe" if WINDOWS else "llama-server"
+
 RELEASES = "https://github.com/ggml-org/llama.cpp/releases"
 LLAMA_DIR = os.path.join(config.DATA_DIR, "llama")
 LOG_PATH = os.path.join(config.STATE_DIR, "llama-server.log")
@@ -56,13 +59,16 @@ def candidates(settings):
     out = []
     if settings["llama_server"]:
         out.append(os.path.expanduser(settings["llama_server"]))
-    out += sorted(glob.glob(os.path.join(LLAMA_DIR, "*", "llama-server")), key=os.path.getmtime, reverse=True)
-    out += sorted(glob.glob(os.path.join(LLAMA_DIR, "*", "*", "llama-server")), key=os.path.getmtime, reverse=True)
+    out += sorted(glob.glob(os.path.join(LLAMA_DIR, "*", EXE)), key=os.path.getmtime, reverse=True)
+    out += sorted(glob.glob(os.path.join(LLAMA_DIR, "*", "*", EXE)), key=os.path.getmtime, reverse=True)
     w = shutil.which("llama-server")
     if w:
         out.append(w)
-    out += [os.path.join(config.HOME, "llama.cpp", "build", "bin", "llama-server"), "/usr/local/bin/llama-server",
-            "/opt/llama.cpp/bin/llama-server", "/opt/homebrew/bin/llama-server"]          # the last one: Homebrew on a Mac
+    if WINDOWS:
+        out += [os.path.join(config.HOME, "llama.cpp", "build", "bin", "Release", EXE)]
+    else:
+        out += [os.path.join(config.HOME, "llama.cpp", "build", "bin", "llama-server"), "/usr/local/bin/llama-server",
+                "/opt/llama.cpp/bin/llama-server", "/opt/homebrew/bin/llama-server"]      # the last one: Homebrew on a Mac
     seen, res = set(), []
     for c in out:
         if c and c not in seen and os.path.isfile(c) and os.access(c, os.X_OK):
@@ -79,8 +85,8 @@ def find_server(settings):
 def _env_for(binary):
     env = dict(os.environ)
     d = os.path.dirname(os.path.realpath(binary))
-    var = "DYLD_LIBRARY_PATH" if sys.platform == "darwin" else "LD_LIBRARY_PATH"
-    env[var] = d + (":" + env[var] if env.get(var) else "")
+    var = "PATH" if WINDOWS else "DYLD_LIBRARY_PATH" if sys.platform == "darwin" else "LD_LIBRARY_PATH"
+    env[var] = d + (os.pathsep + env[var] if env.get(var) else "")
     return env
 
 
@@ -100,7 +106,8 @@ def probe(binary):
     info = {"path": binary, "version": None, "build": None, "commit": None, "flags": [], "backends": [], "ok": False,
             "error": None}
     try:
-        r = subprocess.run([binary, "--version"], capture_output=True, text=True, timeout=30, env=_env_for(binary))
+        r = subprocess.run([binary, "--version"], capture_output=True, text=True, timeout=30, env=_env_for(binary),
+                           creationflags=hardware.NO_WINDOW)
         txt = (r.stdout or "") + (r.stderr or "")
         # "version: 11796 (0a1ef309c)", or since late 2026 "version: 0.7.0-dev (build 11796, commit 0a1ef309c)"
         m = re.search(r"version:\s*(\d+)\s*\(([0-9a-f]+)\)", txt) or \
@@ -113,7 +120,8 @@ def probe(binary):
                 info["backends"].append(b)
         if not info["backends"] and re.search(r"arm64-apple-darwin|Darwin arm64", txt):
             info["backends"].append("Metal")       # Apple Silicon builds use Metal without saying so
-        h = subprocess.run([binary, "--help"], capture_output=True, text=True, timeout=30, env=_env_for(binary))
+        h = subprocess.run([binary, "--help"], capture_output=True, text=True, timeout=30, env=_env_for(binary),
+                           creationflags=hardware.NO_WINDOW)
         htxt = (h.stdout or "") + (h.stderr or "")
         info["flags"] = [f for f in KNOWN_FLAGS if re.search(rf"(^|[\s,]){re.escape(f)}([\s,=]|$)", htxt, re.M)]
         info["ok"] = r.returncode == 0 or bool(info["version"])
@@ -160,6 +168,13 @@ def latest_tag():
 
 
 def asset_names(tag, backend, arch="x64", system=None):
+    if (system or sys.platform) == "win32":
+        # Windows zips each hold the full toolset plus one backend library; CUDA needs its runtime zip too
+        if backend == "cuda":
+            return [f"llama-{tag}-bin-win-cuda-12.4-{arch}.zip", f"llama-{tag}-bin-win-cuda-13.4-{arch}.zip"]
+        if backend == "vulkan":
+            return [f"llama-{tag}-bin-win-vulkan-{arch}.zip"]
+        return [f"llama-{tag}-bin-win-cpu-{arch}.zip"]
     if (system or sys.platform) == "darwin":
         # the arm64 build uses Metal (Apple Silicon GPUs); Intel Macs get the x64 CPU build
         return [f"llama-{tag}-bin-macos-{arch}.tar.gz", f"llama-{tag}-bin-macos-{arch}.zip"]
@@ -207,7 +222,8 @@ def verify(path, digest):
 
 
 def machine_arch():
-    m = os.uname().machine
+    import platform
+    m = platform.machine().lower()
     return "arm64" if m in ("aarch64", "arm64") else "x64"
 
 
@@ -272,6 +288,9 @@ def download_release(backend, tag=None, progress=None, cancelled=lambda: False):
             try:
                 rt = os.path.join(LLAMA_DIR, cud + ".part")
                 cname = f"cudart-llama-{tag}-bin-ubuntu-cuda-{label}-{arch}.tar.gz"
+                if WINDOWS:                    # named without the tag on Windows
+                    cname = f"cudart-llama-bin-win-cuda-{label}-{arch}.zip"
+                    rt = os.path.join(LLAMA_DIR, cname + ".part")
                 _fetch(f"{RELEASES}/download/{tag}/{cname}", rt, None, cancelled)
                 verify(rt, digests.get(cname))
                 _extract(rt, target)
@@ -281,7 +300,7 @@ def download_release(backend, tag=None, progress=None, cancelled=lambda: False):
         if sys.platform == "darwin":
             # downloaded by Pumpkin rather than a browser, so macOS should not quarantine it; clear it in case
             subprocess.run(["xattr", "-dr", "com.apple.quarantine", target], capture_output=True)
-        hits = glob.glob(os.path.join(target, "**", "llama-server"), recursive=True)
+        hits = glob.glob(os.path.join(target, "**", EXE), recursive=True)
         if not hits:
             raise RuntimeError(f"The download did not contain llama-server ({name}).")
         binary = hits[0]
@@ -410,7 +429,7 @@ class ServerManager:
         if preset.get("tools"):
             # llama.cpp's built-in tools (shell commands, file edits) only ever run inside the sandbox. Without
             # Docker they would run directly on this computer, so they stay off; web search (MCP) still works.
-            if has("--agent") and has("--tools-runtime") and preset.get("sandbox", True) and shutil.which("docker"):
+            if has("--agent") and has("--tools-runtime") and preset.get("sandbox", True) and workspace.docker_usable():
                 # the sandbox with the work folder mounted, so files the AI makes end up in ~/Pumpkin/files
                 box = workspace.ensure(s)
                 cmd += ["--agent", "--tools-runtime", f"docker-container:{box}" if box else f"docker:{s['sandbox_image']}"]
@@ -449,8 +468,12 @@ class ServerManager:
             log.flush()
             env = _env_for(binary)
             env["LLAMA_API_KEY"] = api_key()          # through the environment, so it never shows up in `ps`
-            self.proc = subprocess.Popen(cmd, stdout=log, stderr=subprocess.STDOUT, start_new_session=True,
-                                         env=env, cwd=config.STATE_DIR)
+            if WINDOWS:
+                self.proc = subprocess.Popen(cmd, stdout=log, stderr=subprocess.STDOUT, env=env, cwd=config.STATE_DIR,
+                                             creationflags=hardware.NO_WINDOW)
+            else:
+                self.proc = subprocess.Popen(cmd, stdout=log, stderr=subprocess.STDOUT, start_new_session=True,
+                                             env=env, cwd=config.STATE_DIR)
             log.close()
             self.preset, self.state, self.error, self.started_at = dict(preset), "loading", None, time.time()
             self._inhibit(True)
@@ -467,6 +490,13 @@ class ServerManager:
         """While a model is loaded, keep the computer from going to sleep (the screen can still lock).
         Linux asks systemd; a Mac uses caffeinate (closing a laptop's lid still sleeps it)."""
         cur = getattr(self, "_inhibitor", None)
+        if WINDOWS:
+            if on and cur is None and self.settings["keep_awake"]:
+                self._inhibitor = _WinAwake()
+            elif not on and cur is not None:
+                cur.release()
+                self._inhibitor = None
+            return
         if sys.platform == "darwin":
             cmd = ["caffeinate", "-i"] if shutil.which("caffeinate") else None
         elif shutil.which("systemd-inhibit"):
@@ -490,7 +520,15 @@ class ServerManager:
     def _stop_locked(self):
         self._inhibit(False)
         p = self.proc
-        if p and p.poll() is None:
+        if p and p.poll() is None and WINDOWS:
+            # the whole tree: llama-server and the helpers it started (web search, devices)
+            subprocess.run(["taskkill", "/PID", str(p.pid), "/T", "/F"], capture_output=True,
+                           creationflags=hardware.NO_WINDOW)
+            try:
+                p.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                p.kill()
+        elif p and p.poll() is None:
             try:
                 os.killpg(os.getpgid(p.pid), signal.SIGTERM)
             except (ProcessLookupError, PermissionError):
@@ -527,10 +565,10 @@ class ServerManager:
     def _explain_failure(self):
         tail = "".join(self.log_tail(80))
         rc = getattr(self, "exit_code", None)
-        if rc == -signal.SIGILL:
+        if rc == -signal.SIGILL or rc == 0xC000001D:          # Linux/Mac signal, Windows STATUS_ILLEGAL_INSTRUCTION
             return ("llama-server crashed: this processor lacks instructions it was built for (Illegal instruction). "
                     "Update Pumpkin, or try a different llama-server build in Settings.")
-        if rc == -signal.SIGKILL:
+        if rc == -getattr(signal, "SIGKILL", 9):
             return ("The system stopped llama-server, almost always because the device ran out of memory. "
                     "Pick a smaller model or quant, or a shorter context.")
         hints = [
@@ -589,6 +627,26 @@ class ServerManager:
         return {"state": self.state, "error": self.error, "preset": self.preset,
                 "uptime": time.time() - self.started_at if self.started_at and self.state == "ready" else None,
                 "port": self.port}
+
+
+class _WinAwake:
+    """Windows: keep the PC from sleeping while a model is loaded (the screen can still turn off).
+    SetThreadExecutionState holds only while the thread that called it lives, so it gets its own thread."""
+    ES_CONTINUOUS, ES_SYSTEM_REQUIRED = 0x80000000, 0x00000001
+
+    def __init__(self):
+        self._done = threading.Event()
+        threading.Thread(target=self._run, daemon=True).start()
+
+    def _run(self):
+        import ctypes
+        k32 = ctypes.windll.kernel32
+        k32.SetThreadExecutionState(self.ES_CONTINUOUS | self.ES_SYSTEM_REQUIRED)
+        self._done.wait()
+        k32.SetThreadExecutionState(self.ES_CONTINUOUS)
+
+    def release(self):
+        self._done.set()
 
 
 def _mcp_has_servers(path):

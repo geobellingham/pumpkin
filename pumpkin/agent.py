@@ -99,6 +99,19 @@ def run_agent(port, prompt, system, say, settings, cancelled=lambda: False):
 
 NOTIFY_HOOK = None        # the Android app sets this to show its own notifications
 
+# A Windows toast, shown under PowerShell's name (apps need a registered ID to show toasts)
+WIN_TOAST = r"""
+[Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] > $null
+[Windows.Data.Xml.Dom.XmlDocument, Windows.Data.Xml.Dom.XmlDocument, ContentType = WindowsRuntime] > $null
+$t = [Security.SecurityElement]::Escape($env:PUMPKIN_TITLE)
+$b = [Security.SecurityElement]::Escape($env:PUMPKIN_BODY)
+$x = New-Object Windows.Data.Xml.Dom.XmlDocument
+$x.LoadXml("<toast><visual><binding template='ToastGeneric'><text>$t</text><text>$b</text></binding></visual></toast>")
+$id = '{1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\WindowsPowerShell\v1.0\powershell.exe'
+[Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier($id).Show(
+    [Windows.UI.Notifications.ToastNotification]::new($x))
+"""
+
 
 def notify(settings, title, body=""):
     """Desktop notification, plus a phone push through ntfy when a topic is set."""
@@ -109,11 +122,16 @@ def notify(settings, title, body=""):
         # strings go in as arguments, never pasted into the script, so a title cannot inject AppleScript
         cmd = ["osascript", "-e", "on run argv", "-e", "display notification (item 2 of argv) with title (item 1 of argv)",
                "-e", "end run", title, body or " "]
+    elif os.name == "nt":
+        cmd = ["powershell", "-NoProfile", "-NonInteractive", "-Command", WIN_TOAST]
     elif shutil.which("notify-send"):
         cmd = ["notify-send", "-a", APP_NAME, title, body]
     if settings["notifications"] and cmd:
         try:
-            subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            # Windows gets the text through the environment, never pasted into the script
+            env = dict(os.environ, PUMPKIN_TITLE=title, PUMPKIN_BODY=body or "") if os.name == "nt" else None
+            subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=env,
+                             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
         except OSError:
             pass
     topic = (settings["ntfy_topic"] or "").strip()

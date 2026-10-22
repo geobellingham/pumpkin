@@ -1,4 +1,5 @@
-"""Run Pumpkin at login: a systemd user service on Linux, a launchd agent on a Mac."""
+"""Run Pumpkin at login: a systemd user service on Linux, a launchd agent on a Mac, and on Windows an entry
+under HKCU\\...\\Run that starts it hidden when you sign in."""
 import os
 import shutil
 import subprocess
@@ -7,6 +8,36 @@ import sys
 from . import APP_ID, APP_NAME, config
 
 MAC = sys.platform == "darwin"
+WINDOWS = os.name == "nt"
+RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
+
+
+def _win_command():
+    d, name = os.path.split(sys.executable)
+    pyw = os.path.join(d, "pythonw.exe")
+    exe = pyw if os.path.exists(pyw) else sys.executable
+    return f'"{exe}" -X utf8 -m pumpkin up'
+
+
+def _win_get():
+    import winreg
+    try:
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_KEY) as k:
+            return winreg.QueryValueEx(k, APP_NAME)[0]
+    except OSError:
+        return None
+
+
+def _win_set(value):
+    import winreg
+    with winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_KEY, 0, winreg.KEY_SET_VALUE) as k:
+        if value is None:
+            try:
+                winreg.DeleteValue(k, APP_NAME)
+            except OSError:
+                pass
+        else:
+            winreg.SetValueEx(k, APP_NAME, 0, winreg.REG_SZ, value)
 UNIT = f"{APP_ID}.service"
 UNIT_DIR = os.path.join(os.environ.get("XDG_CONFIG_HOME") or os.path.join(config.HOME, ".config"), "systemd", "user")
 UNIT_PATH = os.path.join(UNIT_DIR, UNIT)
@@ -19,15 +50,19 @@ def _domain():
 
 
 def available():
+    if WINDOWS:
+        return True
     return bool(shutil.which("launchctl" if MAC else "systemctl"))
 
 
 def installed():
+    if WINDOWS:
+        return bool(_win_get())
     return os.path.exists(PLIST_PATH if MAC else UNIT_PATH)
 
 
 def linger():
-    if MAC:
+    if MAC or WINDOWS:
         return True                              # a Mac runs login items while you are logged in; nothing to add
     user = os.environ.get("USER") or ""
     return os.path.exists(f"/var/lib/systemd/linger/{user}") if user else False
@@ -36,6 +71,9 @@ def linger():
 def active():
     if not installed():
         return False
+    if WINDOWS:
+        from .__main__ import running
+        return running()
     if MAC:
         code, out = _run(["launchctl", "print", f"{_domain()}/{LABEL}"])
         return code == 0 and "state = running" in out
@@ -44,7 +82,7 @@ def active():
 
 def status():
     return {"available": available(), "installed": installed(), "linger": linger(), "active": active(),
-            "linger_command": "" if MAC else "sudo loginctl enable-linger $USER"}
+            "linger_command": "" if MAC or WINDOWS else "sudo loginctl enable-linger $USER"}
 
 
 def _run(cmd):
@@ -99,6 +137,11 @@ def enable(start_now=True):
     service takes over at next login (starting it now would clash on the port)."""
     if not available():
         raise RuntimeError("launchd is not available." if MAC else "systemd is not available on this system.")
+    if WINDOWS:
+        _win_set(_win_command())
+        if start_now:
+            start()
+        return
     if MAC:
         write_plist()
         if start_now:
@@ -114,6 +157,9 @@ def enable(start_now=True):
 
 
 def disable():
+    if WINDOWS:
+        _win_set(None)
+        return
     if MAC:
         _run(["launchctl", "bootout", f"{_domain()}/{LABEL}"])
         if os.path.exists(PLIST_PATH):
@@ -126,6 +172,11 @@ def disable():
 
 
 def start():
+    if WINDOWS:
+        from .__main__ import running, start_background_direct
+        if not running():
+            start_background_direct()
+        return
     if MAC:
         code, _ = _run(["launchctl", "kickstart", f"{_domain()}/{LABEL}"])
         if code != 0:
@@ -135,6 +186,10 @@ def start():
 
 
 def stop():
+    if WINDOWS:
+        from .__main__ import urllib_post
+        urllib_post("quit")
+        return
     if MAC:
         _run(["launchctl", "bootout", f"{_domain()}/{LABEL}"])     # stays installed; loads again at next login
     else:
@@ -142,6 +197,8 @@ def stop():
 
 
 def running_under_service():
+    if WINDOWS:
+        return False                    # the Run entry only starts Pumpkin; nothing supervises it afterwards
     if MAC:
         return os.environ.get("XPC_SERVICE_NAME") == LABEL
     return bool(os.environ.get("INVOCATION_ID")) and installed()

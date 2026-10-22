@@ -107,7 +107,13 @@ ThreadingHTTPServer(("127.0.0.1", port), H).serve_forever()
 
 
 def make_fake_server(path):
-    with open(path, "w") as f:
+    with open(path, "w", encoding="utf-8") as f:
         f.write(FAKE_SERVER)
     os.chmod(path, 0o755)
+    if os.name == "nt":
+        # Windows runs programs by extension: a .cmd next to the script makes `llama-server` a command
+        import sys
+        with open(path + ".cmd", "w", encoding="utf-8") as f:
+            f.write(f'@"{sys.executable}" "%~dp0{os.path.basename(path)}" %*\r\n')
+        return path + ".cmd"
     return path

@@ -8,6 +8,7 @@ import sys
 from . import hardware, llama, remote
 
 MAC = sys.platform == "darwin"
+WIN = os.name == "nt"
 ANDROID = hardware.ANDROID
 
 
@@ -66,7 +67,10 @@ def check(core):
             detail = f"{g['name']}, {g['vram_total']:.0f} GB VRAM" if g.get("vram_total") else g["name"]
         add("Hardware", "GPU", "ok", detail)
         if g["vendor"] in ("AMD", "Intel") or (g["vendor"] == "NVIDIA" and not shutil.which("nvidia-smi")):
-            if not hw.get("vulkan"):
+            if not hw.get("vulkan") and WIN:
+                add("Hardware", "Vulkan", "fail", "Vulkan is missing, so the GPU cannot be used.",
+                    "Install the latest driver from AMD, Intel or NVIDIA (the one Windows Update installs can lack it).")
+            elif not hw.get("vulkan"):
                 add("Hardware", "Vulkan", "fail", "The Vulkan loader is missing, so the Vulkan build cannot use "
                     "the GPU.", "Install the Vulkan drivers.",
                     "sudo apt install libvulkan1 mesa-vulkan-drivers")
@@ -91,24 +95,31 @@ def check(core):
         add("Agent tools", "Commands and files", "ok", "Phones have no sandbox for running commands, so the AI "
             "chats and runs your tasks without them.")
     elif not shutil.which("docker"):
-        if MAC:
+        if MAC or WIN:
             add("Agent tools", "Docker sandbox", "warn", "Docker is not installed. Tools would run directly on this "
                 "computer, so Pumpkin keeps them off until Docker is available.",
-                "Install Docker Desktop (or OrbStack) and open it once.", "brew install --cask docker")
+                "Install Docker Desktop and open it once." if WIN else
+                "Install Docker Desktop (or OrbStack) and open it once.",
+                "winget install Docker.DockerDesktop" if WIN else "brew install --cask docker")
         else:
             add("Agent tools", "Docker sandbox", "warn", "Docker is not installed. Tools would run directly on this "
                 "computer, so Pumpkin keeps them off until Docker is available.",
                 "Install Docker, then log out and back in.", "sudo apt install docker.io && sudo usermod -aG docker $USER")
     else:
         code, txt = _run(["docker", "info", "--format", "{{.ServerVersion}}"])
-        if code == 0:
+        ostype = _run(["docker", "info", "--format", "{{.OSType}}"])[1].strip() if code == 0 else ""
+        if code == 0 and WIN and ostype == "windows":
+            add("Agent tools", "Docker sandbox", "fail", "Docker Desktop is set to Windows containers. The sandbox "
+                "needs Linux containers.", "Right-click the Docker icon in the taskbar and choose "
+                "'Switch to Linux containers'.")
+        elif code == 0:
             img = s["sandbox_image"]
             c2, _ = _run(["docker", "image", "inspect", img])
             add("Agent tools", "Docker sandbox", "ok", f"Docker {txt.strip()}; sandbox image {img}"
                 + ("" if c2 == 0 else " will download on first use"))
-        elif MAC:
+        elif MAC or WIN:
             add("Agent tools", "Docker sandbox", "fail", "Docker is installed but not running.",
-                "Open Docker Desktop and wait until it says it is running.", "open -a Docker")
+                "Open Docker Desktop and wait until it says it is running.", "" if WIN else "open -a Docker")
         elif "permission denied" in txt.lower():
             in_group = False
             try:
@@ -141,12 +152,14 @@ def check(core):
         if not remote.ts():
             add("Phone access", "Tailscale", "fail", "Tailscale is not installed.",
                 "Install it and sign in on this computer and your phone.",
+                "winget install Tailscale.Tailscale" if WIN else
                 "" if MAC else "curl -fsSL https://tailscale.com/install.sh | sh && sudo tailscale up")
         else:
             code, txt = _run([remote.ts(), "status", "--json"])
             if code != 0:
                 add("Phone access", "Tailscale", "fail", "Tailscale is not running or not signed in.",
-                    "Open the Tailscale app and sign in." if MAC else "Sign in.", "" if MAC else "sudo tailscale up")
+                    "Open the Tailscale app and sign in." if MAC or WIN else "Sign in.",
+                    "" if MAC or WIN else "sudo tailscale up")
             else:
                 add("Phone access", "Tailscale", "ok", "Signed in")
     elif mode == "lan":
@@ -160,8 +173,9 @@ def check(core):
             if busy:
                 add("System", name, "warn", f"Something else is using port {port}.",
                     "Stop the other program or change the port in Settings.")
-    if MAC or ANDROID:
-        add("System", "Notifications", "ok", ("Mac" if MAC else "Phone") + " notifications for finished tasks")
+    if MAC or ANDROID or WIN:
+        add("System", "Notifications", "ok", ("Mac" if MAC else "Windows" if WIN else "Phone")
+            + " notifications for finished tasks")
         return out
     add("System", "Notifications", "ok" if shutil.which("notify-send") else "warn",
         "Desktop notifications for finished tasks" if shutil.which("notify-send") else "notify-send is missing.",

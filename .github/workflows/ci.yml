@@ -19,7 +19,11 @@ jobs:
           - { os: ubuntu-24.04, python: "3.12" }
           - { os: ubuntu-24.04, python: "3.13" }
           - { os: macos-14, python: "3.12" }        # Apple Silicon
+          - { os: windows-2022, python: "3.12" }
     runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
@@ -29,6 +33,7 @@ jobs:
         env:
           PUMPKIN_ONLINE: "1"
           GITHUB_TOKEN: ${{ github.token }}
+          PYTHONUTF8: "1"                         # how Pumpkin always runs on Windows
         run: |
           set +e
           python -m unittest discover -s tests -v > test-output.txt 2>&1
@@ -45,7 +50,11 @@ jobs:
         include:
           - { os: ubuntu-24.04, backend: cpu }
           - { os: macos-14, backend: "" }           # Apple Silicon: Metal
+          - { os: windows-2022, backend: cpu }
     runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
@@ -55,6 +64,7 @@ jobs:
         env:
           E2E_BACKEND: ${{ matrix.backend }}
           GITHUB_TOKEN: ${{ github.token }}
+          PYTHONUTF8: "1"
         run: |
           set +e
           python tests/e2e_real.py > e2e.txt 2>&1
@@ -147,4 +157,120 @@ jobs:
         with:
           name: mac-window-screenshot
           path: mac-window.png
+          retention-days: 7
+
+  # the Windows package: Pumpkin with its own Python, built on Linux like the release does it
+  windows-package:
+    needs: web
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.12"
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
+        with:
+          name: pumpkin-ui
+          path: pumpkin/ui
+      - name: Build the Windows package
+        run: |
+          set +e
+          ./packaging/windows/build.sh 0.0.0 dist > pkg.txt 2>&1
+          code=$?
+          cat pkg.txt
+          [ "$code" -eq 0 ] || python .github/annotate.py error "Windows package failed" pkg.txt
+          exit $code
+      - uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
+        with:
+          name: pumpkin-windows
+          path: dist/pumpkin-0.0.0-windows-x64.zip
+          retention-days: 7
+
+  # install it on real Windows the way people will, run the real end-to-end test with the Python inside it,
+  # open the window, then uninstall
+  windows:
+    needs: windows-package
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.12"
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
+        with:
+          name: pumpkin-windows
+          path: pkg
+      - name: Install, start, open the window, stop
+        shell: powershell
+        run: |
+          $log = "$env:GITHUB_WORKSPACE\win.txt"
+          $ok = $true
+          try { & {
+            $ErrorActionPreference = 'Stop'
+            $env:PUMPKIN_ZIP = (Resolve-Path pkg\pumpkin-0.0.0-windows-x64.zip).Path
+            $env:PUMPKIN_NO_OPEN = '1'
+            . .\install.ps1
+            $dir = "$env:LOCALAPPDATA\Programs\Pumpkin"
+            if (-not (Test-Path "$dir\python\pythonw.exe")) { throw 'no pythonw.exe' }
+            foreach ($l in "$([Environment]::GetFolderPath('Programs'))\Pumpkin.lnk", "$([Environment]::GetFolderPath('Desktop'))\Pumpkin.lnk") {
+              if (-not (Test-Path $l)) { throw "missing $l" }
+            }
+            if (-not (Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\Pumpkin')) { throw 'not in installed apps' }
+            & "$dir\bin\pumpkin.cmd" --version
+            if ($LASTEXITCODE) { throw 'pumpkin --version failed' }
+            Get-Content "$dir\python\PUMPKIN_PYTHON_VERSION"
+            & "$dir\bin\pumpkin.cmd" up
+            if ($LASTEXITCODE) { Get-Content "$env:LOCALAPPDATA\pumpkin\state\pumpkin.log" -ErrorAction SilentlyContinue; throw 'pumpkin up failed' }
+            $tok = (Get-Content -Raw "$env:APPDATA\pumpkin\token").Trim()
+            $st = Invoke-RestMethod -Headers @{ Authorization = "Bearer $tok" } http://127.0.0.1:8090/pumpkin/api/state
+            "platform: $($st.platform), version $($st.version)"
+            $hw = Invoke-RestMethod -Headers @{ Authorization = "Bearer $tok" } http://127.0.0.1:8090/pumpkin/api/hardware
+            $hw | ConvertTo-Json -Depth 4
+            & "$dir\bin\pumpkin.cmd" doctor
+            # no console window may show up: only the hidden ones
+            Get-Process python*, llama* -ErrorAction SilentlyContinue | Select-Object Name, MainWindowTitle, Path | Format-Table -AutoSize | Out-String -Width 300
+            # the window (Edge in app mode), photographed
+            Start-Process -FilePath "$dir\python\pythonw.exe" -ArgumentList '-X','utf8','-m','pumpkin','open' -WorkingDirectory $dir
+            Start-Sleep 15
+            Add-Type -AssemblyName System.Windows.Forms, System.Drawing
+            $b = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+            $bmp = New-Object System.Drawing.Bitmap $b.Width, $b.Height
+            [System.Drawing.Graphics]::FromImage($bmp).CopyFromScreen($b.Location, [System.Drawing.Point]::Empty, $b.Size)
+            $bmp.Save("$env:GITHUB_WORKSPACE\windows-window.png")
+            Get-Process msedge -ErrorAction SilentlyContinue | Where-Object MainWindowTitle | Select-Object MainWindowTitle | Format-Table | Out-String
+            & "$dir\bin\pumpkin.cmd" stop
+            Start-Sleep 3
+            Get-Process msedge -ErrorAction SilentlyContinue | Stop-Process -Force
+          } *>&1 | Out-File -Encoding utf8 $log } catch { $ok = $false; "FAILED: $_" | Out-File -Append -Encoding utf8 $log }
+          Get-Content $log
+          if ($ok) { python .github/annotate.py notice "Windows install" $log } else { python .github/annotate.py error "Windows install failed" $log; exit 1 }
+      - name: End to end with a real model, using the Python inside the package
+        shell: bash
+        env:
+          E2E_BACKEND: cpu
+          GITHUB_TOKEN: ${{ github.token }}
+          PYTHONUTF8: "1"
+        run: |
+          set +e
+          E2E_PYTHON="$LOCALAPPDATA/Programs/Pumpkin/python/python.exe" python tests/e2e_real.py > e2e.txt 2>&1
+          code=$?
+          cat e2e.txt
+          if [ "$code" -eq 0 ]; then
+            python .github/annotate.py notice "End to end on Windows (packaged Python)" e2e.txt
+          else
+            python .github/annotate.py error "End to end failed on Windows (packaged Python)" e2e.txt
+          fi
+          exit $code
+      - name: Uninstall
+        shell: powershell
+        run: |
+          & "$env:LOCALAPPDATA\Programs\Pumpkin\uninstall.ps1" *>&1 | Out-File -Encoding utf8 un.txt
+          Get-Content un.txt
+          if (Test-Path "$env:LOCALAPPDATA\Programs\Pumpkin") { python .github/annotate.py error "Uninstall left files" un.txt; exit 1 }
+          if (Test-Path "$([Environment]::GetFolderPath('Programs'))\Pumpkin.lnk") { python .github/annotate.py error "Uninstall left the shortcut" un.txt; exit 1 }
+      - uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
+        if: always()
+        with:
+          name: windows-window-screenshot
+          path: windows-window.png
           retention-days: 7

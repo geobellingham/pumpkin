@@ -77,7 +77,7 @@ class Core:
         p = self.personas.get(self.settings["persona"])
         text = (p or {}).get("prompt", "")
         pre = (self.server.preset or {}) if self.server.state in ("loading", "ready") else {}
-        if pre.get("tools") and pre.get("sandbox", True) and shutil.which("docker"):
+        if pre.get("tools") and pre.get("sandbox", True) and workspace.docker_usable():
             text += ("\n\nSave files you make for the user in /workspace (your working folder). "
                      "They can open them on the Files page.")
         return text

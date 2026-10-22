@@ -50,9 +50,13 @@ jobs:
           chmod +x "dist/pumpkin-$V/pumpkin/mac/Pumpkin"
           test -s "dist/pumpkin-$V/pumpkin/mac/Pumpkin"
           tar -C dist -czf "dist/pumpkin-$V.tar.gz" "pumpkin-$V"
+      - name: Windows package (Pumpkin with its own Python)
+        run: ./packaging/windows/build.sh "${GITHUB_REF_NAME#v}" dist
       - uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
         with:
-          files: dist/pumpkin-*.tar.gz
+          files: |
+            dist/pumpkin-*.tar.gz
+            dist/pumpkin-*-windows-x64.zip
           generate_release_notes: true
 
   # the Android app, attached to the same release as pumpkin-<version>.apk
