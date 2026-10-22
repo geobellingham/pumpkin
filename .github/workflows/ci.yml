@@ -65,7 +65,7 @@ jobs:
           python -X faulthandler -c "import faulthandler, unittest; faulthandler.dump_traceback_later(200, exit=True); unittest.main(module=None, argv=['unittest', '-v', 'test_android'])" > out-android.txt 2>&1
           code=$?
           cat out-android.txt
-          [ "$code" -eq 0 ] || python .github/annotate.py error "test_android failed on Windows" out-android.txt
+          [ "$code" -eq 0 ] || python ../.github/annotate.py error "test_android failed on Windows" out-android.txt
           exit $code
         working-directory: tests
       - name: tests/test_backend.py
@@ -76,7 +76,7 @@ jobs:
           python -X faulthandler -c "import faulthandler, unittest; faulthandler.dump_traceback_later(200, exit=True); unittest.main(module=None, argv=['unittest', '-v', 'test_backend'])" > out-backend.txt 2>&1
           code=$?
           cat out-backend.txt
-          [ "$code" -eq 0 ] || python .github/annotate.py error "test_backend failed on Windows" out-backend.txt
+          [ "$code" -eq 0 ] || python ../.github/annotate.py error "test_backend failed on Windows" out-backend.txt
           exit $code
         working-directory: tests
       - name: tests/test_devices.py
@@ -87,7 +87,7 @@ jobs:
           python -X faulthandler -c "import faulthandler, unittest; faulthandler.dump_traceback_later(200, exit=True); unittest.main(module=None, argv=['unittest', '-v', 'test_devices'])" > out-devices.txt 2>&1
           code=$?
           cat out-devices.txt
-          [ "$code" -eq 0 ] || python .github/annotate.py error "test_devices failed on Windows" out-devices.txt
+          [ "$code" -eq 0 ] || python ../.github/annotate.py error "test_devices failed on Windows" out-devices.txt
           exit $code
         working-directory: tests
       - name: tests/test_features.py
@@ -98,7 +98,7 @@ jobs:
           python -X faulthandler -c "import faulthandler, unittest; faulthandler.dump_traceback_later(200, exit=True); unittest.main(module=None, argv=['unittest', '-v', 'test_features'])" > out-features.txt 2>&1
           code=$?
           cat out-features.txt
-          [ "$code" -eq 0 ] || python .github/annotate.py error "test_features failed on Windows" out-features.txt
+          [ "$code" -eq 0 ] || python ../.github/annotate.py error "test_features failed on Windows" out-features.txt
           exit $code
         working-directory: tests
       - name: tests/test_mac.py
@@ -109,7 +109,7 @@ jobs:
           python -X faulthandler -c "import faulthandler, unittest; faulthandler.dump_traceback_later(200, exit=True); unittest.main(module=None, argv=['unittest', '-v', 'test_mac'])" > out-mac.txt 2>&1
           code=$?
           cat out-mac.txt
-          [ "$code" -eq 0 ] || python .github/annotate.py error "test_mac failed on Windows" out-mac.txt
+          [ "$code" -eq 0 ] || python ../.github/annotate.py error "test_mac failed on Windows" out-mac.txt
           exit $code
         working-directory: tests
       - name: tests/test_migrate.py
@@ -120,7 +120,7 @@ jobs:
           python -X faulthandler -c "import faulthandler, unittest; faulthandler.dump_traceback_later(200, exit=True); unittest.main(module=None, argv=['unittest', '-v', 'test_migrate'])" > out-migrate.txt 2>&1
           code=$?
           cat out-migrate.txt
-          [ "$code" -eq 0 ] || python .github/annotate.py error "test_migrate failed on Windows" out-migrate.txt
+          [ "$code" -eq 0 ] || python ../.github/annotate.py error "test_migrate failed on Windows" out-migrate.txt
           exit $code
         working-directory: tests
       - name: tests/test_recommend.py
@@ -131,7 +131,7 @@ jobs:
           python -X faulthandler -c "import faulthandler, unittest; faulthandler.dump_traceback_later(200, exit=True); unittest.main(module=None, argv=['unittest', '-v', 'test_recommend'])" > out-recommend.txt 2>&1
           code=$?
           cat out-recommend.txt
-          [ "$code" -eq 0 ] || python .github/annotate.py error "test_recommend failed on Windows" out-recommend.txt
+          [ "$code" -eq 0 ] || python ../.github/annotate.py error "test_recommend failed on Windows" out-recommend.txt
           exit $code
         working-directory: tests
       - name: tests/test_security.py
@@ -142,7 +142,7 @@ jobs:
           python -X faulthandler -c "import faulthandler, unittest; faulthandler.dump_traceback_later(200, exit=True); unittest.main(module=None, argv=['unittest', '-v', 'test_security'])" > out-security.txt 2>&1
           code=$?
           cat out-security.txt
-          [ "$code" -eq 0 ] || python .github/annotate.py error "test_security failed on Windows" out-security.txt
+          [ "$code" -eq 0 ] || python ../.github/annotate.py error "test_security failed on Windows" out-security.txt
           exit $code
         working-directory: tests
       - name: tests/test_workspace.py
@@ -153,7 +153,7 @@ jobs:
           python -X faulthandler -c "import faulthandler, unittest; faulthandler.dump_traceback_later(200, exit=True); unittest.main(module=None, argv=['unittest', '-v', 'test_workspace'])" > out-workspace.txt 2>&1
           code=$?
           cat out-workspace.txt
-          [ "$code" -eq 0 ] || python .github/annotate.py error "test_workspace failed on Windows" out-workspace.txt
+          [ "$code" -eq 0 ] || python ../.github/annotate.py error "test_workspace failed on Windows" out-workspace.txt
           exit $code
         working-directory: tests
       - name: All passed
