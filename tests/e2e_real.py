@@ -23,6 +23,13 @@ with open(f"{HOME}/.config/pumpkin/settings.json", "w") as f:
                "check_updates": False}, f)
 
 
+def _up():
+    try:
+        return bool(call("GET", "/pumpkin/api/state", timeout=5))
+    except (OSError, urllib.error.URLError):
+        return False
+
+
 def step(msg):
     print(f"\n== {msg}", flush=True)
 
@@ -140,6 +147,8 @@ try:
     assert "answer from E2E box" in json.dumps(r), r
     assert call("GET", "/pumpkin/api/devices/share")["recent"][0]["state"] == "done"
     call("POST", "/pumpkin/api/devices/share", {"on": False})
+    time.sleep(1.5)                                            # it goes back to listening on this computer only
+    wait(lambda: _up(), "Pumpkin to listen again", 30)
     call("DELETE", f"/pumpkin/api/devices/{dev['id']}")
 
     step("Your documents, saved files and memory: the model's own tools, run by the real llama-server")

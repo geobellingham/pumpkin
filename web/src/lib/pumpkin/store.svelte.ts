@@ -16,12 +16,23 @@ export async function api<R = unknown>(
 	options: { body?: unknown; method?: string } = {}
 ): Promise<R> {
 	const method = options.method ?? (options.body !== undefined ? 'POST' : 'GET');
-	const r = await fetch(API + path, {
-		body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
-		credentials: 'same-origin',
-		headers: method === 'GET' ? {} : { 'Content-Type': 'application/json', 'X-Pumpkin': '1' },
-		method
-	});
+	const send = () =>
+		fetch(API + path, {
+			body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
+			credentials: 'same-origin',
+			headers: method === 'GET' ? {} : { 'Content-Type': 'application/json', 'X-Pumpkin': '1' },
+			method
+		});
+	let r: Response;
+
+	try {
+		r = await send();
+	} catch (e) {
+		// Pumpkin briefly stops listening when phone access or sharing changes; a read can safely try again
+		if (method !== 'GET') throw e;
+		await new Promise((ok) => setTimeout(ok, 1200));
+		r = await send();
+	}
 
 	if (r.status === 401) {
 		location.href = './login';
