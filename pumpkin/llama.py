@@ -526,6 +526,13 @@ class ServerManager:
 
     def _explain_failure(self):
         tail = "".join(self.log_tail(80))
+        rc = getattr(self, "exit_code", None)
+        if rc == -signal.SIGILL:
+            return ("llama-server crashed: this processor lacks instructions it was built for (Illegal instruction). "
+                    "Update Pumpkin, or try a different llama-server build in Settings.")
+        if rc == -signal.SIGKILL:
+            return ("The system stopped llama-server, almost always because the device ran out of memory. "
+                    "Pick a smaller model or quant, or a shorter context.")
         hints = [
             (r"out of memory|ErrorOutOfDeviceMemory|failed to allocate|cudaMalloc failed",
              "The model did not fit in memory. Use a smaller quant, a shorter context, or a smaller KV cache type."),
@@ -552,6 +559,7 @@ class ServerManager:
                     p = self.proc
                     if p is not None and p.poll() is not None:
                         self.proc = None
+                        self.exit_code = p.returncode
                         if self.state in ("loading", "ready"):
                             self.state, self.error = "error", self._explain_failure()
                             changed = True

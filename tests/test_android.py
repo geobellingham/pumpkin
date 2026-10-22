@@ -87,5 +87,26 @@ class TestStart(unittest.TestCase):
         self.assertTrue(os.path.isdir(os.path.join(d, "files", "home", ".config", "pumpkin")))
 
 
+class PickServerTest(unittest.TestCase):
+    def _pick(self, features):
+        from pumpkin import android
+        with tempfile.TemporaryDirectory() as d:
+            for n in ("libllama_server.so", "libllama_server_basic.so"):
+                open(os.path.join(d, n), "w").close()
+            ci = os.path.join(d, "cpuinfo")
+            with open(ci, "w") as f:
+                f.write("processor\t: 0\nFeatures\t: %s\n" % features)
+            return os.path.basename(android.pick_server(d, ci))
+
+    def test_old_phone_gets_basic(self):
+        self.assertEqual(self._pick("fp asimd evtstrm aes pmull sha1 sha2 crc32 cpuid"), "libllama_server_basic.so")
+
+    def test_new_phone_gets_fast(self):
+        self.assertEqual(self._pick("fp asimd aes crc32 asimdhp asimddp"), "libllama_server.so")
+
+    def test_unknown_cpu_gets_fast(self):
+        self.assertEqual(self._pick(""), "libllama_server.so")
+
+
 if __name__ == "__main__":
     unittest.main()

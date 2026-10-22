@@ -40,6 +40,25 @@ def start(files_dir, native_dir, cache_dir=""):
         raise
 
 
+def pick_server(native_dir, cpuinfo="/proc/cpuinfo"):
+    """The fast llama-server needs the ARM dot-product and half-float instructions (phones since about 2018).
+    Older ones, like the Galaxy S8, crash on it, so they get the basic build when the app has one."""
+    fast = os.path.join(native_dir, "libllama_server.so")
+    basic = os.path.join(native_dir, "libllama_server_basic.so")
+    try:
+        with open(cpuinfo) as f:
+            text = f.read()
+    except OSError:
+        return fast
+    feats = set()
+    for line in text.splitlines():
+        if line.lower().startswith("features"):
+            feats.update(line.split(":", 1)[-1].split())
+    if feats and not ({"asimddp", "asimdhp"} <= feats) and os.path.exists(basic):
+        return basic
+    return fast
+
+
 def _start(files_dir, native_dir, cache_dir=""):
     if "url" in _running:
         return _running["url"]
@@ -59,7 +78,7 @@ def _start(files_dir, native_dir, cache_dir=""):
     from . import agent, config
     s = config.Settings()
     s.update({
-        "llama_server": os.path.join(native_dir, "libllama_server.so"),   # built into the app
+        "llama_server": pick_server(native_dir),            # built into the app
         "port": _free_port(int(s["port"])), "llama_port": _free_port(int(s["llama_port"])),
         "remote": "off", "keep_awake": False, "autostart_model": False,
     })

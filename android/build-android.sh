@@ -18,21 +18,24 @@ if [ ! -d "$WORK/llama.cpp/.git" ]; then
   mkdir -p "$WORK"
   git clone --quiet --depth 1 --branch "$TAG" https://github.com/ggml-org/llama.cpp "$WORK/llama.cpp"
 fi
-for abi in arm64-v8a x86_64; do
-  out="$HERE/app/src/main/jniLibs/$abi/libllama_server.so"
+# arm64 gets two builds: a fast one for phones with the dot-product instructions (about 2018 and newer) and a
+# basic one that runs on every 64-bit phone, such as the Galaxy S8. Pumpkin picks at startup.
+for variant in arm64-v8a:libllama_server.so:fast arm64-v8a:libllama_server_basic.so:basic x86_64:libllama_server.so:plain; do
+  IFS=: read -r abi name kind <<<"$variant"
+  out="$HERE/app/src/main/jniLibs/$abi/$name"
   if [ -f "$out" ] && [ -z "${REBUILD:-}" ]; then continue; fi
   extra=()
-  # phones since about 2018 have the dot-product instructions that make llama.cpp several times faster
-  [ "$abi" = arm64-v8a ] && extra+=(-DGGML_CPU_ARM_ARCH=armv8.2-a+dotprod+fp16)
-  cmake -S "$WORK/llama.cpp" -B "$WORK/build-$abi" -G Ninja \
+  [ "$kind" = fast ] && extra+=(-DGGML_CPU_ARM_ARCH=armv8.2-a+dotprod+fp16)
+  [ "$kind" = basic ] && extra+=(-DGGML_CPU_ARM_ARCH=armv8-a)
+  cmake -S "$WORK/llama.cpp" -B "$WORK/build-$abi-$kind" -G Ninja \
     -DCMAKE_TOOLCHAIN_FILE="$NDK/build/cmake/android.toolchain.cmake" -DANDROID_ABI="$abi" \
     -DANDROID_PLATFORM=android-26 -DANDROID_STL=c++_static -DCMAKE_BUILD_TYPE=Release \
     -DBUILD_SHARED_LIBS=OFF -DGGML_NATIVE=OFF -DGGML_OPENMP=OFF -DLLAMA_OPENSSL=OFF \
     -DLLAMA_BUILD_TESTS=OFF -DLLAMA_BUILD_EXAMPLES=OFF -DLLAMA_BUILD_SERVER=ON \
     -DLLAMA_BUILD_NUMBER="${TAG#b}" "${extra[@]}"          # a shallow clone cannot count its own commits
-  cmake --build "$WORK/build-$abi" --target llama-server -j "$JOBS"
+  cmake --build "$WORK/build-$abi-$kind" --target llama-server -j "$JOBS"
   mkdir -p "$(dirname "$out")"
-  cp "$WORK/build-$abi/bin/llama-server" "$out"
+  cp "$WORK/build-$abi-$kind/bin/llama-server" "$out"
   "$NDK"/toolchains/llvm/prebuilt/*/bin/llvm-strip "$out"
   ls -la "$out"
 done
