@@ -52,13 +52,6 @@
 	const current = $derived(section === 'setup' ? null : (NAV.find((n) => n.id === section) ?? NAV[0]));
 	const Page = $derived(current?.page ?? Setup);
 
-	let navEl: HTMLElement | undefined = $state();
-
-	$effect(() => {
-		// keep the active pill visible on phones
-		void section;
-		navEl?.querySelector('[aria-current="page"]')?.scrollIntoView({ block: 'nearest', inline: 'center' });
-	});
 </script>
 
 {#if pumpkin.available === false}
@@ -66,7 +59,7 @@
 		This page needs the Pumpkin server. Open Pumpkin with the <code>pumpkin</code> command.
 	</div>
 {:else}
-	<div class="mx-auto w-full max-w-5xl px-4 pt-3 pb-24 md:px-8 md:pt-6">
+	<div class="mx-auto w-full max-w-5xl px-5 pt-3 pb-24 md:px-8 md:pt-6">
 		<header class="flex h-12 items-center gap-2 pl-12 md:pl-0">
 			<a
 				aria-label="Back to chat"
@@ -90,16 +83,14 @@
 			<div class="mt-3 md:mt-6 md:grid md:grid-cols-[12rem_minmax(0,1fr)] md:gap-8">
 				<nav
 					aria-label="Pumpkin sections"
-					bind:this={navEl}
-					class="sticky top-0 z-10 -mx-4 flex gap-1 overflow-x-auto bg-background/90 px-4 py-2 backdrop-blur-xl md:static md:mx-0 md:flex-col md:self-start md:bg-transparent md:p-0 md:backdrop-blur-none"
-					style="scrollbar-width: none"
+					class="flex flex-wrap gap-1.5 py-1 md:flex-col md:gap-1 md:self-start md:p-0"
 				>
 					{#each NAV.filter((n) => !(pumpkin.state?.platform === 'android' && n.id === 'phone')) as n (n.id)}
 						{@const Icon = n.icon}
 						<a
 							aria-current={current.id === n.id ? 'page' : undefined}
 							class={[
-								'flex h-9 shrink-0 items-center gap-2 rounded-full px-3.5 text-sm whitespace-nowrap transition-colors md:rounded-lg md:px-3',
+								'flex h-9 shrink-0 items-center gap-2 rounded-full px-3 text-sm whitespace-nowrap transition-colors md:rounded-lg md:px-3',
 								current.id === n.id
 									? 'bg-foreground text-background md:bg-muted md:text-foreground md:font-medium'
 									: 'text-muted-foreground hover:bg-muted hover:text-foreground'

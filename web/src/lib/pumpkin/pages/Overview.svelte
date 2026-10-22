@@ -63,7 +63,7 @@
 
 <div class="flex flex-col gap-4">
 	<section class="rounded-2xl bg-muted/50 p-4 md:p-5">
-		<div class="flex items-start justify-between gap-3">
+		<div class="flex flex-wrap items-start justify-between gap-x-3 gap-y-1">
 			<div class="min-w-0">
 				<div class="flex items-baseline gap-1.5">
 					<span class={['text-4xl font-semibold tracking-tight tabular-nums', speed.value == null && 'text-muted-foreground/50']}>
@@ -83,16 +83,16 @@
 			</div>
 		</div>
 
-		<div class="mt-4 flex gap-4">
+		<div class="mt-4 flex flex-col gap-3 sm:flex-row sm:gap-4">
 			<Meter label={s?.platform === 'android' ? 'For models' : s?.live.unified ? 'GPU memory' : 'VRAM'} total={s?.live.vram_total} used={s?.live.vram_used} />
 			<Meter label="RAM" total={s?.live.ram_total} used={s?.live.ram_used} />
 		</div>
 
 		{#if s?.server.state === 'error' && s.server.error}
-			<p class="mt-4 flex gap-2 rounded-xl bg-destructive/10 p-3 text-sm text-destructive">
+			<p class="mt-4 flex flex-wrap gap-2 rounded-xl bg-destructive/10 p-3 text-sm text-destructive">
 				<CircleAlert class="mt-0.5 h-4 w-4 shrink-0" />
-				{s.server.error}
-				<a class="ml-auto shrink-0 underline" href="#/pumpkin/settings">See log</a>
+				<span class="min-w-0 flex-1 break-all">{s.server.error}</span>
+				<a class="shrink-0 underline" href="#/pumpkin/settings">See log</a>
 			</p>
 		{/if}
 
