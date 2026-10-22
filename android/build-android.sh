@@ -28,7 +28,8 @@ for abi in arm64-v8a x86_64; do
     -DCMAKE_TOOLCHAIN_FILE="$NDK/build/cmake/android.toolchain.cmake" -DANDROID_ABI="$abi" \
     -DANDROID_PLATFORM=android-26 -DANDROID_STL=c++_static -DCMAKE_BUILD_TYPE=Release \
     -DBUILD_SHARED_LIBS=OFF -DGGML_NATIVE=OFF -DGGML_OPENMP=OFF -DLLAMA_OPENSSL=OFF \
-    -DLLAMA_BUILD_TESTS=OFF -DLLAMA_BUILD_EXAMPLES=OFF -DLLAMA_BUILD_SERVER=ON "${extra[@]}"
+    -DLLAMA_BUILD_TESTS=OFF -DLLAMA_BUILD_EXAMPLES=OFF -DLLAMA_BUILD_SERVER=ON \
+    -DLLAMA_BUILD_NUMBER="${TAG#b}" "${extra[@]}"          # a shallow clone cannot count its own commits
   cmake --build "$WORK/build-$abi" --target llama-server -j "$JOBS"
   mkdir -p "$(dirname "$out")"
   cp "$WORK/build-$abi/bin/llama-server" "$out"

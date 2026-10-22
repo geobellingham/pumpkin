@@ -90,6 +90,21 @@ Optional extras:
 
 To remove it, run `~/.local/share/pumpkin/app/uninstall.sh`. Your models and reports stay in `~/Pumpkin`.
 
+## Android (beta)
+
+Pumpkin also runs entirely on an Android phone, models included, with no computer needed. Download
+`pumpkin-<version>.apk` from the [latest release](https://github.com/geobellingham/pumpkin/releases/latest)
+on the phone, open it, and allow your browser to install apps when Android asks. It needs a 64-bit phone
+with Android 8 or newer.
+
+- It is the same Pumpkin: recommendations, one-click models, presets, chat, tasks and files.
+- Models run on the phone's processor. Pumpkin picks sizes that fit: about 3–4B models on an 8 GB phone,
+  7–8B on 12–16 GB. Smaller models answer faster.
+- A notification shows while Pumpkin runs, so Android does not close it. Tap *Stop* there to free the memory.
+- Not on the phone: running commands (there is no sandbox), web search, and voice input.
+
+To use Pumpkin on your computer from your phone instead, see the next section.
+
 ## Using it from your phone
 
 Open **Phone** in Pumpkin and choose:

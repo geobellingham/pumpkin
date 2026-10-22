@@ -56,7 +56,10 @@ def check(core):
             add("Hardware", "GPU", "warn", "No GPU found. Models will run on the CPU, which is slow.",
                 "If you have a GPU, install its driver.")
     else:
-        if g.get("unified"):
+        if g.get("phone"):
+            detail = (f"{g['name']}. Models run on its processor, with about {g['vram_total']:.0f} GB of its "
+                      f"{hw['ram_total']:.0f} GB memory free for them")
+        elif g.get("unified"):
             detail = (f"{g['name']}, shares {hw['ram_total']:.0f} GB of memory and can use about "
                       f"{g['vram_total']:.0f} GB of it")
         else:

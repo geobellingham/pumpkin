@@ -2,4 +2,4 @@
 
 APP_ID = "pumpkin"          # folders, service and command name
 APP_NAME = "Pumpkin"        # what people see
-__version__ = "0.2.3"
+__version__ = "0.3.0"
