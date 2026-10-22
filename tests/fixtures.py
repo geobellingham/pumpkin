@@ -40,6 +40,10 @@ def make_gguf(path, arch="qwen3moe", size_gb=0.0, name="Test Model", layers=48, 
     with open(path, "wb") as f:
         f.write(data)
     if size_gb:
+        if os.name == "nt":
+            # NTFS only makes a file sparse when told to; otherwise a 40 GB fake model is 40 GB of written zeros
+            import subprocess
+            subprocess.run(["fsutil", "sparse", "setflag", path], check=True, capture_output=True)
         os.truncate(path, int(size_gb * 2 ** 30))      # sparse: no real disk use
     return path
 
