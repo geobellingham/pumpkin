@@ -36,7 +36,8 @@ jobs:
           PYTHONUTF8: "1"                         # how Pumpkin always runs on Windows
         run: |
           set +e
-          python -m unittest discover -s tests -v > test-output.txt 2>&1
+          # a watchdog: if a test ever hangs, every thread's stack is printed and the job ends instead of stalling
+          python -X faulthandler -c "import faulthandler, unittest; faulthandler.dump_traceback_later(540, exit=True); unittest.main(module=None, argv=['unittest', 'discover', '-s', 'tests', '-v'])" > test-output.txt 2>&1
           code=$?
           cat test-output.txt
           [ "$code" -eq 0 ] || python .github/annotate.py error "Tests failed" test-output.txt
