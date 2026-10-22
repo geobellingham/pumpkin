@@ -39,13 +39,15 @@
             $zip = $env:PUMPKIN_ZIP
             Say "Installing from $zip"
         } else {
-            $releases = @()
+            # Windows PowerShell 5.1 hands a JSON list back as one nested array, so it is flattened first
+            function Flat($x) { foreach ($i in $x) { if ($i -is [array]) { foreach ($j in $i) { $j } } else { $i } } }
             if ($env:PUMPKIN_TAG) {
-                $releases = @(Invoke-RestMethod -Headers $Headers "https://api.github.com/repos/$Repo/releases/tags/$($env:PUMPKIN_TAG)")
+                $raw = Invoke-RestMethod -Headers $Headers "https://api.github.com/repos/$Repo/releases/tags/$($env:PUMPKIN_TAG)"
+                $releases = @(Flat $raw)
             } else {
                 # the newest release that has the Windows package (right after a release is made it is still building)
-                $releases = @(Invoke-RestMethod -Headers $Headers "https://api.github.com/repos/$Repo/releases?per_page=6") |
-                    Where-Object { -not $_.draft -and -not $_.prerelease }
+                $raw = Invoke-RestMethod -Headers $Headers "https://api.github.com/repos/$Repo/releases?per_page=6"
+                $releases = @(Flat $raw | Where-Object { -not $_.draft -and -not $_.prerelease })
             }
             $asset = $null; $rel = $null
             foreach ($r in $releases) {

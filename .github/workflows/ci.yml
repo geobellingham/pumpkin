@@ -399,6 +399,17 @@ jobs:
           if (Test-Path "$([Environment]::GetFolderPath('Programs'))\Pumpkin.lnk") { $bad = 'Uninstall left the shortcut' }
           if ($bad) { python .github/annotate.py error $bad un.txt; exit 1 }
           exit 0
+      - name: Install the published release (the download path people use)
+        shell: powershell
+        env:
+          PUMPKIN_NO_OPEN: "1"
+        run: |
+          $ErrorActionPreference = 'Stop'
+          . .\install.ps1
+          $dir = "$env:LOCALAPPDATA\Programs\Pumpkin"
+          & "$dir\python\python.exe" -X utf8 -c "import pumpkin; print('installed', pumpkin.__version__)"
+          if ($LASTEXITCODE) { throw 'the downloaded package does not start' }
+          & "$dir\uninstall.ps1"
       - uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
         if: always()
         with:
