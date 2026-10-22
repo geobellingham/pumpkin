@@ -7,7 +7,7 @@ import sys
 import threading
 import time
 
-from . import __version__, agent, config, hardware, llama, migrate, models, recommend, remote, updates, workspace
+from . import __version__, agent, config, devices, hardware, llama, migrate, models, recommend, remote, updates, workspace
 
 
 class Core:
@@ -31,6 +31,7 @@ class Core:
         self.server.mcp_config = self.mcp_config
         self.reports = agent.Reports(self.settings)
         self.runner = agent.Runner(self)
+        self.helper = devices.Helper(self)
         self.jobs = {}                       # background jobs like downloading llama-server
         self.bench_state = {"running": False, "error": None, "last": None}
         self.hw = None
@@ -140,6 +141,15 @@ class Core:
                 if os.environ.get(k):
                     env[k] = os.environ[k]
             servers.setdefault("web", {"command": sys.executable, "args": ["-m", "pumpkin.mcp_web"], "env": env})
+        if any(d.get("enabled", True) for d in devices.load()) and not hardware.ANDROID:
+            pkg_parent = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            env = {"PYTHONPATH": pkg_parent}
+            for k in ("HOME", "XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_STATE_HOME"):
+                if os.environ.get(k):
+                    env[k] = os.environ[k]
+            # a phone can take minutes, so the call may wait up to 30 minutes
+            servers.setdefault("devices", {"command": sys.executable, "args": ["-m", "pumpkin.mcp_devices"],
+                                           "env": env, "timeout_ms": 1_800_000})
         if not servers:
             return None
         path = os.path.join(config.STATE_DIR, "mcp-effective.json")
@@ -357,6 +367,38 @@ class Core:
             remote.tailscale_off()
         self.settings.update({"remote": mode})
         return remote.status(self.settings, config.token())
+
+    def set_share(self, on):
+        """Sharing needs Pumpkin to listen beyond this computer. If it only listened here, open it to the home
+        network (and Tailscale's network, which reaches it the same way), and undo that when sharing stops."""
+        s = self.settings
+        changes = {"share": bool(on)}
+        listen = None
+        if on and s["remote"] == "off":
+            self.set_remote("lan")
+            changes["share_opened_lan"], listen = True, "0.0.0.0"
+        elif not on and s["share_opened_lan"]:
+            if s["remote"] == "lan":
+                self.set_remote("off")
+                listen = "127.0.0.1"
+            changes["share_opened_lan"] = False
+        s.update(changes)
+        return listen
+
+    def devices_loaded(self):
+        """Whether the running model already has the devices tools (they are added when a model starts)."""
+        if self.server.state != "ready":
+            return None
+        tools = llama.http(self.server.port, "/tools", timeout=5)
+        if not isinstance(tools, list):
+            return False
+        return any(str(t.get("tool", "")).startswith("devices_") for t in tools if isinstance(t, dict))
+
+    def share_status(self):
+        s = self.settings
+        return {"share": bool(s["share"]), "name": devices.device_name(s), "custom_name": s["device_name"],
+                "code": devices.pairing_code(s) if s["share"] else None, "addresses": devices.addresses(s),
+                "remote": s["remote"], "recent": self.helper.recent, "android": hardware.ANDROID}
 
     def shutdown(self):
         try:

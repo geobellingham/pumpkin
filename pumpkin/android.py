@@ -80,14 +80,15 @@ def _start(files_dir, native_dir, cache_dir=""):
     s.update({
         "llama_server": pick_server(native_dir),            # built into the app
         "port": _free_port(int(s["port"])), "llama_port": _free_port(int(s["llama_port"])),
-        "remote": "off", "keep_awake": False, "autostart_model": False,
+        # the phone is only reachable from outside when it shares its model with your other Pumpkins
+        "remote": "lan" if s["share"] else "off", "keep_awake": False, "autostart_model": False,
     })
     agent.NOTIFY_HOOK = _notify
     from .core import Core
     from .server import Web
     core = Core()
     web = Web(core)
-    web.serve("127.0.0.1")
+    web.serve("0.0.0.0" if s["share"] else "127.0.0.1")
     _running.update(core=core, web=web, url=f"http://127.0.0.1:{s['port']}/login?key={config.token()}")
     return _running["url"]
 

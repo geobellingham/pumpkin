@@ -14,7 +14,7 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, quote, unquote, urlparse
 
-from . import APP_NAME, __version__, agent, config, discover, doctor, hardware, llama, models, remote, updates, workspace
+from . import APP_NAME, __version__, agent, config, devices, discover, doctor, hardware, llama, models, remote, updates, workspace
 
 COOKIE = "pumpkin_key"
 API = "/pumpkin/api/"
@@ -272,6 +272,8 @@ class Web:
                 return self.send(h, 302, b"", headers={
                     "Location": "/", "Set-Cookie": f"{COOKIE}={self.token}; Path=/; HttpOnly; SameSite=Lax; "
                                                    f"Max-Age=31536000{secure}"})
+            if path.startswith("/pumpkin/peer/"):
+                return self.peer(h, path[len("/pumpkin/peer/"):])
             ui = self.ui_file(path)
             if ui and not ui.endswith("index.html"):
                 return self.static(h, ui)               # open-source scripts and icons; data stays locked
@@ -288,6 +290,32 @@ class Web:
             return self.proxy(h)
         except (BrokenPipeError, ConnectionResetError):
             pass
+
+    # ------------------------------------------------------------ other Pumpkins asking this one
+    def peer(self, h, name):
+        """Only the device key opens these, and only while sharing is on. They can ask the model for an answer
+        and read this device's name and models; nothing else."""
+        core = self.core
+        auth = h.headers.get("Authorization") or ""
+        if not core.settings["share"]:
+            return self.json(h, {"error": "Sharing is off on this device. Turn it on in Devices."}, 403)
+        if not (auth.startswith("Bearer ") and devices.key_ok(auth[7:].strip())):
+            time.sleep(1)
+            return self.json(h, {"error": "Wrong device key. Pair this device again."}, 401)
+        try:
+            if name == "info" and h.command == "GET":
+                return self.json(h, core.helper.info())
+            if name == "ask" and h.command == "POST":
+                n = int(h.headers.get("Content-Length") or 0)
+                if n > 1_000_000:
+                    return self.json(h, {"error": "The task is too long."}, 413)
+                body = json.loads(h.rfile.read(n).decode() or "{}") if n else {}
+                return self.json(h, core.helper.ask(body, who=h.headers.get("X-Pumpkin-From") or ""))
+            return self.json(h, {"error": "Not found."}, 404)
+        except ValueError as e:
+            return self.json(h, {"error": str(e)}, 400)
+        except Exception as e:  # noqa: BLE001 - always answer
+            return self.json(h, {"error": str(e) or "Something went wrong."}, 500)
 
     # ------------------------------------------------------------ API
     def api(self, h, name, q):
@@ -542,6 +570,34 @@ class Web:
             return updates.status(force=arg("fresh") == "1")
         if head == "doctor":
             return {"checks": doctor.check(core)}
+        if head == "devices":
+            if ident == "share":
+                if method == "POST":
+                    if "name" in body:
+                        core.settings.update({"device_name": str(body["name"] or "").strip()[:60]})
+                    if body.get("new_key"):
+                        devices.new_peer_key()
+                    if "on" in body:
+                        listen = core.set_share(bool(body["on"]))
+                        if listen:
+                            threading.Timer(0.5, self.rebind, args=(listen,)).start()
+                return core.share_status()
+            if not ident:
+                if method == "GET":
+                    return {"devices": devices.statuses(), "model_has_tools": core.devices_loaded()}
+                if method == "POST":
+                    return devices.add(body.get("code", ""))
+            if ident and len(parts) > 2 and parts[2] == "test" and method == "POST":
+                d = devices.find(ident)
+                if not d:
+                    raise ApiError("That device is not paired any more.", 404)
+                return devices.ask(d["id"], "Reply with one short friendly sentence saying you are ready to help.",
+                                   sender=devices.device_name(core.settings), timeout=900)
+            if ident and method in ("PUT", "PATCH"):
+                return devices.update(ident, body)
+            if ident and method == "DELETE":
+                devices.remove(ident)
+                return {"ok": True}
         if head == "remote":
             if method == "GET":
                 return remote.status(core.settings, self.token)

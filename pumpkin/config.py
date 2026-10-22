@@ -39,6 +39,9 @@ DEFAULT_SETTINGS = {
     "keep_awake": True,                # stop the computer from sleeping while a model is loaded
     "setup_done": False,
     "check_updates": True,             # ask GitHub twice a day if a new Pumpkin is out
+    "share": False,                    # other Pumpkins may ask this one's model (Devices page)
+    "share_opened_lan": False,         # sharing turned on home-network listening, so turning it off undoes that
+    "device_name": "",                 # how other devices see this one; empty = the computer's name
 }
 
 DEFAULT_PERSONAS = [

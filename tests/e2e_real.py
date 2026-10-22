@@ -112,6 +112,33 @@ try:
     log = open(f"{HOME}/.local/state/pumpkin/llama-server.log").read()
     print("\n".join(l for l in log.splitlines() if any(w in l.lower() for w in ("metal", "gpu", "offload", "vulkan")))[:2000])
 
+    step("Devices: the model can hand tasks to another Pumpkin (here it pairs with itself)")
+    call("POST", "/pumpkin/api/devices/share", {"on": True, "name": "E2E box"})
+    time.sleep(1.5)                                            # it re-listens on all addresses
+    code = call("GET", "/pumpkin/api/devices/share")["code"]
+    dev = call("POST", "/pumpkin/api/devices", {"code": code})
+    print("paired:", dev["name"], dev["urls"])
+    call("POST", "/pumpkin/api/llama/start", {"preset": preset["id"]})       # the tools come with a fresh start
+    st = wait(lambda: (s := call("GET", "/pumpkin/api/state")["server"])["state"] in ("ready", "error") and s,
+              "the model with the devices tools", 300)
+    if st["state"] != "ready":
+        print(call("GET", "/pumpkin/api/llama/log?n=80")["log"])
+        raise SystemExit(f"model failed to start with the devices tools: {st['error']}")
+    names = [t.get("tool") for t in call("GET", "/tools")]
+    print("llama-server tools:", names)
+    assert "devices_list" in names and "devices_ask" in names, names
+    assert call("GET", "/pumpkin/api/devices")["model_has_tools"] is True
+    r = call("POST", "/tools", {"tool": "devices_list", "params": {}}, 60)
+    print("devices_list:", json.dumps(r)[:300])
+    assert "E2E box" in json.dumps(r) and "online" in json.dumps(r), r
+    r = call("POST", "/tools", {"tool": "devices_ask", "params": {"device": "E2E box", "task": "Once upon a time"}},
+             300)
+    print("devices_ask:", json.dumps(r)[:400])
+    assert "answer from E2E box" in json.dumps(r), r
+    assert call("GET", "/pumpkin/api/devices/share")["recent"][0]["state"] == "done"
+    call("POST", "/pumpkin/api/devices/share", {"on": False})
+    call("DELETE", f"/pumpkin/api/devices/{dev['id']}")
+
     import shutil
     if shutil.which("docker") and subprocess.run(["docker", "info"], capture_output=True).returncode == 0:
         step("The AI's tools write into the work folder (Docker sandbox)")

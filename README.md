@@ -31,6 +31,8 @@ chat with tools, web search, scheduled agent tasks, voice and phone access, all 
   report and can push a notification to your phone.
 - **Phone access.** Scan a QR code and the whole app, chat included, works on your phone over
   Tailscale or your home Wi-Fi. Add it to your home screen and it behaves like an app.
+- **Your devices work together.** Pair the Pumpkins on your PC, Mac and phone. The model on your
+  strongest machine can hand tasks to the others and use their answers, right from the chat.
 - **Voice chat.** Talk hands-free and hear replies sentence by sentence as they stream.
 - **Presets.** Each preset is a model plus how to run it: context size, KV cache type, thinking budget,
   tools, unload when idle. A live estimate shows whether it fits before you start it.
@@ -119,6 +121,22 @@ Scan the QR code. It signs your phone in, and *Share > Add to Home Screen* gives
 For task notifications, install the free [ntfy](https://ntfy.sh) app and paste your topic under
 *Phone notifications*.
 
+## Devices: Pumpkins working together
+
+Run Pumpkin on several devices and let one model use the others. For example, the big model on your PC
+asks the Mac to summarize a long document while it keeps working, or gets a second opinion from a
+different model.
+
+1. On the device that should help, open **Devices** and turn on *Let my other devices use this one*.
+   Copy its pairing code (or scan the QR code).
+2. On the device you chat on, open **Devices** and paste the code under *Add a device*.
+3. Start (or restart) a model. It now has two tools: `devices_list` and `devices_ask`. Ask it something
+   like "Have my Mac write the first draft, then you check it." Each request shows in the chat like a
+   web search, and the helper lists it under *Recent requests*.
+
+The devices need to reach each other: same Wi-Fi, or Tailscale on both (works anywhere). A phone can
+help, but can't hand out tasks yet. A model that is good with tools gives the best results.
+
 ## Commands
 
 ```text
@@ -167,6 +185,11 @@ pumpkin stop                stop Pumpkin and the model
   anything else from the internet. MCP servers you add run as you, outside the sandbox.
 - **Docker access means root.** Being in the `docker` group lets your user control the computer as root.
   That is how Docker works; rootless Docker or Podman avoid it.
+- **Shared devices get answers only.** The pairing code holds a separate device key. It opens two
+  endpoints (the device's name and models, and "answer this"), nothing else: no settings, files, tools or
+  chats. Sharing is off until you turn it on, *Make a new code* cuts off every device paired so far, and
+  turning on sharing also opens Pumpkin to your home network (the rest still needs your sign-in key).
+  The helper only sees the task text, never your chat.
 - **Home-network mode is unencrypted.** Use it only on a network you trust. Tailscale mode is encrypted.
 
 Found a problem? Please open a private security advisory on GitHub instead of a public issue.

@@ -8,6 +8,7 @@
 		FileText,
 		FolderOpen,
 		House,
+		MonitorSmartphone,
 		MessageSquareText,
 		Settings,
 		SlidersHorizontal,
@@ -18,6 +19,7 @@
 	import StatusDot from '../components/StatusDot.svelte';
 	import { pumpkin } from '../store.svelte';
 	import Agent from './Agent.svelte';
+	import Devices from './Devices.svelte';
 	import Doctor from './Doctor.svelte';
 	import Files from './Files.svelte';
 	import Models from './Models.svelte';
@@ -46,6 +48,7 @@
 		{ icon: MessageSquareText, id: 'prompts', label: 'Prompts', page: Prompts },
 		{ icon: FileText, id: 'reports', label: 'Reports', page: Reports },
 		{ icon: AudioLines, id: 'voice', label: 'Voice', page: Voice },
+		{ icon: MonitorSmartphone, id: 'devices', label: 'Devices', page: Devices },
 		{ icon: Smartphone, id: 'phone', label: 'Phone', page: Phone },
 		{ icon: Stethoscope, id: 'doctor', label: 'Doctor', page: Doctor },
 		{ icon: Settings, id: 'settings', label: 'Settings', page: SettingsPage }
