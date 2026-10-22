@@ -62,6 +62,7 @@ jobs:
         continue-on-error: true
         timeout-minutes: 4
         run: |
+          set +e
           python -X faulthandler -c "import faulthandler, unittest; faulthandler.dump_traceback_later(120, exit=True); unittest.main(module=None, argv=['unittest', '-v', 'test_android'])" > out-android.txt 2>&1
           code=$?
           cat out-android.txt
@@ -73,6 +74,7 @@ jobs:
         continue-on-error: true
         timeout-minutes: 4
         run: |
+          set +e
           python -X faulthandler -c "import faulthandler, unittest; faulthandler.dump_traceback_later(120, exit=True); unittest.main(module=None, argv=['unittest', '-v', 'test_backend'])" > out-backend.txt 2>&1
           code=$?
           cat out-backend.txt
@@ -84,6 +86,7 @@ jobs:
         continue-on-error: true
         timeout-minutes: 4
         run: |
+          set +e
           python -X faulthandler -c "import faulthandler, unittest; faulthandler.dump_traceback_later(120, exit=True); unittest.main(module=None, argv=['unittest', '-v', 'test_devices'])" > out-devices.txt 2>&1
           code=$?
           cat out-devices.txt
@@ -95,6 +98,7 @@ jobs:
         continue-on-error: true
         timeout-minutes: 4
         run: |
+          set +e
           python -X faulthandler -c "import faulthandler, unittest; faulthandler.dump_traceback_later(120, exit=True); unittest.main(module=None, argv=['unittest', '-v', 'test_features'])" > out-features.txt 2>&1
           code=$?
           cat out-features.txt
@@ -106,6 +110,7 @@ jobs:
         continue-on-error: true
         timeout-minutes: 4
         run: |
+          set +e
           python -X faulthandler -c "import faulthandler, unittest; faulthandler.dump_traceback_later(120, exit=True); unittest.main(module=None, argv=['unittest', '-v', 'test_mac'])" > out-mac.txt 2>&1
           code=$?
           cat out-mac.txt
@@ -117,6 +122,7 @@ jobs:
         continue-on-error: true
         timeout-minutes: 4
         run: |
+          set +e
           python -X faulthandler -c "import faulthandler, unittest; faulthandler.dump_traceback_later(120, exit=True); unittest.main(module=None, argv=['unittest', '-v', 'test_migrate'])" > out-migrate.txt 2>&1
           code=$?
           cat out-migrate.txt
@@ -128,6 +134,7 @@ jobs:
         continue-on-error: true
         timeout-minutes: 4
         run: |
+          set +e
           python -X faulthandler -c "import faulthandler, unittest; faulthandler.dump_traceback_later(120, exit=True); unittest.main(module=None, argv=['unittest', '-v', 'test_recommend'])" > out-recommend.txt 2>&1
           code=$?
           cat out-recommend.txt
@@ -139,6 +146,7 @@ jobs:
         continue-on-error: true
         timeout-minutes: 4
         run: |
+          set +e
           python -X faulthandler -c "import faulthandler, unittest; faulthandler.dump_traceback_later(120, exit=True); unittest.main(module=None, argv=['unittest', '-v', 'test_security'])" > out-security.txt 2>&1
           code=$?
           cat out-security.txt
@@ -150,6 +158,7 @@ jobs:
         continue-on-error: true
         timeout-minutes: 4
         run: |
+          set +e
           python -X faulthandler -c "import faulthandler, unittest; faulthandler.dump_traceback_later(120, exit=True); unittest.main(module=None, argv=['unittest', '-v', 'test_workspace'])" > out-workspace.txt 2>&1
           code=$?
           cat out-workspace.txt
