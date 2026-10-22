@@ -19,7 +19,6 @@ jobs:
           - { os: ubuntu-24.04, python: "3.12" }
           - { os: ubuntu-24.04, python: "3.13" }
           - { os: macos-14, python: "3.12" }        # Apple Silicon
-          - { os: windows-2022, python: "3.12" }
     runs-on: ${{ matrix.os }}
     defaults:
       run:
@@ -42,6 +41,124 @@ jobs:
           cat test-output.txt
           [ "$code" -eq 0 ] || python .github/annotate.py error "Tests failed" test-output.txt
           exit $code
+
+  # the unit tests on Windows, one step per file so a stall or crash points at the file
+  backend-windows:
+    runs-on: windows-2022
+    env:
+      PUMPKIN_ONLINE: "1"
+      GITHUB_TOKEN: ${{ github.token }}
+      PYTHONUTF8: "1"
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.12"
+      - name: tests/test_android.py
+        id: android
+        continue-on-error: true
+        timeout-minutes: 4
+        run: |
+          python -X faulthandler -c "import faulthandler, unittest; faulthandler.dump_traceback_later(200, exit=True); unittest.main(module=None, argv=['unittest', '-v', 'test_android'])" > out-android.txt 2>&1
+          code=$?
+          cat out-android.txt
+          [ "$code" -eq 0 ] || python .github/annotate.py error "test_android failed on Windows" out-android.txt
+          exit $code
+        working-directory: tests
+      - name: tests/test_backend.py
+        id: backend
+        continue-on-error: true
+        timeout-minutes: 4
+        run: |
+          python -X faulthandler -c "import faulthandler, unittest; faulthandler.dump_traceback_later(200, exit=True); unittest.main(module=None, argv=['unittest', '-v', 'test_backend'])" > out-backend.txt 2>&1
+          code=$?
+          cat out-backend.txt
+          [ "$code" -eq 0 ] || python .github/annotate.py error "test_backend failed on Windows" out-backend.txt
+          exit $code
+        working-directory: tests
+      - name: tests/test_devices.py
+        id: devices
+        continue-on-error: true
+        timeout-minutes: 4
+        run: |
+          python -X faulthandler -c "import faulthandler, unittest; faulthandler.dump_traceback_later(200, exit=True); unittest.main(module=None, argv=['unittest', '-v', 'test_devices'])" > out-devices.txt 2>&1
+          code=$?
+          cat out-devices.txt
+          [ "$code" -eq 0 ] || python .github/annotate.py error "test_devices failed on Windows" out-devices.txt
+          exit $code
+        working-directory: tests
+      - name: tests/test_features.py
+        id: features
+        continue-on-error: true
+        timeout-minutes: 4
+        run: |
+          python -X faulthandler -c "import faulthandler, unittest; faulthandler.dump_traceback_later(200, exit=True); unittest.main(module=None, argv=['unittest', '-v', 'test_features'])" > out-features.txt 2>&1
+          code=$?
+          cat out-features.txt
+          [ "$code" -eq 0 ] || python .github/annotate.py error "test_features failed on Windows" out-features.txt
+          exit $code
+        working-directory: tests
+      - name: tests/test_mac.py
+        id: mac
+        continue-on-error: true
+        timeout-minutes: 4
+        run: |
+          python -X faulthandler -c "import faulthandler, unittest; faulthandler.dump_traceback_later(200, exit=True); unittest.main(module=None, argv=['unittest', '-v', 'test_mac'])" > out-mac.txt 2>&1
+          code=$?
+          cat out-mac.txt
+          [ "$code" -eq 0 ] || python .github/annotate.py error "test_mac failed on Windows" out-mac.txt
+          exit $code
+        working-directory: tests
+      - name: tests/test_migrate.py
+        id: migrate
+        continue-on-error: true
+        timeout-minutes: 4
+        run: |
+          python -X faulthandler -c "import faulthandler, unittest; faulthandler.dump_traceback_later(200, exit=True); unittest.main(module=None, argv=['unittest', '-v', 'test_migrate'])" > out-migrate.txt 2>&1
+          code=$?
+          cat out-migrate.txt
+          [ "$code" -eq 0 ] || python .github/annotate.py error "test_migrate failed on Windows" out-migrate.txt
+          exit $code
+        working-directory: tests
+      - name: tests/test_recommend.py
+        id: recommend
+        continue-on-error: true
+        timeout-minutes: 4
+        run: |
+          python -X faulthandler -c "import faulthandler, unittest; faulthandler.dump_traceback_later(200, exit=True); unittest.main(module=None, argv=['unittest', '-v', 'test_recommend'])" > out-recommend.txt 2>&1
+          code=$?
+          cat out-recommend.txt
+          [ "$code" -eq 0 ] || python .github/annotate.py error "test_recommend failed on Windows" out-recommend.txt
+          exit $code
+        working-directory: tests
+      - name: tests/test_security.py
+        id: security
+        continue-on-error: true
+        timeout-minutes: 4
+        run: |
+          python -X faulthandler -c "import faulthandler, unittest; faulthandler.dump_traceback_later(200, exit=True); unittest.main(module=None, argv=['unittest', '-v', 'test_security'])" > out-security.txt 2>&1
+          code=$?
+          cat out-security.txt
+          [ "$code" -eq 0 ] || python .github/annotate.py error "test_security failed on Windows" out-security.txt
+          exit $code
+        working-directory: tests
+      - name: tests/test_workspace.py
+        id: workspace
+        continue-on-error: true
+        timeout-minutes: 4
+        run: |
+          python -X faulthandler -c "import faulthandler, unittest; faulthandler.dump_traceback_later(200, exit=True); unittest.main(module=None, argv=['unittest', '-v', 'test_workspace'])" > out-workspace.txt 2>&1
+          code=$?
+          cat out-workspace.txt
+          [ "$code" -eq 0 ] || python .github/annotate.py error "test_workspace failed on Windows" out-workspace.txt
+          exit $code
+        working-directory: tests
+      - name: All passed
+        if: ${{ steps.android.outcome != 'success' || steps.backend.outcome != 'success' || steps.devices.outcome != 'success' || steps.features.outcome != 'success' || steps.mac.outcome != 'success' || steps.migrate.outcome != 'success' || steps.recommend.outcome != 'success' || steps.security.outcome != 'success' || steps.workspace.outcome != 'success' }}
+        run: exit 1
 
   # the real thing: Pumpkin downloads llama.cpp and a tiny model, starts it and chats
   real:
