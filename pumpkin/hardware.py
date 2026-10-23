@@ -431,6 +431,16 @@ def cpu():
             "avx2": "avx2" in flags, "avx512": any(f.startswith("avx512") for f in flags)}
 
 
+# NVIDIA cards from before 2014 (Kepler and older): today's CUDA builds of llama.cpp need a Maxwell card or newer
+# (GTX 750 and up), and the drivers these cards use are too old to report their compute version. Vulkan still works.
+OLD_NVIDIA = re.compile(r"\bGT\s?[1-7]\d{2}M?\b|\bGTX\s?(?:4|5|6)\d{2}|\bGTX\s?7(?:[0-46-9]\d)\b|\bGTX\s?TITAN(?!\s?X)\b|"
+                        r"\bQuadro\s?K\d|\bTesla\s?K\d|\bGeForce\s?[1-5]\d{2}\b|\bNVS\s?\d", re.I)
+
+
+def cuda_ok(g):
+    return g.get("vendor") == "NVIDIA" and not OLD_NVIDIA.search(g.get("name") or "")
+
+
 def recommended_backend(gpu_list=None):
     if MAC:
         return "metal" if apple_silicon() else "cpu"
@@ -439,7 +449,7 @@ def recommended_backend(gpu_list=None):
     g = main_gpu(gpu_list)
     if not g:
         return "cpu"
-    if g["vendor"] == "NVIDIA" and shutil.which("nvidia-smi"):
+    if g["vendor"] == "NVIDIA" and shutil.which("nvidia-smi") and cuda_ok(g):
         return "cuda"
     if g.get("integrated") and g["vendor"] == "Intel":
         return "vulkan"

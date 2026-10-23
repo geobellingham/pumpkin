@@ -181,12 +181,13 @@ def plan_route(d, hw):
 
 
 SLOW_QUANTS = ["Q4_K_M", "IQ4_XS", "Q3_K_M"]
+WEAK_GPU_GB = 4          # below this a graphics card holds only the tiniest models, so the RAM still matters
 
 
 def slow_route(d, hw, tight=False):
     """No graphics card for AI (or a built-in one that shares the RAM): a model that fits in RAM still works on the
     processor, just slowly. Only offered there, and only up to a size that answers at a bearable pace."""
-    if hw.get("vram_total") or hw.get("unified"):
+    if hw.get("unified") or (hw.get("vram_total") or 0) >= WEAK_GPU_GB:
         return None
     for q in SLOW_QUANTS:
         s = size_gb(d["params_b"], q)
@@ -264,7 +265,8 @@ def recommend(items, hw, local_files=(), curated=(), per_route=8):
         if k not in best or d["score"] > best[k]["score"]:
             best[k] = d
     picks = {c["repo"].lower(): c for c in curated}
-    if not best and not hw.get("vram_total") and not hw.get("unified"):
+    if not any(r == "slow" or r == "gpu" for r, _ in best) and (hw.get("vram_total") or 0) < WEAK_GPU_GB \
+            and not hw.get("unified"):
         # nothing runs comfortably: offer the smallest models that run at all, even if barely
         for it in items:
             d = describe(it)

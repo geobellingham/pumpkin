@@ -192,7 +192,7 @@
 		{@render route(
 			'slow',
 			'Runs on your processor',
-			'No graphics card Pumpkin can use for AI here, so these run on the processor (and built-in graphics, when it helps). They work, but answer slowly: a few words a second. Smaller ones are faster.',
+			'No graphics card for AI here, or only a small one, so these run mostly on the processor. They work, but answer slowly: a few words a second. Smaller ones are faster.',
 			''
 		)}
 	{/if}

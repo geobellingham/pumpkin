@@ -211,7 +211,7 @@
 
 				<Card
 					description={slow
-						? 'This computer has no graphics card Pumpkin can use for AI, so these run on the processor. They work, but answers come slowly, a few words a second. Smaller ones answer faster.'
+						? 'This computer has no graphics card for AI, or only a small one, so these run mostly on the processor. They work, but answers come slowly, a few words a second. Smaller ones answer faster.'
 						: 'Chosen for your computer and what you want to do.'}
 					title={mine ? 'Or install one' : 'Pick a model'}
 				>

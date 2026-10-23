@@ -506,7 +506,7 @@ def pick_quant(choices, hw, ctx, moe=False, kv="q8_0"):
             pick = ok[-1]
             # do not go below Q3 when a larger option would at least run
             return pick
-        if not hw.get("vram_total") and want == ("split", "tight"):
+        if (hw.get("vram_total") or 0) < 4 and want == ("split", "tight"):
             # the processor does the work: Q4_K_M is the usual sweet spot of speed and quality, smaller if needed
             q4 = quant_rank("Q4_K_M")
             calm = [cf for cf in ok if cf[1]["level"] == "split"] or ok
@@ -515,7 +515,7 @@ def pick_quant(choices, hw, ctx, moe=False, kv="q8_0"):
             return calm[0]
         ok.sort(key=lambda cf: cf[0]["size_gb"])
         return ok[0]                                   # smallest that runs at all
-    if not hw.get("vram_total") and not hw.get("unified"):
+    if (hw.get("vram_total") or 0) < 4 and not hw.get("unified"):
         # a small computer: the smallest file that needs at most 60% of all RAM still runs with little else open
         last = [(c, f) for c, f in scored if f["need_gb"] <= (hw.get("ram_total") or 0) * 0.6]
         if last:

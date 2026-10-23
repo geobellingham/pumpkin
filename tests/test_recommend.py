@@ -139,3 +139,21 @@ class TestWindowsGpus(unittest.TestCase):
             gl = hardware.gpus()
             self.assertEqual(hardware.main_gpu(gl)["vendor"], "NVIDIA")
         hardware._nv_cache["at"] = 0
+
+
+class TestOldAndSmallGpus(unittest.TestCase):
+    def test_old_nvidia_cards_use_vulkan(self):
+        from unittest import mock
+        from pumpkin import hardware
+        with mock.patch.object(hardware, "MAC", False), mock.patch.object(hardware, "ANDROID", False), \
+                mock.patch.object(hardware.shutil, "which", lambda b: "nvidia-smi"):
+            for name, want in (("NVIDIA GeForce GT 710", "vulkan"), ("NVIDIA GeForce GTX 760", "vulkan"),
+                               ("NVIDIA GeForce GTX 750 Ti", "cuda"), ("NVIDIA GeForce RTX 3060", "cuda")):
+                gl = [{"vendor": "NVIDIA", "name": name, "vram_total": 2.0}]
+                self.assertEqual(hardware.recommended_backend(gl), want, name)
+
+    def test_a_2gb_card_still_gets_models_from_ram(self):
+        cat = models.catalog()
+        r = recommend.recommend(recommend.curated_items(cat), {"vram_total": 2.0, "ram_total": 8.0}, curated=cat)
+        self.assertTrue(r["slow"])
+        self.assertEqual(r["slow"][0]["name"], "Qwen3 4B Instruct")
