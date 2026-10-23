@@ -65,7 +65,7 @@ if "--version" in args:
 if "--help" in args:
     print("-m, --model\n-c\n-fit, --fit\n-fitt\n-fa\n-ctk\n--metrics\n--agent\n--tools-runtime\n"
           "--mcp-servers-config\n--reasoning-budget\n--no-reasoning-preserve\n--webui-config-file\n"
-          "--sleep-idle-seconds\n--mmproj"); sys.exit(0)
+          "--sleep-idle-seconds\n--mmproj\n--slot-save-path"); sys.exit(0)
 port = int(args[args.index("--port") + 1])
 if os.environ.get("FAKE_LLAMA_FAIL_ABOVE") and "-c" in args and \
         int(args[args.index("-c") + 1]) > int(os.environ["FAKE_LLAMA_FAIL_ABOVE"]):
@@ -107,6 +107,17 @@ class H(BaseHTTPRequestHandler):
         n = int(s.headers.get("Content-Length") or 0); body = json.loads(s.rfile.read(n) or b"{}")
         if s.denied(): return
         p = s.path.split("?")[0]
+        if p.startswith("/slots/"):
+            act = s.path.split("action=")[-1]
+            f = os.path.join(args[args.index("--slot-save-path") + 1], body.get("filename", "x")) if "--slot-save-path" in args else None
+            if not f: return s.j({"error": {"code": 501, "message": "start with --slot-save-path"}}, 501)
+            note = os.path.join(os.path.dirname(os.path.abspath(args[args.index("-m") + 1])), "slot-calls.txt")
+            open(note, "a").write(act + " " + body.get("filename", "") + "\n")
+            if act == "save":
+                open(f, "wb").write(b"x" * 1000); return s.j({"n_saved": 5000, "filename": body["filename"]})
+            if act == "restore":
+                if not os.path.exists(f): return s.j({"error": {"code": 404, "message": "no file"}}, 404)
+                return s.j({"n_restored": 5000, "filename": body["filename"]})
         if p == "/tools":
             return s.j({"plain_text_response": "1. Result about " + body["params"].get("query", "?")})
         if p == "/v1/chat/completions":

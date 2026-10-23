@@ -265,6 +265,34 @@ class TestServer(unittest.TestCase):
         self.core.presets.delete(q["id"])
 
     @unittest.skipIf(os.name == "nt", "the fake llama-server is a Python script behind a .cmd file on Windows")
+    def test_3b_the_conversation_survives_a_restart(self):
+        pre = self.core.presets.all()[0]
+        calls = os.path.join(os.path.dirname(os.path.abspath(pre["model"])), "slot-calls.txt")
+        if os.path.exists(calls):
+            os.remove(calls)
+        ready = lambda: self.call("GET", "/pumpkin/api/state")[1]["server"]["state"] == "ready"
+        if not ready():
+            self.call("POST", "/pumpkin/api/llama/start", {"preset": pre["id"]})
+            self.assertTrue(self.wait(ready))
+        log = open(os.path.join(config.STATE_DIR, "llama-server.log")).read()
+        self.assertIn("--slot-save-path", log)
+        self.call("POST", "/pumpkin/api/llama/stop")                       # saves what the model has read
+        saved = open(calls).read()
+        self.assertIn("save ", saved)
+        name = saved.split()[1]
+        self.assertTrue(os.path.isfile(os.path.join(config.DATA_DIR, "contexts", name)))
+        self.call("POST", "/pumpkin/api/llama/start", {"preset": pre["id"]})
+        self.assertTrue(self.wait(ready))
+        self.assertTrue(self.wait(lambda: "restore " + name in open(calls).read()), open(calls).read())
+        # switched off in settings: nothing is saved
+        self.core.settings.update({"keep_context": False})
+        os.remove(calls)
+        self.call("POST", "/pumpkin/api/llama/stop")
+        self.assertFalse(os.path.exists(calls))
+        self.core.settings.update({"keep_context": True})
+        self.call("POST", "/pumpkin/api/llama/start", {"preset": pre["id"]})
+        self.assertTrue(self.wait(ready))
+
     def test_4d_a_leftover_server_is_stopped_at_start(self):
         import subprocess
         import sys

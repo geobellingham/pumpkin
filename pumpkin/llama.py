@@ -118,7 +118,7 @@ def auth_header():
 # llama-server options Pumpkin knows how to use, checked against `llama-server --help`
 KNOWN_FLAGS = ["--agent", "--tools-runtime", "-fit", "-fitt", "--reasoning-budget", "--no-reasoning-preserve",
                "--webui-config-file", "--mcp-servers-config", "--mmproj", "--metrics", "-fa", "-ctk",
-               "--sleep-idle-seconds", "--n-cpu-moe", "--jinja", "--spec-default", "--device", "--list-devices"]
+               "--sleep-idle-seconds", "--n-cpu-moe", "--jinja", "--spec-default", "--device", "--list-devices", "--slot-save-path"]
 
 
 def candidates(settings):
@@ -437,6 +437,18 @@ def metrics(port):
 
 
 # ---------------------------------------------------------------- running it
+def contexts_dir():
+    return os.path.join(config.DATA_DIR, "contexts")
+
+
+def _context_name(preset):
+    return (config.slug(str((preset or {}).get("id") or (preset or {}).get("name") or "model")) or "model") + ".bin"
+
+
+MIN_SAVED_TOKENS = 512       # a few words are quicker to read again than to load from disk
+MAX_SAVED_FILES = 3
+
+
 class ServerManager:
     """Starts and stops llama-server for a preset and reports what it is doing."""
 
@@ -499,6 +511,9 @@ class ServerManager:
             cmd += ["--spec-default"]
         if has("--metrics"):
             cmd += ["--metrics"]
+        if self.settings["keep_context"] and has("--slot-save-path"):
+            # lets Pumpkin save the conversation the model has read when it stops, and load it again at the next start
+            cmd += ["--slot-save-path", contexts_dir() + os.sep]
         kv = preset.get("kv") or ""
         info_m = model.get("info") or {}
         heads = [info_m.get("key_length"), info_m.get("value_length")]
@@ -540,6 +555,8 @@ class ServerManager:
 
     # ---- lifecycle
     def start(self, preset, _retry=False):
+        if not _retry:
+            self.save_context()                    # switching models: keep what the old one has read
         preset = dict(preset)
         remembered = None
         if not _retry and preset.get("ctx_worked") and int(preset.get("ctx") or 0) == int(preset.get("ctx_asked") or -1):
@@ -582,10 +599,55 @@ class ServerManager:
         self._changed()
 
     def stop(self):
+        self.save_context()
         with self.lock:
             self._stop_locked()
             self.preset, self.state, self.error, self.notice = None, "off", None, None
         self._changed()
+
+    def save_context(self):
+        """Saves what the running model has read of the conversation to disk (llama-server's slot cache), so the
+        next start of this preset does not read it all again: a long chat takes minutes on a big context."""
+        if not self.settings["keep_context"] or self.state != "ready" or not self.preset or self.proc is None:
+            return
+        name = _context_name(self.preset)
+        folder = contexts_dir()
+        try:
+            os.makedirs(folder, exist_ok=True)
+            if shutil.disk_usage(folder).free < 4 * 2 ** 30:
+                return
+            r = http(self.port, "/slots/0?action=save", {"filename": name}, timeout=120)
+            saved = int(r.get("n_saved") or 0) if isinstance(r, dict) and not r.get("error") else 0
+            path = os.path.join(folder, name)
+            if saved < MIN_SAVED_TOKENS and os.path.exists(path):
+                os.remove(path)
+            files = sorted((os.path.join(folder, f) for f in os.listdir(folder) if f.endswith(".bin")),
+                           key=os.path.getmtime, reverse=True)
+            for old in files[MAX_SAVED_FILES:]:         # the newest few; these files are as big as the context
+                os.remove(old)
+        except (OSError, ValueError, TypeError):
+            pass
+
+    def restore_context(self, preset):
+        """Loads the conversation saved for this preset back into the model that just started. If the saved
+        file does not fit this start (another context size, another model) llama-server refuses and it is dropped."""
+        if not self.settings["keep_context"] or not preset:
+            return
+        name = _context_name(preset)
+        path = os.path.join(contexts_dir(), name)
+        if not os.path.isfile(path):
+            return
+        try:
+            slots = http(self.port, "/slots", timeout=10)
+            if isinstance(slots, list) and any(isinstance(x, dict) and x.get("is_processing") for x in slots):
+                return                                    # a message is already being answered: do not replace it
+            r = http(self.port, "/slots/0?action=restore", {"filename": name}, timeout=300)
+            if isinstance(r, dict) and r.get("error"):
+                os.remove(path)
+            else:
+                self.context_restored = int(r.get("n_restored") or 0)
+        except (OSError, ValueError, TypeError):
+            pass
 
     def _inhibit(self, on):
         """While a model is loaded, keep the computer from going to sleep (the screen can still lock).
@@ -714,6 +776,8 @@ class ServerManager:
                     if self.proc is not None:
                         if ok and self.state == "loading":
                             self.state, changed = "ready", True
+                            threading.Thread(target=self.restore_context, args=(dict(self.preset or {}),),
+                                             daemon=True).start()
                             worked, self._worked = getattr(self, "_worked", None), None
                             if worked and self.on_recover:
                                 self.on_recover(worked)

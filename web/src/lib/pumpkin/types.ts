@@ -182,6 +182,7 @@ export interface Settings {
 	download_dir: string;
 	hf_token: string;
 	keep_awake: boolean;
+	keep_context: boolean;
 	llama_port: number;
 	llama_server: string;
 	max_steps: number;

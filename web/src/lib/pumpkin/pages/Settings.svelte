@@ -120,6 +120,7 @@
 		<Card title="Behaviour">
 			<div class="flex flex-col gap-2">
 				<Toggle bind:checked={s.keep_awake} description="Stops the computer from suspending while a model is loaded. The screen can still lock." label="Keep the computer awake" onchange={(v) => save({ keep_awake: v })} />
+				<Toggle bind:checked={s.keep_context} description="When a model stops or is swapped out (to draw a picture, say), Pumpkin saves the conversation it has read and loads it back at the next start, so a long chat does not have to be read again. The files are as big as the context and only the newest few are kept." label="Remember the conversation across restarts" onchange={(v) => save({ keep_context: v })} />
 				<Toggle bind:checked={s.autostart_model} description="Starts the last preset when Pumpkin starts." label="Start the last model automatically" onchange={(v) => save({ autostart_model: v })} />
 				<Toggle bind:checked={s.notifications} description="Desktop notifications when tasks finish." label="Notifications" onchange={(v) => save({ notifications: v })} />
 				{#if svc?.available}
