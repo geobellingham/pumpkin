@@ -452,6 +452,12 @@ MAX_SAVED_FILES = 3
 class ServerManager:
     """Starts and stops llama-server for a preset and reports what it is doing."""
 
+    def _keeps(self):
+        try:
+            return bool(self.settings["keep_context"])
+        except (KeyError, TypeError):
+            return False
+
     def __init__(self, settings, library):
         self.settings = settings
         self.library = library
@@ -511,8 +517,9 @@ class ServerManager:
             cmd += ["--spec-default"]
         if has("--metrics"):
             cmd += ["--metrics"]
-        if self.settings["keep_context"] and has("--slot-save-path"):
+        if self._keeps() and has("--slot-save-path"):
             # lets Pumpkin save the conversation the model has read when it stops, and load it again at the next start
+            os.makedirs(contexts_dir(), exist_ok=True)
             cmd += ["--slot-save-path", contexts_dir() + os.sep]
         kv = preset.get("kv") or ""
         info_m = model.get("info") or {}
@@ -608,7 +615,7 @@ class ServerManager:
     def save_context(self):
         """Saves what the running model has read of the conversation to disk (llama-server's slot cache), so the
         next start of this preset does not read it all again: a long chat takes minutes on a big context."""
-        if not self.settings["keep_context"] or self.state != "ready" or not self.preset or self.proc is None:
+        if not self._keeps() or self.state != "ready" or not self.preset or self.proc is None:
             return
         name = _context_name(self.preset)
         folder = contexts_dir()
@@ -631,7 +638,7 @@ class ServerManager:
     def restore_context(self, preset):
         """Loads the conversation saved for this preset back into the model that just started. If the saved
         file does not fit this start (another context size, another model) llama-server refuses and it is dropped."""
-        if not self.settings["keep_context"] or not preset:
+        if not self._keeps() or not preset:
             return
         name = _context_name(preset)
         path = os.path.join(contexts_dir(), name)
