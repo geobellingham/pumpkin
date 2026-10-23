@@ -693,6 +693,10 @@ class Core:
         text = self._text_model_gb() * 1.15 + 0.5            # its context (KV cache) needs room too
         pic = (manifest.get("size_gb") or 0) * 1.1 + 1.0       # and the picture's working memory
         if vram >= 2 and not g.get("unified"):
+            live = hardware.live()                           # what is really free now, whatever the estimate says
+            if live.get("vram_total") and live.get("vram_used") is not None \
+                    and live["vram_total"] - live["vram_used"] < pic:
+                return True
             return text + pic > vram
         return text + pic > ram * 0.8
 
@@ -726,11 +730,28 @@ class Core:
             srv = self.image_server
             srv.busy = True
             try:
-                srv.progress = {"stage": "loading" if srv.state != "ready" else "drawing", "since": time.time(),
-                                "swapped": bool(was)}
-                srv.start(m)
-                srv.progress.update(stage="drawing")
-                data = srv.generate(prompt, w, h, -1 if seed is None else seed, ref=ref)
+                g = self.hardware().get("main_gpu") or {}
+                cap = images.budget(self.hardware()) if not g.get("unified") and not g.get("too_old") else 0
+                for attempt in (1, 2):
+                    srv.progress = {"stage": "loading" if srv.state != "ready" else "drawing", "since": time.time(),
+                                    "swapped": bool(was)}
+                    srv.start(m, max_vram=cap)
+                    srv.progress.update(stage="drawing")
+                    try:
+                        data = srv.generate(prompt, w, h, -1 if seed is None else seed, ref=ref)
+                        break
+                    except RuntimeError as e:
+                        if attempt == 2 or not srv.out_of_memory():
+                            raise
+                        # the card is full: start over with the text model out of the way (if it may be)
+                        srv.stop()
+                        if was or not swap_ok or self.settings["image_swap"] == "never" \
+                                or self.server.state not in ("loading", "ready"):
+                            raise RuntimeError("There is not enough free memory on the graphics card for this "
+                                               "picture model. Stop the text model, or set Images > the text model "
+                                               "pauses to Always.") from e
+                        was = dict(self.server.preset)
+                        self.server.stop()
             finally:
                 srv.busy, srv.progress = False, None
                 if was:

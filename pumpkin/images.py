@@ -379,7 +379,7 @@ class ImageServer:
     def port(self):
         return int(self.settings["image_port"])
 
-    def build_cmd(self, binary, manifest):
+    def build_cmd(self, binary, manifest, max_vram=None):
         cmd = [binary, "--listen-ip", "127.0.0.1", "--listen-port", str(self.port())]
         folder = manifest["folder"]
         for f in manifest["files"]:
@@ -394,12 +394,16 @@ class ImageServer:
         if d.get("sampler"):
             cmd += ["--sampling-method", d["sampler"]]
         cmd += [str(a) for a in d.get("args") or []]
+        if max_vram and max_vram > 0:
+            # without it the engine makes its own budget from the memory that is free at this moment, and keeps it:
+            # started while the text model fills the card, it would stay unable to draw after the text model is gone
+            cmd += ["--max-vram", f"{max_vram:.1f}"]
         threads = int(self.settings["threads"] or 0)
         if threads > 0:
             cmd += ["-t", str(threads)]
         return cmd
 
-    def start(self, manifest, timeout=900):
+    def start(self, manifest, timeout=900, max_vram=None):
         """Starts sd-server with this model and waits until it is loaded."""
         with self.lock:
             if self.state == "ready" and self.bundle and self.bundle["id"] == manifest["id"] and self._alive():
@@ -410,7 +414,7 @@ class ImageServer:
                 raise RuntimeError("The image engine is not installed yet. Install it on the Images page.")
             os.makedirs(config.STATE_DIR, exist_ok=True)
             log = open(LOG_PATH, "w", encoding="utf-8", errors="replace")
-            cmd = self.build_cmd(binary, manifest)
+            cmd = self.build_cmd(binary, manifest, max_vram)
             log.write("$ " + " ".join(cmd) + "\n\n")
             log.flush()
             env = llama._env_for(binary)
@@ -529,6 +533,11 @@ class ImageServer:
                 return "".join(f.readlines()[-n:])
         except OSError:
             return ""
+
+    def out_of_memory(self):
+        """The engine's log says it could not get the memory for the picture."""
+        low = self.log_tail(80).lower()
+        return "cannot make enough memory" in low or "out of memory" in low or "failed to allocate" in low
 
     def _why(self):
         """The lines of the engine's log that say what went wrong (the job's own message is often just 'no results')."""

@@ -115,6 +115,16 @@ class TestBundles(unittest.TestCase):
         self.assertTrue(got["llm_vision"].startswith("mmproj"))
         self.assertEqual(images.resolve(q, trees, 30)[0]["path"], "Qwen-Image-Edit-2509-Q8_0.gguf")
 
+    def test_the_engine_gets_a_fixed_memory_budget(self):
+        class S(dict):
+            pass
+        st = S(threads=0, image_port=18999)
+        srv = images.ImageServer(st)
+        man = {"folder": "/x", "files": [{"role": "model", "file": "a.gguf"}], "defaults": {}}
+        self.assertNotIn("--max-vram", srv.build_cmd("sd", man))
+        cmd = srv.build_cmd("sd", man, 15.0)
+        self.assertEqual(cmd[cmd.index("--max-vram") + 1], "15.0")
+
     def test_picture_sizes_are_read_without_a_library(self):
         import struct
         import zlib
