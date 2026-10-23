@@ -26,6 +26,10 @@ chat with tools, web search, scheduled agent tasks, voice and phone access, all 
   instead of guessing. Everything is read on your computer.
 - **It makes real files.** Ask for a report, letter, summary or table and the model saves it as a Word
   document, web page, Markdown or CSV file you can open and send. No Docker needed.
+- **It draws.** Ask the chat for a picture and it appears in the conversation, saved in your Files. Pumpkin
+  runs [stable-diffusion.cpp](https://github.com/leejet/stable-diffusion.cpp) with Z-Image Turbo (or a tiny
+  model for computers without a graphics card) on the Images page. When the text model and the image model
+  do not fit in memory together, the text model pauses while the picture is drawn and comes back by itself.
 - **It remembers you.** Tell it your name, your work or how you like answers, and every new chat knows.
   The Memory page shows each fact so you can edit or delete it, or switch memory off. It stays on this
   device.
@@ -233,9 +237,9 @@ pumpkin stop                stop Pumpkin and the model
 - **Web pages cannot reach in.** Pumpkin refuses requests addressed to unknown domain names (DNS
   rebinding), cannot be framed by other sites, and never sends its address in a referrer. If you put
   Pumpkin behind your own domain, list it in `PUMPKIN_ALLOWED_HOSTS`.
-- **Verified downloads.** The installer, the update button and the llama.cpp download check the SHA-256
-  that GitHub publishes for each release file, and stop if it does not match. Updates install the
-  tagged release, never unreleased code.
+- **Verified downloads.** The installer, the update button and the llama.cpp and stable-diffusion.cpp
+  downloads check the SHA-256 that GitHub publishes for each release file, and stop if it does not match.
+  Updates install the tagged release, never unreleased code.
 - **The agent sandbox.** Commands run in a Docker container that can only see the work folder
   (`~/Pumpkin/files`), nothing else on your computer. Files the AI writes are only ever downloaded from
   the Files page, never opened as pages, so an HTML file it made cannot run inside Pumpkin. The sandbox does

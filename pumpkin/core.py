@@ -1,4 +1,5 @@
 """Everything Pumpkin does, in one object the HTTP API calls into."""
+import base64
 import json
 import re
 import os
@@ -7,7 +8,7 @@ import sys
 import threading
 import time
 
-from . import (__version__, agent, config, devices, docs, hardware, llama, mcp_local, memory, migrate, models,
+from . import (__version__, agent, config, devices, docs, hardware, images, llama, mcp_local, memory, migrate, models,
                recommend, remote, updates, workspace)
 
 
@@ -27,6 +28,8 @@ class Core:
     peers_at = 0
     indexer = None
     mcp_host = None
+    image_server = None
+    mcp_image = False                    # the running text model was started with image_generate
 
     def __init__(self):
         config.ensure_dirs()
@@ -45,6 +48,7 @@ class Core:
         self.downloads = models.Downloads(self.settings, self.library)
         if not hardware.ANDROID:
             llama.kill_leftover()            # a model server left over from before still holds memory and the port
+            images.kill_leftover()
         self.server = llama.ServerManager(self.settings, self.library)
         self.server.persona_prompt = self.persona_prompt
         self.server.mcp_config = self.mcp_config
@@ -53,6 +57,9 @@ class Core:
         self.runner = agent.Runner(self)
         self.helper = devices.Helper(self)
         self.indexer = docs.Indexer(self.settings)
+        self.image_server = images.ImageServer(self.settings)
+        self.image_lock = threading.Lock()
+        self.image_sizes = {}                # bundle id -> estimated GB before it is downloaded
         if hardware.ANDROID:
             # the app has no Python program for llama-server to start: its tools answer from here (mcp_local)
             self.mcp_host = mcp_local.Host(os.environ.get("PUMPKIN_MCP_BRIDGE"))
@@ -139,6 +146,8 @@ class Core:
                      "you write")
             text += (", memory_save for lasting facts they tell you about themselves." if self.settings["memory"]
                      else ".")
+            if self.images_ready():
+                text += " image_generate draws a picture when the user asks for one."
             hint = self.devices_hint()
             if hint:
                 text += " " + hint
@@ -244,6 +253,7 @@ class Core:
     def mcp_config(self, preset):
         """The MCP file handed to llama-server: your servers plus the built-in web search."""
         servers = {}
+        self.mcp_image = False
         user = os.path.join(config.CONFIG_DIR, "mcp.json")
         try:
             with open(user) as f:
@@ -294,6 +304,10 @@ class Core:
         if any(d.get("enabled", True) for d in devices.load()):
             # a phone can take minutes, so the call may wait up to 30 minutes
             servers.setdefault("devices", self._builtin("pumpkin.mcp_devices", 1_800_000))
+        if self.images_ready():
+            # the chat's calls are answered by Pumpkin itself (server.py); this one serves the listing and agents
+            servers.setdefault("image", self._builtin("pumpkin.mcp_images", 1_800_000))
+        self.mcp_image = "image" in servers
 
     @staticmethod
     def _builtin(module, timeout_ms=None):
@@ -466,6 +480,219 @@ class Core:
             "remote": self.settings["remote"],
         }
 
+    # ---- pictures
+    def image_default(self):
+        """The installed image model the chat draws with."""
+        inst = {k: v for k, v in images.installed(self.settings).items() if v["ready"]}
+        want = self.settings["image_model"]
+        if want in inst:
+            return inst[want]
+        for b in images.catalog():                   # the catalog's order: the recommended one first
+            if b["id"] in inst:
+                return inst[b["id"]]
+        return next(iter(inst.values()), None)
+
+    def images_ready(self):
+        """The chat's model can draw: pictures are on, the engine and an image model are in."""
+        if hardware.ANDROID or not self.settings["images"] or not self.image_server:
+            return False
+        return bool(images.find_engine(self.settings)) and self.image_default() is not None
+
+    def images_state(self):
+        hw = self.hardware()
+        recommended = images.engine_backend(hw.get("gpus"))
+        engine = images.engine_info(self.settings)
+        backend = engine.get("backend") or recommended          # the labels follow the engine that is in
+        inst = images.installed(self.settings)
+        dls = [j for j in self.downloads.list() if j.get("kind") == "image"]
+        default = self.image_default()
+        out = []
+        for b in images.catalog():
+            m = inst.get(b["id"])
+            folder = os.path.join(images.models_dir(self.settings), b["id"])
+            jobs = [j for j in dls if os.path.normpath(j["dest"]) == os.path.normpath(folder)]
+            active = [j for j in jobs if j["state"] in ("queued", "downloading")]
+            failed = next((j["error"] for j in jobs if j["state"] == "error"), None)
+            size = (m or {}).get("size_gb") or self.image_sizes.get(b["id"])
+            out.append({
+                "id": b["id"], "name": b["name"], "desc": b.get("desc", ""), "recommended": bool(b.get("recommended")),
+                "installed": bool(m and m["ready"]), "partial": bool(m and not m["ready"]),
+                "downloading": bool(active), "error": None if active else failed,
+                "done": sum(j["done"] for j in jobs), "total": sum(j["total"] for j in jobs),
+                "size_gb": size, "fit": images.fit(size, hw, backend) if size else None,
+                "default": bool(default and default["id"] == b["id"]),
+                "files": [f["file"] for f in (m or {}).get("files") or []],
+            })
+        engine["recommended"] = recommended
+        job = next((j for j in self.jobs.values() if j["kind"] == "image-engine" and j["state"] == "running"), None)
+        engine["job"] = job["id"] if job else None
+        if not self.image_sizes and not hardware.ANDROID:
+            threading.Thread(target=self._estimate_images, daemon=True).start()
+        return {"supported": not hardware.ANDROID and recommended is not None, "enabled": bool(self.settings["images"]),
+                "engine": engine, "bundles": out, "server": self.image_server.status() if self.image_server else None,
+                "ready": self.images_ready(), "swap": self.settings["image_swap"],
+                "keep_min": self.settings["image_keep_min"], "folder": images.models_dir(self.settings),
+                "text": self._text_draw_state()}
+
+    def _text_draw_state(self):
+        """Whether the running text model can call image_generate, and if not why."""
+        if self.server.state not in ("loading", "ready"):
+            return {"running": False}
+        pre = self.server.preset or {}
+        return {"running": True, "preset": pre.get("id"), "name": pre.get("name"), "tools": bool(pre.get("tools")),
+                "draws": bool(pre.get("tools")) and self.mcp_image}
+
+    def _resolve_image(self, b):
+        token = self.settings["hf_token"] or None
+        trees = {spec["repo"]: images.hf_tree(spec["repo"], token) for spec in b["files"]}
+        return images.resolve(b, trees, images.budget(self.hardware()))
+
+    def _estimate_images(self):
+        for b in images.catalog():
+            if b["id"] in self.image_sizes:
+                continue
+            try:
+                files = self._resolve_image(b)
+                self.image_sizes[b["id"]] = round(sum(f["size"] for f in files) / images.GiB, 2)
+            except Exception:  # noqa: BLE001 - offline: no size yet
+                self.image_sizes.setdefault(b["id"], None)
+
+    def download_image_engine(self, backend=None):
+        backend = backend or images.engine_backend(self.hardware().get("gpus"))
+        if not backend:
+            raise RuntimeError("Pictures are not available on this device.")
+        running = next((j for j in self.jobs.values() if j["kind"] == "image-engine" and j["state"] == "running"), None)
+        if running:
+            return running
+
+        def fn(progress, cancelled, job):
+            return images.download_engine(backend, progress=progress, cancelled=cancelled)
+        return self.start_job("image-engine", fn)
+
+    def install_image(self, bundle_id):
+        """Picks the files that suit this computer and downloads them into the model's own folder."""
+        b = images.bundle_info(bundle_id)
+        if not b:
+            raise ValueError("That image model is not in Pumpkin's list.")
+        files = self._resolve_image(b)
+        folder = os.path.join(images.models_dir(self.settings), b["id"])
+        m = images.write_manifest(folder, b, files)
+        self.image_sizes[b["id"]] = round(sum(f["size"] for f in files) / images.GiB, 2)
+        by_repo = {}
+        for f in files:
+            by_repo.setdefault(f["repo"], []).append(f["path"])
+        for repo, paths in by_repo.items():
+            self.downloads.add(repo, paths, dest=folder, kind="image")
+        if not self.settings["image_model"]:
+            self.settings.update({"image_model": b["id"]})
+        return m
+
+    def delete_image(self, bundle_id):
+        m = images.installed(self.settings).get(bundle_id)
+        if not m:
+            raise FileNotFoundError("That image model is not installed.")
+        if (self.image_server.bundle or {}).get("id") == bundle_id:
+            self.image_server.stop()            # the memory is freed at once, and Windows cannot delete open files
+        for j in self.downloads.list():
+            if j.get("kind") == "image" and os.path.normpath(j["dest"]) == os.path.normpath(m["folder"]):
+                self.downloads.cancel(j["id"])
+        root = os.path.realpath(images.models_dir(self.settings))
+        if os.path.dirname(os.path.realpath(m["folder"])) != root:
+            raise PermissionError("That folder is not one of Pumpkin's image models.")
+        shutil.rmtree(m["folder"], ignore_errors=True)
+        if self.settings["image_model"] == bundle_id:
+            self.settings.update({"image_model": ""})
+
+    def _text_model_gb(self):
+        pre = self.server.preset or {}
+        total = 0
+        for p in (pre.get("model"), pre.get("mmproj")):
+            try:
+                total += os.path.getsize(p) if p else 0
+            except OSError:
+                pass
+        return total / images.GiB
+
+    def image_needs_swap(self, manifest):
+        """Whether the text model must make room while drawing. auto: only when both do not fit."""
+        mode = self.settings["image_swap"]
+        if self.server.state not in ("loading", "ready") or mode == "never":
+            return False
+        if mode == "always":
+            return True
+        hw = self.hardware()
+        g = hw.get("main_gpu") or {}
+        vram = 0 if g.get("too_old") else (g.get("vram_total") or 0)
+        ram = hw.get("ram_total") or 0
+        text = self._text_model_gb() * 1.15 + 0.5            # its context (KV cache) needs room too
+        pic = (manifest.get("size_gb") or 0) * 1.1 + 1.0       # and the picture's working memory
+        if vram >= 2 and not g.get("unified"):
+            return text + pic > vram
+        return text + pic > ram * 0.8
+
+    def make_image(self, prompt, shape="square", seed=None, swap_ok=True):
+        """Draws one picture with the default image model and saves it into the user's Files (images/).
+        Returns {path, jpeg, seconds, model, swapped}."""
+        prompt = re.sub(r"\s+", " ", str(prompt or "")).strip()
+        if not prompt:
+            raise ValueError("Say what the picture should show.")
+        if len(prompt) > 4000:
+            prompt = prompt[:4000]
+        if not self.settings["images"]:
+            raise RuntimeError("Pictures are switched off in Pumpkin (Images page).")
+        m = self.image_default()
+        if not m:
+            raise RuntimeError("No image model is installed. The user can add one on Pumpkin's Images page.")
+        if not images.find_engine(self.settings):
+            raise RuntimeError("The image engine is not installed. The user can add it on Pumpkin's Images page.")
+        d = m.get("defaults") or {}
+        w, h = images.size_for(*images.SIZES.get(shape or "square", (1, 1)), base=int(d.get("width") or 1024))
+        t0 = time.time()
+        with self.image_lock:
+            was = None
+            if swap_ok and self.image_needs_swap(m):
+                was = dict(self.server.preset)
+                self.server.stop()
+            srv = self.image_server
+            srv.busy = True
+            try:
+                srv.progress = {"stage": "loading" if srv.state != "ready" else "drawing", "since": time.time(),
+                                "swapped": bool(was)}
+                srv.start(m)
+                srv.progress.update(stage="drawing")
+                data = srv.generate(prompt, w, h, -1 if seed is None else seed)
+            finally:
+                srv.busy, srv.progress = False, None
+                if was:
+                    srv.stop()                                  # its memory goes back to the text model
+                    try:
+                        self.server.start(was)
+                        self.server.wait_ready(timeout=900)
+                    except Exception:  # noqa: BLE001 - the picture is still worth returning
+                        pass
+        folder = os.path.join(os.path.expanduser(self.settings["files_dir"]), "images")
+        os.makedirs(folder, exist_ok=True)
+        name = (config.slug(prompt[:48]) or "picture") + time.strftime("-%Y%m%d-%H%M%S") + ".jpg"
+        with open(os.path.join(folder, name), "wb") as f:
+            f.write(data)
+        if self.indexer:
+            self.indexer.poke()
+        return {"path": f"images/{name}", "jpeg": data, "seconds": round(time.time() - t0, 1), "model": m["name"],
+                "swapped": bool(was), "width": w, "height": h}
+
+    def image_tool(self, params):
+        """The chat called image_generate. The picture goes back as an image line the chat shows (and gives a
+        vision model); the text tells the model it is done."""
+        try:
+            r = self.make_image(params.get("prompt"), params.get("shape") or "square", params.get("seed"))
+        except (RuntimeError, ValueError, OSError) as e:
+            return {"error": str(e)}
+        b64 = base64.b64encode(r["jpeg"]).decode()
+        return {"plain_text_response": (
+            f"The picture is shown to the user and saved as {r['path']} in their Files ({r['model']}, "
+            f"{r['seconds']} s). Do not describe it or paste a link unless asked.\n"
+            f"data:image/jpeg;base64,{b64}")}
+
     # ---- background jobs (llama-server download)
     def start_job(self, kind, fn, **extra):
         job = {"id": config.new_id(), "kind": kind, "state": "running", "done": 0, "total": 0, "error": None,
@@ -577,6 +804,8 @@ class Core:
             pass
         if self.mcp_host:
             self.mcp_host.close()
+        if self.image_server:
+            self.image_server.stop()
         try:
             workspace.fix_owner(self.settings)
             workspace.stop()

@@ -204,6 +204,47 @@ jobs:
           fi
           exit $code
 
+  images:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-24.04, backend: cpu }
+          - { os: macos-14, backend: "" }           # Apple Silicon: Metal
+          - { os: windows-2022, backend: cpu }
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.12"
+      - name: Pictures end to end with the real engine
+        env:
+          E2E_IMAGE_BACKEND: ${{ matrix.backend }}
+          GITHUB_TOKEN: ${{ github.token }}
+          PYTHONUTF8: "1"
+        run: |
+          set +e
+          python tests/e2e_images.py > e2e.txt 2>&1
+          code=$?
+          cat e2e.txt
+          if [ "$code" -eq 0 ]; then
+            python .github/annotate.py notice "Pictures on ${{ matrix.os }}" e2e.txt
+          else
+            python .github/annotate.py error "Pictures failed on ${{ matrix.os }}" e2e.txt
+          fi
+          exit $code
+      - uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
+        if: always()
+        with:
+          name: picture-${{ matrix.os }}
+          path: e2e-picture.jpg
+          if-no-files-found: ignore
+          retention-days: 7
+
   web:
     runs-on: ubuntu-24.04
     steps:

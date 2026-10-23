@@ -9,6 +9,7 @@
 		FileText,
 		FolderOpen,
 		House,
+		Image as ImageIcon,
 		MonitorSmartphone,
 		MessageSquareText,
 		Settings,
@@ -23,6 +24,7 @@
 	import Devices from './Devices.svelte';
 	import Doctor from './Doctor.svelte';
 	import Files from './Files.svelte';
+	import Images from './Images.svelte';
 	import Memory from './Memory.svelte';
 	import Models from './Models.svelte';
 	import Overview from './Overview.svelte';
@@ -47,6 +49,7 @@
 		{ icon: Bot, id: 'agent', label: 'Agent', page: Agent },
 		{ icon: Clock, id: 'tasks', label: 'Tasks', page: Tasks },
 		{ icon: FolderOpen, id: 'files', label: 'Files', page: Files },
+		{ icon: ImageIcon, id: 'images', label: 'Images', page: Images },
 		{ icon: Brain, id: 'memory', label: 'Memory', page: Memory },
 		{ icon: MessageSquareText, id: 'prompts', label: 'Prompts', page: Prompts },
 		{ icon: FileText, id: 'reports', label: 'Reports', page: Reports },
@@ -152,7 +155,7 @@
 						class={['pointer-events-none absolute top-2 h-9 rounded-full bg-foreground md:hidden', pill.ready && 'transition-[left,width] duration-300 ease-out']}
 						style="left: {pill.left}px; width: {pill.width}px; opacity: {pill.width ? 1 : 0}"
 					></span>
-					{#each NAV.filter((n) => !(pumpkin.state?.platform === 'android' && n.id === 'phone')) as n (n.id)}
+					{#each NAV.filter((n) => !(pumpkin.state?.platform === 'android' && (n.id === 'phone' || n.id === 'images'))) as n (n.id)}
 						{@const Icon = n.icon}
 						<a
 							aria-current={current.id === n.id ? 'page' : undefined}

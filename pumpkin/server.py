@@ -491,6 +491,32 @@ class Web:
                 job["cancel"] = True
             return {k: v for k, v in job.items()}
 
+        # ---- pictures
+        if head == "images":
+            if method == "GET" and not ident:
+                return core.images_state()
+            if ident == "engine" and method == "POST":
+                job = core.download_image_engine(body.get("backend"))
+                return {"job": job["id"]}
+            if ident == "install" and method == "POST":
+                core.install_image(str(body.get("id") or ""))
+                return core.images_state()
+            if ident == "generate" and method == "POST":
+                try:
+                    r = core.make_image(body.get("prompt"), body.get("shape") or "square", body.get("seed"),
+                                        swap_ok=body.get("swap", True) is not False)
+                except (RuntimeError, ValueError) as e:
+                    raise ApiError(str(e), 409)
+                r.pop("jpeg", None)
+                r["url"] = f"{API}files/download?path={quote(r['path'])}&inline=1"
+                return r
+            if ident == "stop" and method == "POST":
+                core.image_server.stop()
+                return core.images_state()
+            if ident and method == "DELETE":
+                core.delete_image(ident)
+                return core.images_state()
+
         # ---- models
         if head == "models":
             if method == "GET" and not ident:
@@ -806,6 +832,16 @@ class Web:
                 elif (self.core.server.preset or {}).get("id") == preset.get("id"):
                     self.core.server.stop()
                 return self.json(h, {"success": True})
+            if h.command == "POST" and body and path == "/tools" and self.core.server.state != "external":
+                try:
+                    call = json.loads(body.decode() or "{}")
+                except (ValueError, UnicodeDecodeError):
+                    call = {}
+                if isinstance(call, dict) and call.get("tool") == "image_generate":
+                    # Pumpkin draws the picture itself: it may stop llama-server to make room, which would cut off
+                    # a call that went through it. The chat carries on once the text model is back.
+                    params = call.get("params") if isinstance(call.get("params"), dict) else {}
+                    return self.json(h, self.core.image_tool(params))
             if h.command == "POST" and body and path in self.CHAT_PATHS:
                 try:
                     want = json.loads(body.decode() or "{}").get("model")

@@ -75,6 +75,13 @@ if os.environ.get("FAKE_LLAMA_FAIL"):
 time.sleep(float(os.environ.get("FAKE_LLAMA_LOAD", "1.0")))
 TOOLS = [{"tool": "web_search", "definition": {"type": "function", "function": {"name": "web_search",
          "parameters": {"type": "object", "properties": {"query": {"type": "string"}}}}}}]
+if "--mcp-servers-config" in args:
+    try:
+        if "image" in json.load(open(args[args.index("--mcp-servers-config") + 1])).get("mcpServers", {}):
+            TOOLS.append({"tool": "image_generate", "definition": {"type": "function", "function": {
+                "name": "image_generate", "parameters": {"type": "object", "properties": {"prompt": {"type": "string"}}}}}})
+    except (OSError, ValueError):
+        pass
 class H(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
     def log_message(s, *a): pass
@@ -104,6 +111,22 @@ class H(BaseHTTPRequestHandler):
             return s.j({"plain_text_response": "1. Result about " + body["params"].get("query", "?")})
         if p == "/v1/chat/completions":
             msgs = body.get("messages", [])
+            names = [t.get("function", {}).get("name") for t in body.get("tools") or []]
+            last = next((m for m in reversed(msgs) if m.get("role") == "user"), {})
+            wants = "draw" in json.dumps(last.get("content", "")).lower()
+            if body.get("stream") and "image_generate" in names and wants and msgs[-1].get("role") == "user":
+                s.send_response(200); s.send_header("Content-Type", "text/event-stream"); s.end_headers()
+                call = {"index": 0, "id": "img1", "type": "function", "function": {"name": "image_generate",
+                        "arguments": json.dumps({"prompt": "an orange pumpkin on a wooden table, soft light"})}}
+                for d in ({"role": "assistant", "content": None, "tool_calls": [call]},):
+                    s.wfile.write(("data: " + json.dumps({"choices": [{"delta": d}]}) + "\n\n").encode())
+                s.wfile.write(("data: " + json.dumps({"choices": [{"delta": {}, "finish_reason": "tool_calls"}]}) + "\n\n").encode())
+                s.wfile.write(b"data: [DONE]\n\n"); s.wfile.flush(); s.close_connection = True; return
+            if body.get("stream") and msgs and msgs[-1].get("role") == "tool":
+                s.send_response(200); s.send_header("Content-Type", "text/event-stream"); s.end_headers()
+                for w in ["Here", " is", " your", " pumpkin."]:
+                    s.wfile.write(("data: " + json.dumps({"choices": [{"delta": {"content": w}}]}) + "\n\n").encode()); s.wfile.flush()
+                s.wfile.write(b"data: [DONE]\n\n"); s.wfile.flush(); s.close_connection = True; return
             if body.get("stream"):
                 s.send_response(200); s.send_header("Content-Type", "text/event-stream"); s.end_headers()
                 for w in ["Hello", " from", " the", " fake", " model."]:
@@ -126,6 +149,72 @@ def make_fake_server(path):
     os.chmod(path, 0o755)
     if os.name == "nt":
         # Windows runs programs by extension: a .cmd next to the script makes `llama-server` a command
+        import sys
+        with open(path + ".cmd", "w", encoding="utf-8") as f:
+            f.write(f'@"{sys.executable}" "%~dp0{os.path.basename(path)}" %*\r\n')
+        return path + ".cmd"
+    return path
+
+
+FAKE_SD = r'''#!/usr/bin/env python3
+"""Fake sd-server for tests: model status, async img_gen jobs. Writes what it was asked to sd-calls.jsonl."""
+import base64, json, os, sys, time
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+args = sys.argv[1:]
+LOG = os.path.join(os.path.dirname(os.path.abspath(__file__)), "sd-calls.jsonl")
+def note(o):
+    with open(LOG, "a") as f:
+        f.write(json.dumps(o) + "\n")
+note({"start": args})
+if os.environ.get("FAKE_SD_FAIL"):
+    print("ggml_cuda: out of memory"); sys.exit(1)
+port = int(args[args.index("--listen-port") + 1])
+born = time.time()
+JOBS = {}
+def png(text, w=96, h=96):
+    """A real picture (an orange disc on a dark background), with the prompt in a text chunk."""
+    import struct, zlib
+    rows = b""
+    for y in range(h):
+        rows += b"\x00" + b"".join(b"\xf0\x80\x20" if (x - w / 2) ** 2 + (y - h / 2) ** 2 < (w / 3) ** 2
+                                  else b"\x22\x22\x2a" for x in range(w))
+    chunk = lambda t, d: struct.pack(">I", len(d)) + t + d + struct.pack(">I", zlib.crc32(t + d) & 0xffffffff)
+    return (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 2, 0, 0, 0))
+            + chunk(b"tEXt", b"prompt\x00" + text.encode()) + chunk(b"IDAT", zlib.compress(rows)) + chunk(b"IEND", b""))
+class H(BaseHTTPRequestHandler):
+    def log_message(s, *a): pass
+    def j(s, o, code=200):
+        b = json.dumps(o).encode(); s.send_response(code); s.send_header("Content-Type", "application/json")
+        s.send_header("Content-Length", str(len(b))); s.end_headers(); s.wfile.write(b)
+    def do_GET(s):
+        if s.path == "/sdcpp/v1/models/status":
+            return s.j({"state": "ready" if time.time() - born > 0.3 else "loading"})
+        if s.path.startswith("/sdcpp/v1/jobs/"):
+            jid = s.path.rsplit("/", 1)[-1]
+            job = JOBS.get(jid)
+            if not job: return s.j({"error": "nf"}, 404)
+            if time.time() - job["at"] < 0.3: return s.j({"id": jid, "status": "generating"})
+            img = base64.b64encode(png(job["prompt"])).decode()
+            return s.j({"id": jid, "status": "completed", "result": {"output_format": "jpeg",
+                        "images": [{"index": 0, "b64_json": img}]}})
+        s.j({"error": "nf"}, 404)
+    def do_POST(s):
+        n = int(s.headers.get("Content-Length") or 0); body = json.loads(s.rfile.read(n) or b"{}")
+        if s.path == "/sdcpp/v1/img_gen":
+            jid = "job_%d" % (len(JOBS) + 1)
+            JOBS[jid] = {"at": time.time(), "prompt": body.get("prompt", "")}
+            note({"img_gen": body})
+            return s.j({"id": jid, "status": "queued"}, 202)
+        s.j({"error": "nf"}, 404)
+ThreadingHTTPServer(("127.0.0.1", port), H).serve_forever()
+'''
+
+
+def make_fake_sd(path):
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(FAKE_SD)
+    os.chmod(path, 0o755)
+    if os.name == "nt":
         import sys
         with open(path + ".cmd", "w", encoding="utf-8") as f:
             f.write(f'@"{sys.executable}" "%~dp0{os.path.basename(path)}" %*\r\n')

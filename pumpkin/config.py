@@ -54,6 +54,13 @@ DEFAULT_SETTINGS = {
     "memory": True,                    # remember facts about you across chats (Memory page), kept on this device
     "doc_index": True,                 # keep your documents searchable for the model (Files page)
     "doc_folders": [],                 # more folders to make searchable, besides the work folder
+    "images": True,                    # the chat's model may draw pictures (Images page) once an image model is in
+    "image_dir": os.path.join(USER_DIR, "image-models"),
+    "image_model": "",                 # the image model the chat draws with; empty = the first one installed
+    "image_port": 8092,                # sd-server, only ever on 127.0.0.1
+    "image_swap": "auto",              # auto: stop the text model while drawing when both do not fit | always | never
+    "image_keep_min": 10,              # free the image model's memory after this many idle minutes (0 = keep)
+    "sd_server": "",                   # explicit sd-server path; empty = the downloaded one
 }
 
 DEFAULT_PERSONAS = [

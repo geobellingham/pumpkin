@@ -164,6 +164,8 @@ class Library:
                     rel = os.path.relpath(p, d)
                     if any(seg.startswith(".") for seg in rel.split(os.sep)) or p.endswith(".part"):
                         continue
+                    if os.path.exists(os.path.join(os.path.dirname(p), "pumpkin-image.json")):
+                        continue                               # part of an image model (Images page)
                     m = SHARD.search(p)
                     key = SHARD.sub(".gguf", p) if m else p
                     groups.setdefault(key, []).append(p)
@@ -314,11 +316,11 @@ class Downloads:
         self.wake = threading.Event()
         threading.Thread(target=self._worker, daemon=True).start()
 
-    def add(self, repo, files, folder=None):
-        dest = os.path.join(os.path.expanduser(self.settings["download_dir"]),
-                            folder or config.slug(repo.split("/")[-1]))
+    def add(self, repo, files, folder=None, dest=None, kind="model"):
+        dest = dest or os.path.join(os.path.expanduser(self.settings["download_dir"]),
+                                    folder or config.slug(repo.split("/")[-1]))
         with self.lock:
-            job = {"id": config.new_id(), "repo": repo, "files": list(files), "dest": dest, "state": "queued",
+            job = {"id": config.new_id(), "repo": repo, "files": list(files), "dest": dest, "state": "queued", "kind": kind,
                    "done": 0, "total": 0, "speed": 0, "error": None, "current": None, "added": time.time()}
             self.jobs.append(job)
         self.wake.set()
