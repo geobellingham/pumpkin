@@ -395,6 +395,14 @@ class TestServer(unittest.TestCase):
             self.assertEqual(r.headers["Referrer-Policy"], "no-referrer")
             self.assertIn("frame-ancestors", r.headers["Content-Security-Policy"])
 
+    def test_6a_old_service_worker_removes_itself(self):
+        req = urllib.request.Request(f"{self.base}/sw.js")
+        with urllib.request.urlopen(req, timeout=10) as r:
+            body = r.read().decode()
+            self.assertIn("javascript", r.headers["Content-Type"])
+        self.assertIn("registration.unregister()", body)
+        self.assertNotIn("navigate", body)                       # never reloads the page, so it cannot loop
+
     def test_6b_dns_rebinding_is_refused(self):
         import http.client
         c = http.client.HTTPConnection("127.0.0.1", 18190, timeout=5)

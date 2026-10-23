@@ -19,6 +19,12 @@ from . import (APP_NAME, __version__, agent, config, devices, discover, docs, do
                remote, sessions, updates, workspace)
 
 COOKIE = "pumpkin_key"
+KILL_SW = """self.addEventListener('install', () => self.skipWaiting());
+self.addEventListener('activate', (e) => e.waitUntil((async () => {
+  try { for (const k of await caches.keys()) await caches.delete(k); } catch (err) {}
+  await self.registration.unregister();
+})()));
+"""
 API = "/pumpkin/api/"
 UPLOAD_LIMIT = 512 * 2 ** 20
 HOP = {"connection", "keep-alive", "proxy-authenticate", "proxy-authorization", "te", "trailers",
@@ -311,6 +317,11 @@ class Web:
                 return self.send(h, 302, b"", headers={"Location": "/", "Set-Cookie": self.new_session_cookie(h)})
             if path.startswith("/pumpkin/peer/"):
                 return self.peer(h, path[len("/pumpkin/peer/"):])
+            if path in ("/sw.js", "/service-worker.js"):
+                # an earlier version installed a service worker; this one removes itself and its caches, and from
+                # then on every page comes straight from Pumpkin (no reload, so it can never loop)
+                return self.send(h, 200, KILL_SW, "application/javascript; charset=utf-8",
+                                 headers={"Service-Worker-Allowed": "/"})
             ui = self.ui_file(path)
             if ui and not ui.endswith("index.html"):
                 return self.static(h, ui)               # open-source scripts and icons; data stays locked

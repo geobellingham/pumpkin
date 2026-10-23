@@ -105,6 +105,21 @@ def console_python():
     return exe
 
 
+def close_window_browser(profile):
+    """Edge can keep running in the background after its window is closed (startup boost, a crash, an update of
+    Pumpkin underneath it). A new window then attaches to that old process and can stay empty. Pumpkin's window has
+    its own profile, so only those Edge processes are closed here, never your normal browser."""
+    script = ("Get-CimInstance Win32_Process -Filter \"Name='msedge.exe' OR Name='chrome.exe'\" | "
+              "Where-Object { $_.CommandLine -and $_.CommandLine.Contains($env:PUMPKIN_PROFILE) } | "
+              "ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }")
+    try:
+        subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", script], capture_output=True,
+                       timeout=20, env=dict(os.environ, PUMPKIN_PROFILE=profile),
+                       creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    except (OSError, subprocess.SubprocessError):
+        pass
+
+
 def windows_window(url):
     """Edge (on every Windows 10 and 11) or Chrome in app mode: a window of its own, no tabs or address bar.
     A separate profile keeps Pumpkin's sign-in apart from your browsing."""
@@ -117,6 +132,7 @@ def windows_window(url):
     if not exe:
         return False
     profile = os.path.join(config.DATA_DIR, "window")
+    close_window_browser(profile)
     subprocess.Popen([exe, f"--app={url}", f"--user-data-dir={profile}", "--no-first-run",
                       "--no-default-browser-check", "--window-size=1280,860"],
                      stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)

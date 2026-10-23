@@ -28,6 +28,9 @@ sed -i "s/|| 'llama-ui'/|| 'Pumpkin'/" src/lib/constants/app.constants.ts
 # llama.cpp ships its UI as one file so it fits inside llama-server; Pumpkin serves files, so it is split into
 # pieces and a phone only loads the code for the page it opens
 sed -i "s/bundleStrategy: 'single'/bundleStrategy: 'split'/" svelte.config.js
+# no service worker: its offline copy could keep an old app (or an empty page) on screen after an update
+sed -i "s#from 'virtual:pwa-register/svelte'#from '\$lib/pumpkin/no-sw'#" src/lib/hooks/use-pwa.svelte.ts
+grep -q "lib/pumpkin/no-sw" src/lib/hooks/use-pwa.svelte.ts
 npm ci --no-audit --no-fund
 npm install --no-save --no-audit --no-fund qrcode-generator@1.4.4
 npm run build
