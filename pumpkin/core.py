@@ -31,6 +31,7 @@ class Core:
     mcp_host = None
     image_server = None
     last_picture = None                  # (when first seen, bytes) of the newest picture in a chat request
+    mcp_devices = False                  # the running text model was started with devices_ask
     mcp_image = False                    # the running text model was started with image_generate
 
     def __init__(self):
@@ -203,7 +204,7 @@ class Core:
     def devices_hint(self):
         """Tells the model which other devices it can hand work to, when there are any online."""
         online = [d for d in self.peers if d.get("online") and d.get("enabled", True)]
-        if not online:
+        if not online or not self.mcp_devices:        # a model started before pairing has no devices_ask: say nothing
             return ""
         names = "; ".join(f"{d.get('name')} ({', '.join(((d.get('info') or {}).get('models') or [])[:3]) or 'a model'})"
                           for d in online)
@@ -260,6 +261,7 @@ class Core:
         """The MCP file handed to llama-server: your servers plus the built-in web search."""
         servers = {}
         self.mcp_image = False
+        self.mcp_devices = False
         user = os.path.join(config.CONFIG_DIR, "mcp.json")
         try:
             with open(user) as f:
@@ -314,6 +316,7 @@ class Core:
             # the chat's calls are answered by Pumpkin itself (server.py); this one serves the listing and agents
             servers.setdefault("image", self._builtin("pumpkin.mcp_images", 1_800_000))
         self.mcp_image = "image" in servers
+        self.mcp_devices = "devices" in servers
 
     @staticmethod
     def _builtin(module, timeout_ms=None):
