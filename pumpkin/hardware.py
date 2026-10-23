@@ -377,9 +377,15 @@ def gpus():
 
 
 def main_gpu(gpu_list=None):
+    """The GPU models run on. NVIDIA cards too old for llama.cpp (GT 710 and other pre-2014 cards) are left out:
+    their memory is slower than the computer's own RAM, so the processor (or built-in graphics) does better."""
     gl = gpu_list if gpu_list is not None else gpus()
-    dedicated = [g for g in gl if not g.get("integrated")]
-    pool = dedicated or gl
+    for g in gl:
+        if g.get("vendor") == "NVIDIA" and not cuda_ok(g):
+            g["too_old"] = True
+    usable = [g for g in gl if not g.get("too_old")]
+    dedicated = [g for g in usable if not g.get("integrated")]
+    pool = dedicated or usable
     return max(pool, key=lambda g: g.get("vram_total") or 0) if pool else None
 
 

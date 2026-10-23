@@ -79,8 +79,8 @@ def fit(model_gb, info, ctx, kv_type, hw):
            "ram_gb": round(ram, 1), "moe": moe}
     if hw.get("phone"):
         out["phone"] = True
-    if not vram and not hw.get("unified"):
-        out["cpu"] = True                                  # no graphics card for AI: the processor does the work
+    if vram < 4 and not hw.get("unified"):
+        out["cpu"] = True                  # no graphics card for AI, or a small one: the processor does most of the work
     return out
 
 

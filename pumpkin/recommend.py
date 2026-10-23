@@ -39,6 +39,7 @@ NICHE = re.compile(r"uncensor|abliterat|roleplay|\brp\b|nsfw|erotic|merge|franke
                    r"ternary|1\.58bit|bitnet", re.I)
 MOE_ARCH = re.compile(r"moe|gpt-oss|gptoss|deepseek|mixtral|llama4|dbrx|jamba|granitehybrid|minimax|glm4moe|"
                       r"ernie4_5_moe|hunyuan|arctic", re.I)
+NAME_MOE = re.compile(r"(?:^|[-_.])moe(?:[-_.]|$)|gpt-?oss|mixtral|llama-?4-(?:scout|maverick)", re.I)
 ACTIVE = re.compile(r"[-_.]A(\d+(?:\.\d+)?)B\b", re.I)
 # well-known model families that do well across chat, knowledge and tools; anything else can still win on popularity
 FAMILY = [(re.compile(r"qwen", re.I), 1.5), (re.compile(r"gemma", re.I), 1.0), (re.compile(r"gpt-?oss", re.I), 1.0),
@@ -111,7 +112,9 @@ def describe(it):
         return None
     org, name = rid.split("/", 1)
     tmpl = g.get("chat_template") or ""
-    moe = bool(MOE_ARCH.search(arch) or ACTIVE.search(name) or MOE_ARCH.search(name))
+    # the architecture says it best; by name only clear signs count ("A3B", "MoE", gpt-oss, Mixtral), because
+    # "DeepSeek-R1-Distill-Qwen-14B" and friends are ordinary dense models with a famous name in front
+    moe = bool(MOE_ARCH.search(arch) or ACTIVE.search(name) or NAME_MOE.search(name))
     m = ACTIVE.search(name)
     active = it.get("_active") or (float(m.group(1)) if m else (None if not moe else _guess_active(arch, params)))
     updated = it.get("lastModified")

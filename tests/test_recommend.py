@@ -142,15 +142,30 @@ class TestWindowsGpus(unittest.TestCase):
 
 
 class TestOldAndSmallGpus(unittest.TestCase):
-    def test_old_nvidia_cards_use_vulkan(self):
+    def test_old_nvidia_cards_are_left_to_the_processor(self):
         from unittest import mock
         from pumpkin import hardware
         with mock.patch.object(hardware, "MAC", False), mock.patch.object(hardware, "ANDROID", False), \
                 mock.patch.object(hardware.shutil, "which", lambda b: "nvidia-smi"):
-            for name, want in (("NVIDIA GeForce GT 710", "vulkan"), ("NVIDIA GeForce GTX 760", "vulkan"),
+            for name, want in (("NVIDIA GeForce GT 710", "cpu"), ("NVIDIA GeForce GTX 760", "cpu"),
                                ("NVIDIA GeForce GTX 750 Ti", "cuda"), ("NVIDIA GeForce RTX 3060", "cuda")):
                 gl = [{"vendor": "NVIDIA", "name": name, "vram_total": 2.0}]
                 self.assertEqual(hardware.recommended_backend(gl), want, name)
+            # next to built-in Intel graphics, the Intel GPU is used and the old card is marked too old
+            gl = [{"vendor": "Intel", "name": "Intel UHD 630", "vram_total": 0.0, "integrated": True},
+                  {"vendor": "NVIDIA", "name": "NVIDIA GeForce GT 710", "vram_total": 2.0}]
+            self.assertEqual(hardware.main_gpu(gl)["vendor"], "Intel")
+            self.assertTrue(gl[1]["too_old"])
+
+    def test_deepseek_distills_are_not_moe(self):
+        def d(rid, arch):
+            return recommend.describe({"id": rid, "downloads": 1, "gguf": {"total": 8e9, "architecture": arch,
+                                                                           "chat_template": "x"}})["moe"]
+        self.assertFalse(d("unsloth/DeepSeek-R1-0528-Qwen3-8B-GGUF", "qwen3"))
+        self.assertFalse(d("bartowski/DeepSeek-R1-Distill-Qwen-14B-GGUF", "qwen2"))
+        self.assertTrue(d("LiquidAI/LFM2.5-8B-A1B-GGUF", "lfm2moe"))
+        self.assertTrue(d("unsloth/DeepSeek-V3.1-GGUF", "deepseek2"))
+        self.assertTrue(d("ggml-org/gpt-oss-20b-GGUF", "gpt-oss"))
 
     def test_a_2gb_card_still_gets_models_from_ram(self):
         cat = models.catalog()
