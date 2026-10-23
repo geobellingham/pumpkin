@@ -138,5 +138,4 @@ def prompt_block(limit=PROMPT_CHARS):
         lines.append(line)
         used += len(line) + 1
     lines.reverse()
-    return ("What you know about the user, from Pumpkin's memory on this device. Use it when it helps; do not "
-            "mention it otherwise:\n" + "\n".join(lines))
+    return "About the user (use when relevant):\n" + "\n".join(lines)

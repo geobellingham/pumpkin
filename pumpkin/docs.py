@@ -471,7 +471,8 @@ def resolve(settings, name, c=None):
         return near[0]
     if len(near) > 1:
         raise LookupError("Several files match: " + ", ".join(display_name(p, roots) for p in near[:8]))
-    raise FileNotFoundError(f"No document called {name}. Use files_list to see the names.")
+    names = ", ".join(display_name(p, roots) for p in paths[:30])
+    raise FileNotFoundError(f"No document called {name}. Documents: {names or 'none yet'}.")
 
 
 def read(settings, name, place=None, start=0, limit=12000):
@@ -565,5 +566,4 @@ def format_hits(hits):
     for i, h in enumerate(hits, 1):
         where = f"{h['file']}, {h['place']}" if h["place"] else h["file"]
         out.append(f"[{i}] ({where})\n{h['text']}")
-    return ("Passages from the user's documents. Cite the ones you use as (file, place), for example "
-            f"({hits[0]['file']}{', ' + hits[0]['place'] if hits[0]['place'] else ''}).\n\n" + "\n\n".join(out))
+    return "Cite as (file, place).\n\n" + "\n\n".join(out)

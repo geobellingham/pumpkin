@@ -5,19 +5,10 @@ memory_forget. Saved facts stay in memory.json on this device and appear in ever
 from . import mcp_base, memory
 
 TOOLS = [
-    {"name": "save",
-     "description": "Remember one lasting fact about the user for future chats: their name, work, preferences, "
-                    "people and projects they mention, how they want answers. Use it when the user states such a "
-                    "fact or asks you to remember something. Do not save passing details, things you guessed, or "
-                    "secrets like passwords and card numbers. One short fact per call, written about the user "
-                    "(\"Prefers short answers\", \"Works as a nurse\").",
-     "inputSchema": {"type": "object", "properties": {
-         "fact": {"type": "string", "description": "The fact, one short sentence"}}, "required": ["fact"]}},
-    {"name": "forget",
-     "description": "Forget something saved earlier, when the user asks you to forget it or says it is no longer "
-                    "true. Give the fact in a few words.",
-     "inputSchema": {"type": "object", "properties": {
-         "what": {"type": "string", "description": "The fact to forget, in a few words"}}, "required": ["what"]}},
+    {"name": "save", "description": "Remember a lasting fact the user told you about themselves. Never secrets.",
+     "inputSchema": {"type": "object", "properties": {"fact": {"type": "string"}}, "required": ["fact"]}},
+    {"name": "forget", "description": "Forget a saved fact when the user asks.",
+     "inputSchema": {"type": "object", "properties": {"what": {"type": "string"}}, "required": ["what"]}},
 ]
 
 

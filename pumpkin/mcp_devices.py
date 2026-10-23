@@ -8,21 +8,12 @@ import sys
 from . import devices
 
 TOOLS = [
-    {"name": "list",
-     "description": "List your other devices running Pumpkin (computers, Macs, phones) that can take tasks: their "
-                    "name, whether they are online, the model they are running and the models they have.",
+    {"name": "list", "description": "List the user's other devices, whether online, and their models.",
      "inputSchema": {"type": "object", "properties": {}}},
-    {"name": "ask",
-     "description": "Send a self-contained text task to another device and get its model's answer. It sees only "
-                    "the task text, not this chat, so include everything it needs. Use it to split work, get a "
-                    "second opinion, or run something on a device better suited for it. Slow devices (phones) can "
-                    "take minutes.",
-     "inputSchema": {"type": "object", "properties": {
-         "device": {"type": "string", "description": "Device name from devices_list"},
-         "task": {"type": "string", "description": "The full task, with all the context it needs"},
-         "model": {"type": "string", "description": "Optional: a model name on that device (from devices_list). "
-                                                    "Leave out to use whatever it runs."}},
-         "required": ["device", "task"]}},
+    {"name": "ask", "description": "Give another device a self-contained task (it cannot see this chat) and get its "
+                                    "model's answer.",
+     "inputSchema": {"type": "object", "properties": {"device": {"type": "string"}, "task": {"type": "string"},
+                                                      "model": {"type": "string"}}, "required": ["device", "task"]}},
 ]
 
 

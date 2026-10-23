@@ -152,7 +152,7 @@ try:
     call("DELETE", f"/pumpkin/api/devices/{dev['id']}")
 
     step("Your documents, saved files and memory: the model's own tools, run by the real llama-server")
-    assert {"files_search", "files_read", "files_list", "files_save", "memory_save", "memory_forget"} <= set(names), names
+    assert {"files_search", "files_read", "files_save", "memory_save", "memory_forget"} <= set(names), names
     files = call("GET", "/pumpkin/api/settings")["files_dir"]
     os.makedirs(files, exist_ok=True)
     with open(os.path.join(files, "e2e-manual.md"), "w", encoding="utf-8") as f:

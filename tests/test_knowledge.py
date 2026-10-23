@@ -244,7 +244,7 @@ class TestServersOverStdio(Base):
         with open(os.path.join(files, "manual.txt"), "w") as f:
             f.write("To reset the router, hold the button for ten seconds.")
         r = self.rpc("pumpkin.mcp_files", [("search", {"query": "reset router"}), ("save", {"name": "A", "content": "b"})])
-        self.assertEqual([t["name"] for t in r[1]["result"]["tools"]], ["search", "read", "list", "save"])
+        self.assertEqual([t["name"] for t in r[1]["result"]["tools"]], ["search", "read", "save"])
         self.assertIn("(manual.txt", r[2]["result"]["content"][0]["text"])
         self.assertTrue(os.path.exists(os.path.join(files, "outputs", "A.docx")))
 

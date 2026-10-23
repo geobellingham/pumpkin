@@ -128,22 +128,21 @@ class Core:
         text = (p or {}).get("prompt", "")
         pre = (self.server.preset or {}) if self.server.state in ("loading", "ready") else {}
         tools = bool(pre.get("tools")) and not hardware.ANDROID
+        ctx = int(pre.get("ctx") or 8192)
+        # every word here is sent with every message; on a 4-8k model it has to stay small
         if tools:
-            text += ("\n\nThe user's own documents are searchable with files_search. When a question may be about "
-                     "their files (contracts, reports, letters, notes), search them first, answer from the passages "
-                     "and cite each fact as (file, page). When they ask you to write a document, report, letter or "
-                     "table, save it with files_save (Word unless they want another format) and tell them the name.")
-            if self.settings["memory"]:
-                text += (" When they tell you a lasting fact about themselves or ask you to remember something, save "
-                         "it with memory_save; when they ask you to forget it, use memory_forget.")
+            text += ("\n\nTools: files_search for the user's own files (cite file, page), files_save to save documents "
+                     "you write")
+            text += (", memory_save for lasting facts they tell you about themselves." if self.settings["memory"]
+                     else ".")
             hint = self.devices_hint()
             if hint:
-                text += "\n\n" + hint
+                text += " " + hint
         if pre.get("tools") and pre.get("sandbox", True) and workspace.docker_usable():
-            text += ("\n\nYour sandbox's /workspace is the same folder as the user's Files. Save files you make "
-                     "there.")
+            text += " Your sandbox's /workspace is the user's Files folder."
         if self.settings["memory"]:
-            block = memory.prompt_block()
+            budget = 600 if ctx <= 4096 else 1300 if ctx <= 8192 else 2600 if ctx <= 16384 else memory.PROMPT_CHARS
+            block = memory.prompt_block(limit=budget)
             if block:
                 text += "\n\n" + block
         return text.strip()
@@ -188,13 +187,9 @@ class Core:
         online = [d for d in self.peers if d.get("online") and d.get("enabled", True)]
         if not online:
             return ""
-        lines = []
-        for d in online:
-            models = ", ".join((d.get("info") or {}).get("models") or []) or "its usual model"
-            lines.append(f"- {d.get('name')}: {models}")
-        return ("Paired devices you can hand work to with devices_ask:\n" + "\n".join(lines) + "\nAsk one when a "
-                "question needs more knowledge or careful reasoning than you are sure of, or a long text needs "
-                "summarising, and its model is bigger than yours. Say which device answered.")
+        names = "; ".join(f"{d.get('name')} ({', '.join(((d.get('info') or {}).get('models') or [])[:3]) or 'a model'})"
+                          for d in online)
+        return f"For questions too hard for you, devices_ask can use a stronger device: {names}."
 
     # ---- switching models from the chat
     _switch_lock = threading.Lock()

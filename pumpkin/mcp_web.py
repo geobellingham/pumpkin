@@ -17,20 +17,12 @@ UA = ("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Ch
 MAX_CHARS = int(os.environ.get("PUMPKIN_PAGE_CHARS", "12000"))
 
 TOOLS = [
-    {"name": "web_search",
-     "description": "Search the web. Returns titles, URLs and short snippets. Open the most relevant results with "
-                    "read_webpage before relying on them.",
-     "inputSchema": {"type": "object", "properties": {
-         "query": {"type": "string", "description": "What to search for"},
-         "max_results": {"type": "integer", "description": "How many results (1-10, default 6)"}},
-         "required": ["query"]}},
-    {"name": "read_webpage",
-     "description": "Fetch a web page and return its readable text (headings, paragraphs, lists, tables) "
-                    "without navigation or scripts.",
-     "inputSchema": {"type": "object", "properties": {
-         "url": {"type": "string", "description": "Full http(s) URL"},
-         "start": {"type": "integer", "description": "Character offset to continue a long page (default 0)"}},
-         "required": ["url"]}},
+    {"name": "web_search", "description": "Search the web. Read the best results with read_webpage before relying on them.",
+     "inputSchema": {"type": "object", "properties": {"query": {"type": "string"}, "max_results": {"type": "integer"}},
+                     "required": ["query"]}},
+    {"name": "read_webpage", "description": "Get a web page's text. Use start to continue a long page.",
+     "inputSchema": {"type": "object", "properties": {"url": {"type": "string"}, "start": {"type": "integer"}},
+                     "required": ["url"]}},
 ]
 
 

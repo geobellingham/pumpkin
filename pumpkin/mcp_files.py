@@ -1,42 +1,23 @@
 """Built-in MCP server for the user's documents: search them, read a page, list them, and save new files.
 
 llama-server starts it as `python -m pumpkin.mcp_files`; the tools reach the model as files_search, files_read,
-files_list and files_save. It only sees the folders set in Pumpkin (the work folder ~/Pumpkin/files and any added
+and files_save. It only sees the folders set in Pumpkin (the work folder ~/Pumpkin/files and any added
 under Settings), and only writes inside the work folder."""
 from . import config, docs, mcp_base, outputs
 
 TOOLS = [
-    {"name": "search",
-     "description": "Search the user's own documents (PDFs, Word, slides, spreadsheets, notes, emails) on this "
-                    "device. Use it whenever the question may be answered by their files: contracts, reports, "
-                    "invoices, manuals, notes, letters. Returns short passages with the file and page. Answer from "
-                    "these passages and cite them as (file, page). Search again with other words if nothing fits.",
-     "inputSchema": {"type": "object", "properties": {
-         "query": {"type": "string", "description": "Key words to look for: names, numbers, terms from the question"},
-         "file": {"type": "string", "description": "Only search this one document (optional)"},
-         "max_results": {"type": "integer", "description": "How many passages (1-15, default 8)"}},
-         "required": ["query"]}},
-    {"name": "read",
-     "description": "Read a document, or one page, slide or sheet of it, when the passages from search are not "
-                    "enough. Use the file name and place exactly as search or list gave them.",
-     "inputSchema": {"type": "object", "properties": {
-         "file": {"type": "string", "description": "The document, as named by search or list"},
-         "place": {"type": "string", "description": "A page, slide or sheet, like \"p. 4\" (optional: whole file)"},
-         "start": {"type": "integer", "description": "Character offset to continue a long read (default 0)"}},
-         "required": ["file"]}},
-    {"name": "list",
-     "description": "List the user's documents that can be searched, newest first.",
-     "inputSchema": {"type": "object", "properties": {}}},
-    {"name": "save",
-     "description": "Save something you made for the user as a file they can open and send: a report, letter, "
-                    "summary, table or plan. Write the content in Markdown (headings, lists, tables, **bold**). "
-                    "format: docx (Word), html (web page), md, txt or csv (for a table, write CSV). The file appears "
-                    "on Pumpkin's Files page, in the outputs folder. Tell the user the file name after saving.",
-     "inputSchema": {"type": "object", "properties": {
-         "name": {"type": "string", "description": "File name without the extension, like \"Lease summary\""},
-         "content": {"type": "string", "description": "The full content"},
-         "format": {"type": "string", "enum": list(outputs.FORMATS), "description": "File type (default docx)"}},
-         "required": ["name", "content"]}},
+    # kept short on purpose: every word here is sent with every message, and small models often run with 4-8k context
+    {"name": "search", "description": "Search the user's own files (PDF, Word, notes...). Cite results as (file, page).",
+     "inputSchema": {"type": "object", "properties": {"query": {"type": "string"}, "file": {"type": "string"}},
+                     "required": ["query"]}},
+    {"name": "read", "description": "Read a file, or one page of it, e.g. place \"p. 4\".",
+     "inputSchema": {"type": "object", "properties": {"file": {"type": "string"}, "place": {"type": "string"},
+                                                      "start": {"type": "integer"}}, "required": ["file"]}},
+    {"name": "save", "description": "Save a document you wrote for the user. Markdown content; format docx (default), "
+                                     "html, md, txt or csv.",
+     "inputSchema": {"type": "object", "properties": {"name": {"type": "string"}, "content": {"type": "string"},
+                                                      "format": {"type": "string", "enum": list(outputs.FORMATS)}},
+                     "required": ["name", "content"]}},
 ]
 
 
