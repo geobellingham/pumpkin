@@ -201,13 +201,14 @@ class Core:
         return next((m for m in self.peer_models() if m["id"].lower() == ref), None)
 
     def devices_hint(self):
-        """Tells the model which stronger devices it can hand work to, when there are any online."""
+        """Tells the model which other devices it can hand work to, when there are any online."""
         online = [d for d in self.peers if d.get("online") and d.get("enabled", True)]
         if not online:
             return ""
         names = "; ".join(f"{d.get('name')} ({', '.join(((d.get('info') or {}).get('models') or [])[:3]) or 'a model'})"
                           for d in online)
-        return f"For questions too hard for you, devices_ask can use a stronger device: {names}."
+        return (f"devices_ask hands a self-contained task to a model on another device: a stronger one for hard questions, "
+                f"a small fast one for simple jobs: {names}.")
 
     # ---- switching models from the chat
     _switch_lock = threading.Lock()
