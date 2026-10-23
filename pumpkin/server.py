@@ -328,7 +328,7 @@ class Web:
             if path == "/" and not self.ui_dir():
                 return self.send(h, 500, "<p>The Pumpkin web UI is missing. Reinstall Pumpkin.</p>")
             return self.proxy(h)
-        except (BrokenPipeError, ConnectionResetError):
+        except ConnectionError:                 # the browser left (Windows also says "aborted")
             pass
 
     # ------------------------------------------------------------ other Pumpkins asking this one
