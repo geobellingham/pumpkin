@@ -183,6 +183,9 @@ export interface Settings {
 	hf_token: string;
 	keep_awake: boolean;
 	keep_context: boolean;
+	vision_relay: boolean;
+	vision_model: string;
+	vision_keep_min: number;
 	llama_port: number;
 	llama_server: string;
 	max_steps: number;

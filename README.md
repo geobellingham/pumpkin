@@ -23,7 +23,12 @@ chat with tools, web search, scheduled agent tasks, voice and phone access, all 
 - **Answers from your documents.** Put PDFs, Word files, slides, spreadsheets, notes and emails in
   `~/Pumpkin/files` (or add your own folders) and ask about them. The model finds the right passages and
   says where each fact came from, like *(lease.pdf, p. 4)*, so even a small model answers from your papers
-  instead of guessing. Everything is read on your computer.
+  instead of guessing. Everything is read on your computer. Scans and photos of paper are read too once
+  you have a model with vision: press *Read scans* on the Files page.
+- **Every model can look at pictures.** Attach a picture to a chat with a text-only model and a small
+  vision model you have installed (Gemma 3 4B, say) looks at it first and tells the chat model what is
+  there, text included. It loads only when needed, and if both models do not fit in memory together the
+  chat model pauses for a moment.
 - **It makes real files.** Ask for a report, letter, summary or table and the model saves it as a Word
   document, web page, Markdown or CSV file you can open and send. No Docker needed.
 - **It draws.** Ask the chat for a picture and it appears in the conversation, saved in your Files. Pumpkin

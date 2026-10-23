@@ -789,6 +789,18 @@ class Web:
                 if core.indexer:
                     core.indexer.poke()
                 return docs.status(core.settings)
+            if method == "POST" and ident == "scans":
+                try:
+                    return {"job": core.read_scans()}
+                except RuntimeError as e:
+                    raise ApiError(str(e), 409)
+
+        # ---- the helper that looks at pictures for models without vision
+        if head == "vision" and method == "GET" and not ident:
+            return core.vision_state()
+        if head == "vision" and method == "POST" and ident == "stop":
+            core.vision.stop()
+            return core.vision_state()
 
         if head == "token" and ident == "reset" and method == "POST":
             self.token = config.reset_token()
@@ -817,6 +829,13 @@ class Web:
                 data = self.core.model_list()
                 if data:
                     return self.json(h, {"object": "list", "data": data, "models": data})
+            if h.command == "GET" and path in ("/props", "/v1/props") and self.core.relay_sees() \
+                    and self.core.server.state == "ready":
+                props = llama.http(port, h.path, timeout=10)
+                if "error" not in props or "modalities" in props:
+                    # the chat lets you attach pictures: the vision helper reads them for this text-only model
+                    props["modalities"] = {**(props.get("modalities") or {}), "vision": True}
+                    return self.json(h, props)
             if h.command == "POST" and path in ("/models/load", "/models/unload") and self.core.server.state != "external" \
                     and (self.core.presets.all() or self.core.peer_models()):
                 try:
@@ -858,6 +877,9 @@ class Web:
                         self.core.ensure_preset(want)
                     except RuntimeError as e:
                         return self.json(h, {"error": {"code": 503, "message": str(e), "type": "unavailable_error"}}, 503)
+                if b'"image_url"' in body and self.core.settings["vision_relay"] and not self.core.text_model_sees() \
+                        and self.core.server.state == "ready":
+                    body = self.core.relay_images(body)     # a text-only model gets what the vision model saw
             fwd = {}
             for k, v in h.headers.items():
                 kl = k.lower()

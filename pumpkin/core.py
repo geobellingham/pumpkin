@@ -243,9 +243,15 @@ class Core:
         """/v1/models for the chat: every preset, with the running one marked."""
         cur = (self.server.preset or {}) if self.server.state in ("ready", "loading") else {}
         data = []
+        try:
+            sees = bool(self.settings["vision_relay"]) and bool(self.vision.model())
+        except Exception:  # noqa: BLE001 - no vision helper (yet)
+            sees = False
         for p in self.presets.all():
             name = p.get("name") or p.get("id")
             data.append({"id": name, "object": "model", "created": 0, "owned_by": "pumpkin",
+                         "architecture": {"input_modalities": ["text", "image"] if p.get("mmproj") or sees
+                                          else ["text"], "output_modalities": ["text"]},
                          "status": {"value": "loaded" if cur.get("id") == p.get("id") and self.server.state == "ready"
                                     else "loading" if cur.get("id") == p.get("id") else "unloaded"}})
         for m in self.peer_models():                 # the models of paired devices, answered over there
@@ -831,6 +837,13 @@ class Core:
         pre = self.server.preset or {}
         return bool(pre.get("mmproj"))
 
+    def relay_sees(self):
+        """Pictures attached to a text-only chat model are read by the vision helper instead."""
+        try:
+            return bool(self.settings["vision_relay"]) and not self.text_model_sees() and bool(self.vision.model())
+        except Exception:  # noqa: BLE001
+            return False
+
     def relay_images(self, body):
         """A chat request carries pictures for a model that cannot see: swap each for the vision model's
         description. Returns the new request body (bytes)."""
@@ -855,16 +868,18 @@ class Core:
                 except ValueError:
                     continue
                 key = hashlib.sha1(data).hexdigest()
-                if key not in self.vision_seen:
+                seen = self.vision_seen.get(key)
+                if seen is None:
                     try:
-                        text = self.vision_run(lambda h, d=data: h.describe(d))
-                        self.vision_seen[key] = text or "(the vision model saw nothing to describe)"
+                        seen = self.vision_run(lambda h, d=data: h.describe(d)) or \
+                            "(the vision model saw nothing to describe)"
+                        self.vision_seen[key] = seen          # a chat sends its pictures again with every message
+                        for k in list(self.vision_seen)[:-50]:
+                            self.vision_seen.pop(k, None)
                     except (RuntimeError, ValueError, OSError) as e:
-                        self.vision_seen[key] = f"(could not be read: {e})"
-                    for k in list(self.vision_seen)[:-50]:
-                        self.vision_seen.pop(k, None)
+                        seen = f"(it could not be read: {e})"
                 parts[i] = {"type": "text", "text": f"[A picture the user attached. A vision model describes it: "
-                                                     f"{self.vision_seen[key]}]"}
+                                                     f"{seen}]"}
                 changed = True
         return json.dumps(req).encode() if changed else body
 
@@ -1003,6 +1018,10 @@ class Core:
             self.mcp_host.close()
         if self.image_server:
             self.image_server.stop()
+        try:
+            self.vision.stop()
+        except Exception:  # noqa: BLE001
+            pass
         if getattr(self, "vision", None):
             self.vision.stop()
         try:

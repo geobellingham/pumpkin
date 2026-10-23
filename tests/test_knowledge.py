@@ -113,6 +113,22 @@ class TestDocuments(Base):
         st = docs.status(self.s)
         self.assertEqual((st["files"], st["readable"], st["scans"], st["errors"]), (7, 5, 1, 1))
 
+    def test_scans_are_read_by_the_vision_model(self):
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        from fixtures_img import png_bytes
+        with open(os.path.join(self.files, "receipt.png"), "wb") as f:
+            f.write(png_bytes())
+        docs.refresh(self.s)
+        self.assertEqual(docs.status(self.s)["scans"], 1)
+        seen = []
+
+        def reader(path, ext):
+            return docs.scan_parts(path, ext, lambda data: seen.append(data[:4]) or "Hardware store receipt: 3 hinges, 14 euro")
+        self.assertEqual(docs.read_scans(self.s, reader), 1)
+        self.assertEqual(seen, [b"\x89PNG"])
+        self.assertEqual(docs.search(self.s, "hinges")[0]["file"], "receipt.png")
+        self.assertEqual(docs.status(self.s)["scans"], 0)
+
     def test_read_a_page_and_names_are_checked(self):
         self.fill()
         docs.refresh(self.s)

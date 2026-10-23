@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { LoaderCircle, Plus, RefreshCw, Search, X } from '@lucide/svelte';
+	import { Eye, LoaderCircle, Plus, RefreshCw, Search, X } from '@lucide/svelte';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
 	import Card from '../components/Card.svelte';
@@ -32,9 +32,24 @@
 	let searching = $state(false);
 	let newFolder = $state('');
 	let timer: ReturnType<typeof setInterval> | undefined;
+	let vision = $state<{ available: boolean; model: string | null; reading: string | null } | null>(null);
+	let job = $state<{ done: number; error: string | null; result: number | null; state: string; total: number } | null>(null);
 
 	async function load() {
 		st = await api<Status>('docs').catch(() => st);
+		vision = await api<typeof vision>('vision').catch(() => vision);
+		const id = vision?.reading;
+		if (id) job = await api<typeof job>(`jobs/${id}`).catch(() => job);
+		else if (job?.state === 'running') job = { ...job, state: 'done' };
+	}
+
+	async function readScans() {
+		const r = await pumpkin.run(() => api<{ job: { id: string } }>('docs/scans', { body: {} }));
+
+		if (r) {
+			job = { done: 0, error: null, result: null, state: 'running', total: st?.scans ?? 0 };
+			void load();
+		}
 	}
 
 	onMount(async () => {
@@ -106,6 +121,25 @@
 		<p class="text-sm">{summary}.</p>
 		{#if st.indexing && st.todo}
 			<p class="text-xs text-muted-foreground">Reading new files: {st.done} of {st.todo}</p>
+		{/if}
+		{#if vision?.reading && job}
+			<p class="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
+				<LoaderCircle class="h-3 w-3 animate-spin" /> Reading scans with {vision.model}: {job.done} of {job.total || st.scans}
+			</p>
+		{:else if st.scans}
+			<div class="mt-2 flex flex-wrap items-center gap-2">
+				{#if vision?.available}
+					<Button class="rounded-full" onclick={readScans} size="sm" variant="secondary">
+						<Eye class="h-4 w-4" /> Read {st.scans === 1 ? 'the scan' : `${st.scans} scans`}
+					</Button>
+					<span class="text-xs text-muted-foreground">{vision.model} copies the text from each picture so the AI can search it.</span>
+				{:else}
+					<span class="text-xs text-muted-foreground">To search scans and photos of paper, download a model with vision on the Models page (Gemma 3 4B is a good small one).</span>
+				{/if}
+			</div>
+		{/if}
+		{#if job?.error}
+			<p class="mt-1 text-xs text-destructive">{job.error}</p>
 		{/if}
 	{/if}
 

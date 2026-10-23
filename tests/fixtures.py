@@ -122,6 +122,11 @@ class H(BaseHTTPRequestHandler):
             return s.j({"plain_text_response": "1. Result about " + body["params"].get("query", "?")})
         if p == "/v1/chat/completions":
             msgs = body.get("messages", [])
+            seen = os.path.join(os.path.dirname(os.path.abspath(args[args.index("-m") + 1])), "chat-%d.json" % port)
+            json.dump(body, open(seen, "w"))
+            if "--mmproj" in args and "image_url" in json.dumps(msgs):
+                text = "A photo of an orange pumpkin on a table.\nText in the picture: HARVEST 42"
+                return s.j({"choices": [{"message": {"role": "assistant", "content": text}}]})
             names = [t.get("function", {}).get("name") for t in body.get("tools") or []]
             last = next((m for m in reversed(msgs) if m.get("role") == "user"), {})
             wants = "draw" in json.dumps(last.get("content", "")).lower()

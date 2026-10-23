@@ -101,7 +101,7 @@ class TestServer(unittest.TestCase):
         from pumpkin.core import Core
         from pumpkin.server import Web
         s = config.Settings()
-        s.update({"port": 18190, "llama_port": 18191, "keep_awake": False, "notifications": False})
+        s.update({"port": 18190, "llama_port": 18191, "vision_port": 18193, "keep_awake": False, "notifications": False})
         cls.core = Core()
         # pretend to have a 16 GB GPU so fit checks are predictable on any machine
         cls.core.hw = {"main_gpu": {"vendor": "AMD", "name": "Test GPU", "vram_total": 16.0}, "ram_total": 30.0,
@@ -292,6 +292,33 @@ class TestServer(unittest.TestCase):
         self.core.settings.update({"keep_context": True})
         self.call("POST", "/pumpkin/api/llama/start", {"preset": pre["id"]})
         self.assertTrue(self.wait(ready))
+
+    def test_3c_a_text_only_model_sees_pictures(self):
+        from fixtures_img import png_bytes
+        import base64 as b64
+        tiny = next(p for p in self.core.presets.all() if "tiny" in p["model"])
+        ready = lambda: self.call("GET", "/pumpkin/api/state")[1]["server"]["state"] == "ready"
+        self.call("POST", "/pumpkin/api/llama/start", {"preset": tiny["id"]})
+        self.assertTrue(self.wait(ready))
+        code, v = self.call("GET", "/pumpkin/api/vision")
+        self.assertTrue(v["available"], v)                     # the Qwen model has a vision projector
+        self.assertFalse(v["text_sees"])
+        code, props = self.call("GET", "/props")
+        self.assertTrue(props["modalities"]["vision"])          # the chat lets you attach a picture
+        url = "data:image/png;base64," + b64.b64encode(png_bytes()).decode()
+        msg = {"role": "user", "content": [{"type": "text", "text": "What does it say?"},
+                                           {"type": "image_url", "image_url": {"url": url}}]}
+        req = urllib.request.Request(self.base + "/v1/chat/completions",
+                                     data=json.dumps({"stream": True, "model": tiny["name"], "messages": [msg]}).encode(),
+                                     headers={"Authorization": f"Bearer {self.tok}", "Content-Type": "application/json"})
+        with urllib.request.urlopen(req, timeout=120) as r:
+            self.assertIn("[DONE]", r.read().decode())
+        got = json.load(open(os.path.join(os.path.dirname(os.path.abspath(tiny["model"])), "chat-18191.json")))
+        sent = json.dumps(got["messages"])
+        self.assertNotIn("image_url", sent)                   # the text model only gets text
+        self.assertIn("HARVEST 42", sent)
+        self.assertTrue(ready())                              # it came back after making room
+        self.core.vision.stop()
 
     def test_4d_a_leftover_server_is_stopped_at_start(self):
         import subprocess
