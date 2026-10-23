@@ -406,6 +406,21 @@ def memory():
     return {"ram_total": tot / GiB, "ram_used": (tot - avail) / GiB, "ram_available": avail / GiB}
 
 
+def mapped_ram(pid):
+    """GB of a process's memory that is a file mapped into RAM (a model llama.cpp loads with mmap). The system's
+    "used" figure leaves it out, because the page cache counts as available, so a 40 GB model looks like 3 GB."""
+    if MAC or WINDOWS or ANDROID or not pid:
+        return 0.0
+    try:
+        with open(f"/proc/{int(pid)}/status") as f:
+            for line in f:
+                if line.startswith("RssFile:"):
+                    return int(line.split()[1]) * 1024 / GiB
+    except (OSError, ValueError, IndexError):
+        pass
+    return 0.0
+
+
 def cpu():
     if MAC:
         return _mac_cpu()

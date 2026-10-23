@@ -395,5 +395,13 @@ class TestOnline(unittest.TestCase):
             self.assertTrue(digests[names[0]].startswith("sha256:"), names[0])
 
 
+class TestMappedRam(unittest.TestCase):
+    def test_reads_a_process_and_survives_a_missing_one(self):
+        from pumpkin import hardware
+        self.assertGreaterEqual(hardware.mapped_ram(os.getpid()), 0.0)
+        self.assertEqual(hardware.mapped_ram(999999999), 0.0)
+        self.assertEqual(hardware.mapped_ram(None), 0.0)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -465,6 +465,12 @@ class Core:
     # ---- state for the UI
     def state(self):
         live = hardware.live()
+        proc = getattr(self.server, "proc", None)
+        mapped = hardware.mapped_ram(proc.pid) if proc and proc.poll() is None else 0.0
+        if mapped > 0.1 and live.get("ram_total"):
+            # the model's weights in RAM that the system counts as free cache
+            live["model_ram"] = round(mapped, 1)
+            live["ram_used"] = min(live["ram_total"], live.get("ram_used", 0) + mapped)
         srv = self.server.status()
         met = llama.metrics(self.server.port) if srv["state"] in ("ready", "external") else {}
         r = self.runner
