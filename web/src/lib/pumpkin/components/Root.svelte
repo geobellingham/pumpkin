@@ -34,6 +34,11 @@
 </script>
 
 <style>
+	/* native menus (drop-downs, date pickers, scrollbars) follow the dark theme instead of staying white */
+	:global(html.dark) {
+		color-scheme: dark;
+	}
+
 	/* nothing may be wider than the screen, otherwise the page wobbles sideways under the finger.
 	   clip (not hidden) so the page keeps scrolling normally and sticky headers keep working */
 	:global(html.pumpkin-phone),

@@ -25,6 +25,51 @@ EXE = "llama-server.exe" if WINDOWS else "llama-server"
 RELEASES = "https://github.com/ggml-org/llama.cpp/releases"
 LLAMA_DIR = os.path.join(config.DATA_DIR, "llama")
 LOG_PATH = os.path.join(config.STATE_DIR, "llama-server.log")
+PID_PATH = os.path.join(config.STATE_DIR, "llama-server.pid")
+
+
+def _alive_llama(pid):
+    """Whether this process id is still a llama-server (and not some other program that got the same number)."""
+    try:
+        if WINDOWS:
+            out = subprocess.run(["tasklist", "/FI", f"PID eq {pid}", "/FO", "CSV", "/NH"], capture_output=True,
+                                 text=True, timeout=10, creationflags=hardware.NO_WINDOW).stdout
+            return "llama-server" in out.lower() or "libllama_server" in out.lower()
+        os.kill(pid, 0)
+        out = subprocess.run(["ps", "-p", str(pid), "-o", "command="], capture_output=True, text=True, timeout=5).stdout
+        return "llama-server" in out or "llama_server" in out
+    except (OSError, subprocess.SubprocessError, ValueError):
+        return False
+
+
+def kill_leftover():
+    """A llama-server from before (Pumpkin was closed hard, crashed or updated) still holds the GPU and the port:
+    stop it, so the memory is free and the model Pumpkin starts next is really its own."""
+    try:
+        with open(PID_PATH) as f:
+            pid = int(f.read().strip())
+    except (OSError, ValueError):
+        return False
+    try:
+        os.remove(PID_PATH)
+    except OSError:
+        pass
+    if not _alive_llama(pid):
+        return False
+    if WINDOWS:
+        subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"], capture_output=True,
+                       creationflags=hardware.NO_WINDOW)
+    else:
+        for sig in (signal.SIGTERM, signal.SIGKILL):
+            try:
+                os.killpg(os.getpgid(pid), sig)
+            except (ProcessLookupError, PermissionError):
+                break
+            for _ in range(20):
+                if not _alive_llama(pid):
+                    return True
+                time.sleep(0.25)
+    return True
 USER_AGENT = "pumpkin"
 KEY_PATH = os.path.join(config.STATE_DIR, "llama-key")
 
@@ -488,6 +533,11 @@ class ServerManager:
                 self.proc = subprocess.Popen(cmd, stdout=log, stderr=subprocess.STDOUT, start_new_session=True,
                                              env=env, cwd=config.STATE_DIR)
             log.close()
+            try:
+                with open(PID_PATH, "w") as f:
+                    f.write(str(self.proc.pid))
+            except OSError:
+                pass
             self.preset, self.state, self.error, self.started_at = dict(preset), "loading", None, time.time()
             self._inhibit(True)
             self.settings.update({"last_preset": preset.get("id") or preset.get("name")})
@@ -557,6 +607,10 @@ class ServerManager:
                     pass
                 p.wait(timeout=5)
         self.proc = None
+        try:
+            os.remove(PID_PATH)
+        except OSError:
+            pass
 
     def wait_ready(self, timeout=900, cancelled=lambda: False):
         end = time.time() + timeout

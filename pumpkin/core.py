@@ -42,6 +42,8 @@ class Core:
         self.tasks = config.Collection("tasks", config.DEFAULT_TASKS)
         self.library = models.Library(self.settings)
         self.downloads = models.Downloads(self.settings, self.library)
+        if not hardware.ANDROID:
+            llama.kill_leftover()            # a model server left over from before still holds memory and the port
         self.server = llama.ServerManager(self.settings, self.library)
         self.server.persona_prompt = self.persona_prompt
         self.server.mcp_config = self.mcp_config
@@ -62,6 +64,25 @@ class Core:
             p = self.presets.get(self.settings["last_preset"])
             if p:
                 threading.Thread(target=self._safe_start, args=(p,), daemon=True).start()
+
+    def stop_if_using(self, preset_id=None, path=None):
+        """Deleting the running preset or its model file stops the model first: the memory is freed at once, and
+        Windows cannot delete a file that is open."""
+        cur = self.server.preset or {}
+        if self.server.state not in ("loading", "ready", "error") or not cur:
+            return False
+        hit = preset_id and cur.get("id") == preset_id
+        if path and not hit:
+            real = os.path.realpath(path)
+            stem = re.sub(r"-\d{5}-of-\d{5}\.gguf$", "", real)          # any part of a split model
+            for ref in (cur.get("model"), cur.get("mmproj")):
+                m = self.library.resolve(ref) if ref else None
+                p = os.path.realpath(m["path"] if m else ref or "")
+                if p and (p == real or re.sub(r"-\d{5}-of-\d{5}\.gguf$", "", p) == stem):
+                    hit = True
+        if hit:
+            self.server.stop()
+        return bool(hit)
 
     def _keep_working_ctx(self, preset):
         """A model loaded only with a shorter context: keep that in its preset, so next time it starts first try."""

@@ -494,6 +494,7 @@ class Web:
                 core.library.scan(force=True)
                 return {"added": added}
             if ident == "delete" and method == "POST":
+                core.stop_if_using(path=body["path"])
                 return {"removed": core.library.delete(body["path"])}
             if ident == "fit" and method == "GET":
                 m = core.library.resolve(arg("path"))
@@ -562,6 +563,10 @@ class Web:
             if method == "DELETE" and ident:
                 if head == "personas" and len(coll.all()) <= 1:
                     raise ApiError("Keep at least one persona.")
+                if head == "presets":
+                    core.stop_if_using(preset_id=ident)
+                    if core.settings["last_preset"] == ident:
+                        core.settings.update({"last_preset": ""})
                 return {"ok": coll.delete(ident)}
             if ident == "move" and method == "POST":
                 return {"ok": coll.move(body["id"], int(body["index"]))}

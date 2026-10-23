@@ -18,7 +18,7 @@ os.environ.update(HOME=TMP, USERPROFILE=TMP, XDG_CONFIG_HOME=f"{TMP}/.config", X
 os.makedirs(f"{TMP}/bin")
 
 import fixtures  # noqa: E402
-from pumpkin import config, gguf, models  # noqa: E402
+from pumpkin import config, gguf, llama, models  # noqa: E402
 
 fixtures.make_fake_server(f"{TMP}/bin/llama-server")
 MODELS = f"{TMP}/Pumpkin/models"
@@ -222,6 +222,46 @@ class TestServer(unittest.TestCase):
             del os.environ["FAKE_LLAMA_FAIL_ABOVE"]
             self.core.presets.update(p["id"], {"ctx": p.get("ctx")})
             self.core.server.stop()
+
+    def test_4c_deleting_stops_the_model(self):
+        """Deleting the running preset, or the model file under it, frees the memory at once."""
+        p = self.core.presets.add({"name": "Throwaway", "model": self.core.presets.all()[0]["model"], "ctx": 2048})
+        self.call("POST", "/pumpkin/api/llama/start", {"preset": p["id"]})
+        self.assertTrue(self.wait(lambda: self.core.server.state == "ready", 30))
+        pid = self.core.server.proc.pid
+        code, _ = self.call("DELETE", f"/pumpkin/api/presets/{p['id']}")
+        self.assertEqual(code, 200)
+        self.assertEqual(self.core.server.state, "off")
+        self.assertIsNone(self.core.server.proc)
+        self.assertFalse(llama._alive_llama(pid) if os.name != "nt" else False)
+        self.assertFalse(os.path.exists(llama.PID_PATH))
+        # the model file of the running preset: stopped before the file goes
+        import shutil
+        src = self.core.presets.all()[0]["model"]
+        copy = os.path.join(os.path.dirname(src), "copy-Q8_0.gguf")
+        shutil.copy(src, copy)
+        self.core.library.scan(force=True)
+        q = self.core.presets.add({"name": "Copy", "model": copy, "ctx": 2048})
+        self.core.server.start(q)
+        self.assertTrue(self.wait(lambda: self.core.server.state == "ready", 30))
+        code, j = self.call("POST", "/pumpkin/api/models/delete", {"path": copy})
+        self.assertEqual((code, j["removed"]), (200, 1))
+        self.assertEqual(self.core.server.state, "off")
+        self.core.presets.delete(q["id"])
+
+    @unittest.skipIf(os.name == "nt", "the fake llama-server is a Python script behind a .cmd file on Windows")
+    def test_4d_a_leftover_server_is_stopped_at_start(self):
+        import subprocess
+        import sys
+        proc = subprocess.Popen([sys.executable, os.path.join(TMP, "bin", "llama-server"), "--port", "18999"],
+                                start_new_session=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        os.makedirs(os.path.dirname(llama.PID_PATH), exist_ok=True)
+        with open(llama.PID_PATH, "w") as f:
+            f.write(str(proc.pid))
+        self.assertTrue(llama.kill_leftover())
+        proc.wait(10)
+        self.assertIsNotNone(proc.returncode)
+        self.assertFalse(llama.kill_leftover())                   # nothing left the second time
 
     def test_5_crud_and_doctor(self):
         code, per = self.call("POST", "/pumpkin/api/personas", {"name": "Pirate", "prompt": "Arr."})

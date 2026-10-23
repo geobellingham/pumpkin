@@ -16,6 +16,6 @@
 	onchange={(e) => onchange?.((e.currentTarget as HTMLSelectElement).value)}
 >
 	{#each options as o (o.value)}
-		<option value={o.value}>{o.label}</option>
+		<option class="bg-popover text-popover-foreground" value={o.value}>{o.label}</option>
 	{/each}
 </select>
