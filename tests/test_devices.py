@@ -65,13 +65,15 @@ class Instance:
         self.log = open(f"{self.home}/pumpkin.log", "w")
         self.proc = subprocess.Popen([sys.executable, "-m", "pumpkin", "serve"], env=self.env, cwd=ROOT,
                                      stdout=self.log, stderr=subprocess.STDOUT)
-        for _ in range(100):
+        self.token = ""
+        for _ in range(300):
             try:
                 with open(f"{self.home}/.config/pumpkin/token") as f:
                     self.token = f.read().strip()
-                if self.get("state"):
+                # ready means a real answer with this key: a "sign in first" (key file still being written) is not
+                if self.token and "version" in self.get("state"):
                     break
-            except (OSError, urllib.error.URLError, ConnectionError):
+            except (OSError, urllib.error.URLError, ConnectionError, ValueError):
                 pass
             time.sleep(0.1)
 
