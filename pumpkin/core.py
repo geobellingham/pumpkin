@@ -700,7 +700,7 @@ class Core:
         pic = (manifest.get("size_gb") or 0) * 1.1 + 1.0       # and the picture's working memory
         if vram >= 2 and not g.get("unified"):
             live = hardware.live()                           # what is really free now, whatever the estimate says
-            if live.get("vram_total") and live.get("vram_used") is not None \
+            if live.get("vram_total") and live.get("vram_used") is not None and not live.get("unified") \
                     and live["vram_total"] - live["vram_used"] < pic:
                 return True
             return text + pic > vram

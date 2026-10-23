@@ -118,7 +118,7 @@ class TestBundles(unittest.TestCase):
     def test_the_engine_gets_a_fixed_memory_budget(self):
         class S(dict):
             pass
-        st = S(threads=0, image_port=18999)
+        st = S(threads=0, image_port=18999, image_keep_min=10)
         srv = images.ImageServer(st)
         man = {"folder": "/x", "files": [{"role": "model", "file": "a.gguf"}], "defaults": {}}
         self.assertNotIn("--max-vram", srv.build_cmd("sd", man))
@@ -295,6 +295,10 @@ class TestDrawingInChat(unittest.TestCase):
 
         # with room for both, the text model keeps running and the image model stays loaded for the next one
         self.core.settings.update({"image_swap": "auto"})
+        from unittest import mock
+        live = mock.patch("pumpkin.hardware.live", return_value={"vram_total": 8.0, "vram_used": 1.0})
+        live.start()
+        self.addCleanup(live.stop)
         pid = self.core.server.proc.pid
         st, r = self.call("POST", "/pumpkin/api/images/generate", {"prompt": "a small cat", "shape": "square"}, 120)
         self.assertEqual(st, 200, r)
