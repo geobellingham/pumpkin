@@ -313,16 +313,21 @@ def _nvidia_read():
                              creationflags=NO_WINDOW).stdout
     except (OSError, subprocess.SubprocessError):
         return []
+    def num(v):
+        try:
+            return float(v)
+        except ValueError:
+            return None                        # "[N/A]": laptops often do not report use or load
+
     gpus = []
     for i, line in enumerate(out.strip().splitlines()):
         parts = [p.strip() for p in line.split(",")]
-        if len(parts) < 4:
+        if len(parts) < 4 or num(parts[1]) is None:
             continue
-        try:
-            gpus.append({"index": i, "vendor": "NVIDIA", "name": parts[0], "vram_total": float(parts[1]) / 1024,
-                         "vram_used": float(parts[2]) / 1024, "busy": float(parts[3]), "source": "nvidia-smi"})
-        except ValueError:
-            continue
+        used = num(parts[2])
+        gpus.append({"index": i, "vendor": "NVIDIA", "name": parts[0], "vram_total": num(parts[1]) / 1024,
+                     "vram_used": used / 1024 if used is not None else None, "busy": num(parts[3]),
+                     "source": "nvidia-smi"})
     return gpus
 
 
@@ -334,9 +339,10 @@ def gpus():
     if ANDROID:
         return _android_gpus()
     if WINDOWS:
-        found = [g for g in _win_gpus() if g["vendor"] != "NVIDIA" or not shutil.which("nvidia-smi")]
+        # NVIDIA cards come from nvidia-smi (it also says how much is in use); if it is missing or reports nothing
+        # (a sleeping laptop GPU, an odd driver), the registry entry keeps the card from disappearing
         nv = _nvidia()
-        found += nv
+        found = [g for g in _win_gpus() if g["vendor"] != "NVIDIA" or not nv] + nv
         for i, g in enumerate(found):
             g["index"] = i
         return found

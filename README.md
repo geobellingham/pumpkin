@@ -16,8 +16,10 @@ chat with tools, web search, scheduled agent tasks, voice and phone access, all 
 ## What it does
 
 - **One-click models.** Pick a model and Pumpkin chooses the best quant for your GPU and RAM, downloads it,
-  makes a preset and starts it. Every other GGUF on Hugging Face is a search away, each file marked
-  *fits your GPU*, *runs with RAM offload* or *too big*.
+  makes a preset and starts it. Picks favour the most downloaded models from the uploaders most people trust
+  (unsloth, ggml-org, bartowski and the model makers). A computer without a graphics card still gets models
+  that run on the processor, marked *works, slowly*. Every other GGUF on Hugging Face is a search away, each
+  file marked *fits your GPU*, *runs with RAM offload* or *too big*.
 - **Answers from your documents.** Put PDFs, Word files, slides, spreadsheets, notes and emails in
   `~/Pumpkin/files` (or add your own folders) and ask about them. The model finds the right passages and
   says where each fact came from, like *(lease.pdf, p. 4)*, so even a small model answers from your papers

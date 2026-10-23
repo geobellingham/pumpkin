@@ -85,6 +85,20 @@ class TestRecommend(unittest.TestCase):
         pick, f = models.pick_quant(choices, {"vram_total": 0.0, "ram_total": 4.0}, 4096)
         self.assertEqual((pick["quant"], f["level"]), ("Q3_K_M", "tight"))
 
+    def test_popular_and_strong_families_first(self):
+        """Two models that both fit: the much-downloaded Qwen from unsloth beats a small edge model."""
+        def item(rid, params, downloads):
+            return {"id": rid, "downloads": downloads, "trendingScore": 5, "likes": 50, "pipeline_tag": "text-generation",
+                    "gguf": {"total": params * 1e9, "architecture": "dense", "context_length": 32768,
+                             "chat_template": "tools"}}
+        items = [item("unsloth/Qwen3-4B-Instruct-2507-GGUF", 4.0, 400_000), item("LiquidAI/LFM2.5-1.2B-Instruct-GGUF", 1.2, 60_000),
+                 item("someone/Qwen3-4B-random-GGUF", 4.0, 300)]
+        for hw in (SMALL, {"vram_total": 0.0, "ram_total": 16.0}):
+            r = recommend.recommend(items, hw)
+            ranked = names(r["gpu"] or r["slow"])
+            self.assertEqual(ranked[0], "unsloth/Qwen3-4B-Instruct-2507-GGUF", ranked)
+            self.assertLess(ranked.index("LiquidAI/LFM2.5-1.2B-Instruct-GGUF"), ranked.index("someone/Qwen3-4B-random-GGUF"))
+
     def test_offline_falls_back_to_catalog(self):
         r = recommend.recommend(recommend.curated_items(models.catalog()), BIG, curated=models.catalog())
         self.assertTrue(r["gpu"] and r["moe"])
@@ -93,3 +107,35 @@ class TestRecommend(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestWindowsGpus(unittest.TestCase):
+    """A laptop with Intel graphics and an NVIDIA card: the NVIDIA card must be the one Pumpkin uses."""
+
+    def test_nvidia_with_na_fields_and_registry_fallback(self):
+        from unittest import mock
+        from pumpkin import hardware
+        intel = {"vendor": "Intel", "name": "Intel(R) UHD Graphics", "vram_total": 0.0, "vram_used": None, "busy": None,
+                 "integrated": True}
+        reg_nv = {"vendor": "NVIDIA", "name": "NVIDIA GeForce RTX 4060 Laptop GPU", "vram_total": 8.0, "vram_used": None,
+                  "busy": None, "integrated": False}
+        smi = "NVIDIA GeForce RTX 4060 Laptop GPU, 8188, [N/A], [N/A]\n"
+        run = mock.Mock(return_value=mock.Mock(stdout=smi))
+        hardware._nv_cache["at"] = 0
+        with mock.patch.object(hardware, "WINDOWS", True), mock.patch.object(hardware, "MAC", False), \
+                mock.patch.object(hardware, "ANDROID", False), \
+                mock.patch.object(hardware, "_win_gpus", lambda: [intel, dict(reg_nv)]), \
+                mock.patch.object(hardware.shutil, "which", lambda b: "nvidia-smi" if b == "nvidia-smi" else None), \
+                mock.patch.object(hardware.subprocess, "run", run):
+            gl = hardware.gpus()
+            self.assertEqual([g["vendor"] for g in gl], ["Intel", "NVIDIA"])
+            main = hardware.main_gpu(gl)
+            self.assertEqual(main["name"], "NVIDIA GeForce RTX 4060 Laptop GPU")
+            self.assertAlmostEqual(main["vram_total"], 8.0, places=1)
+            self.assertIsNone(main["vram_used"])
+            # nvidia-smi answers nothing: the card still comes from the registry
+            run.return_value = mock.Mock(stdout="")
+            hardware._nv_cache["at"] = 0
+            gl = hardware.gpus()
+            self.assertEqual(hardware.main_gpu(gl)["vendor"], "NVIDIA")
+        hardware._nv_cache["at"] = 0

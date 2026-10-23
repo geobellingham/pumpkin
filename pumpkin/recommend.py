@@ -32,7 +32,7 @@ QUANT_BONUS = {"Q6_K": 0.6, "Q5_K_M": 0.4, "Q4_K_M": 0.0, "IQ4_XS": -0.4, "Q3_K_
 
 TRUSTED = {"unsloth": 1.6, "bartowski": 1.4, "ggml-org": 1.6, "lmstudio-community": 1.2, "qwen": 1.5,
            "google": 1.5, "mistralai": 1.4, "microsoft": 1.2, "ibm-granite": 1.0, "nvidia": 1.0, "openai": 1.4,
-           "meta-llama": 1.2, "deepseek-ai": 1.2, "zai-org": 1.0, "mradermacher": 0.3}
+           "meta-llama": 1.2, "deepseek-ai": 1.2, "zai-org": 1.0, "liquidai": 1.0, "mradermacher": 0.3}
 NOT_CHAT = re.compile(r"embed|rerank|bert|whisper|tts|speech|vae|diffusion|flux|wan2|sdxl|stable-diffusion|"
                       r"qwen[-_]?image|clip|siglip|ocr-only|reward|classifier|draft|mtp", re.I)
 NICHE = re.compile(r"uncensor|abliterat|roleplay|\brp\b|nsfw|erotic|merge|frankenstein|test|experimental|"
@@ -40,6 +40,10 @@ NICHE = re.compile(r"uncensor|abliterat|roleplay|\brp\b|nsfw|erotic|merge|franke
 MOE_ARCH = re.compile(r"moe|gpt-oss|gptoss|deepseek|mixtral|llama4|dbrx|jamba|granitehybrid|minimax|glm4moe|"
                       r"ernie4_5_moe|hunyuan|arctic", re.I)
 ACTIVE = re.compile(r"[-_.]A(\d+(?:\.\d+)?)B\b", re.I)
+# well-known model families that do well across chat, knowledge and tools; anything else can still win on popularity
+FAMILY = [(re.compile(r"qwen", re.I), 1.5), (re.compile(r"gemma", re.I), 1.0), (re.compile(r"gpt-?oss", re.I), 1.0),
+          (re.compile(r"glm", re.I), 0.8), (re.compile(r"deepseek", re.I), 0.8), (re.compile(r"mistral|devstral|magistral", re.I), 0.6),
+          (re.compile(r"llama", re.I), 0.5), (re.compile(r"granite|phi-?\d", re.I), 0.3)]
 
 
 # ---------------------------------------------------------------- fetching
@@ -208,12 +212,14 @@ def score(d, plan):
             s -= max(0.0, d["active_b"] - 6) * 0.35              # many active params are slow from RAM
         s -= plan.get("ram_share", 0) * 2.0
     s += QUANT_BONUS.get(plan["quant"], 0)
-    s += 1.2 * math.log10(d["downloads"] + 10) + 0.8 * math.log10(d["trending"] + 1)
+    # what most people download, from the uploaders most people trust, comes first
+    s += 2.0 * math.log10(d["downloads"] + 10) + 0.8 * math.log10(d["trending"] + 1)
     s += 0.5 * math.log10(d["likes"] + 1)
     if d["age_days"] is not None:
         s += 2.0 if d["age_days"] < 90 else 1.0 if d["age_days"] < 240 else -1.0 if d["age_days"] > 540 else 0
     s += 2.0 if d["tools"] else 0
-    s += TRUSTED.get(d["org"].lower(), 0)
+    s += TRUSTED.get(d["org"].lower(), -2.0)
+    s += next((b for pat, b in FAMILY if pat.search(d["repo"])), 0.0)
     s -= 2.5 if d["niche"] else 0
     return round(s, 2)
 
