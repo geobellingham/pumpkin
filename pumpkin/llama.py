@@ -42,6 +42,27 @@ def _alive_llama(pid):
         return False
 
 
+_devices = {}
+
+
+def list_devices(binary):
+    """The GPUs this llama-server can use, as it names them: [("Vulkan0", "NVIDIA GeForce GT 710"), ...]."""
+    if binary in _devices:
+        return _devices[binary]
+    out = []
+    try:
+        r = subprocess.run([binary, "--list-devices"], capture_output=True, text=True, timeout=30, env=_env_for(binary),
+                           creationflags=hardware.NO_WINDOW if WINDOWS else 0)
+        for line in (r.stdout or "").splitlines():
+            m = re.match(r"\s+(\S+): (.+?) \(\d+ MiB", line)
+            if m:
+                out.append((m.group(1), m.group(2)))
+    except (OSError, subprocess.SubprocessError):
+        pass
+    _devices[binary] = out
+    return out
+
+
 def kill_leftover():
     """A llama-server from before (Pumpkin was closed hard, crashed or updated) still holds the GPU and the port:
     stop it, so the memory is free and the model Pumpkin starts next is really its own."""
@@ -97,7 +118,7 @@ def auth_header():
 # llama-server options Pumpkin knows how to use, checked against `llama-server --help`
 KNOWN_FLAGS = ["--agent", "--tools-runtime", "-fit", "-fitt", "--reasoning-budget", "--no-reasoning-preserve",
                "--webui-config-file", "--mcp-servers-config", "--mmproj", "--metrics", "-fa", "-ctk",
-               "--sleep-idle-seconds", "--n-cpu-moe", "--jinja", "--spec-default"]
+               "--sleep-idle-seconds", "--n-cpu-moe", "--jinja", "--spec-default", "--device", "--list-devices"]
 
 
 def candidates(settings):
@@ -461,6 +482,14 @@ class ServerManager:
                 cmd += ["-fitt", str(int(preset.get("fitt") or 1024))]
         elif preset.get("gpu_layers") is not None:
             cmd += ["-ngl", str(preset["gpu_layers"])]
+        if "--device" in flags:
+            # a GPU too old for this llama.cpp (a GT 710 next to Intel graphics, say) only slows the model down:
+            # use the other GPUs, or none and let the processor do the work
+            devs = list_devices(binary)
+            old = [n for n, desc in devs if hardware.OLD_NVIDIA.search(desc)]
+            if old:
+                keep = [n for n, _ in devs if n not in old]
+                cmd += ["--device", ",".join(keep) or "none"]
         if has("-fa"):
             cmd += ["-fa", "on"]
         if preset.get("spec", True) and not mm and "--spec-default" in flags:
@@ -511,6 +540,12 @@ class ServerManager:
 
     # ---- lifecycle
     def start(self, preset, _retry=False):
+        preset = dict(preset)
+        remembered = None
+        if not _retry and preset.get("ctx_worked") and int(preset.get("ctx") or 0) == int(preset.get("ctx_asked") or -1):
+            # this context did not fit last time; start with the one that did (pick another size to try again)
+            remembered = (int(preset["ctx"]), int(preset["ctx_worked"]))
+            preset["ctx"], preset["_asked"] = remembered[1], remembered[0]
         with self.lock:
             if not _retry:
                 self._tries, self.notice = 0, None
@@ -539,6 +574,9 @@ class ServerManager:
             except OSError:
                 pass
             self.preset, self.state, self.error, self.started_at = dict(preset), "loading", None, time.time()
+            if remembered:
+                self.notice = (f"{preset.get('name')} uses {remembered[1]:,} tokens of context: {remembered[0]:,} did not "
+                               f"fit in memory last time. Pick another size in the preset to try again.")
             self._inhibit(True)
             self.settings.update({"last_preset": preset.get("id") or preset.get("name")})
         self._changed()
@@ -708,6 +746,7 @@ class ServerManager:
                 return False
             new = max(2048, ctx // 2)
             self._tries += 1
+            preset.setdefault("_asked", ctx)              # what you chose, kept so your setting is never overwritten
             preset["ctx"] = new
             note = (f"{preset.get('name')} did not fit in memory with {ctx:,} tokens of context, so Pumpkin started it "
                     f"with {new:,}.")

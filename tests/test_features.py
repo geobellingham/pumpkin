@@ -259,6 +259,32 @@ class TestSpeculativeDecoding(unittest.TestCase):
         self.assertNotIn("--spec-default", self.cmd({}, ["-fa"]))                            # older llama-server
 
 
+class TestOldGpuIsLeftOut(unittest.TestCase):
+    def test_device_list(self):
+        from unittest import mock
+        from pumpkin import llama
+        lib = mock.Mock()
+        lib.resolve.side_effect = lambda p: {"path": p, "info": {}} if p else None
+        sm = llama.ServerManager.__new__(llama.ServerManager)
+        sm.settings = {"threads": 4, "sandbox_image": "ubuntu:24.04", "llama_port": 8080, "files_dir": tempfile.mkdtemp()}
+        sm.library = lib
+        sm.mcp_config = lambda p: None
+        listing = ("Available devices:\n  Vulkan0: NVIDIA GeForce GT 710 (2048 MiB, 1900 MiB free)\n"
+                   "  Vulkan1: Intel(R) UHD Graphics 630 (8000 MiB, 7000 MiB free)\n")
+        for out, want in ((listing, ["--device", "Vulkan1"]),
+                          ("  Vulkan0: NVIDIA GeForce GT 710 (2048 MiB, 1900 MiB free)\n", ["--device", "none"]),
+                          ("  CUDA0: NVIDIA GeForce RTX 3060 (12288 MiB, 11000 MiB free)\n", None)):
+            llama._devices.clear()
+            with mock.patch.object(llama.subprocess, "run", return_value=mock.Mock(stdout=out)):
+                cmd = sm.build_cmd({"model": "/m/x.gguf"}, "/bin/llama-server", {"flags": ["--device"]})
+            if want:
+                i = cmd.index("--device")
+                self.assertEqual(cmd[i:i + 2], want)
+            else:
+                self.assertNotIn("--device", cmd)
+        llama._devices.clear()
+
+
 class TestToolsNeedTheSandbox(unittest.TestCase):
     def cmd(self, docker):
         from unittest import mock

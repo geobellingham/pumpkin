@@ -217,7 +217,22 @@ class TestServer(unittest.TestCase):
                                       30))
             srv = self.call("GET", "/pumpkin/api/state")[1]["server"]
             self.assertIn("with 4,096", srv["notice"])
-            self.assertEqual(self.core.presets.get(p["id"])["ctx"], 4096)     # starts first try next time
+            saved = self.core.presets.get(p["id"])
+            self.assertEqual((saved["ctx"], saved["ctx_worked"]), (16384, 4096))   # your setting stays as you set it
+            # next start goes straight to what worked, and says so
+            self.core.server.stop()
+            self.core.server.start(saved)
+            self.assertTrue(self.wait(lambda: self.core.server.state == "ready", 30))
+            self.assertIn("-c 4096 ", open(os.path.join(config.STATE_DIR, "llama-server.log")).read())
+            self.assertIn("16,384 did not fit", self.core.server.notice)
+            # picking another size tries that one
+            self.core.server.stop()
+            self.core.presets.update(p["id"], {"ctx": 2048})
+            self.core.server.start(self.core.presets.get(p["id"]))
+            self.assertTrue(self.wait(lambda: self.core.server.state == "ready", 30))
+            with open(os.path.join(config.STATE_DIR, "llama-server.log")) as f:
+                self.assertIn("-c 2048 ", f.read())
+            self.assertIsNone(self.core.server.notice)
         finally:
             del os.environ["FAKE_LLAMA_FAIL_ABOVE"]
             self.core.presets.update(p["id"], {"ctx": p.get("ctx")})

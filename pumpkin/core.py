@@ -85,10 +85,11 @@ class Core:
         return bool(hit)
 
     def _keep_working_ctx(self, preset):
-        """A model loaded only with a shorter context: keep that in its preset, so next time it starts first try."""
+        """A model loaded only with a shorter context: note that next to the preset, so next time it starts first try.
+        The context you chose stays as it is; choosing another one makes Pumpkin try that instead."""
         pid = preset.get("id")
-        if pid and self.presets.get(pid):
-            self.presets.update(pid, {"ctx": int(preset["ctx"])})
+        if pid and self.presets.get(pid) and preset.get("_asked"):
+            self.presets.update(pid, {"ctx_worked": int(preset["ctx"]), "ctx_asked": int(preset["_asked"])})
 
     def _check_update(self):
         time.sleep(20)
