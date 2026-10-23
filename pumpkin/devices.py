@@ -221,10 +221,17 @@ class Helper:
             name = self.ready_model(body.get("model"))
             msgs = ([{"role": "system", "content": system}] if system else []) + [{"role": "user", "content": task}]
             r = llama.http(core.server.port, "/v1/chat/completions",
-                           {"messages": msgs, "max_tokens": max_tokens, "temperature": 0.6}, timeout=1800)
+                           {"messages": msgs, "max_tokens": max_tokens, "temperature": 0.6,
+                            # a small thinking model can spend every token thinking and answer nothing
+                            "chat_template_kwargs": {"enable_thinking": False}}, timeout=1800)
             if "choices" not in r:
                 raise RuntimeError(f"The model here answered with an error: {r.get('error', r)}")
-            answer = (r["choices"][0].get("message") or {}).get("content") or ""
+            choice = r["choices"][0]
+            answer = (choice.get("message") or {}).get("content") or ""
+            if not answer.strip():
+                why = ("ran out of room while thinking (finish: length)" if choice.get("finish_reason") == "length"
+                       else "gave an empty answer")
+                raise RuntimeError(f"The model on this device {why}. Try again with a simpler task or another model.")
             usage = r.get("usage") or {}
             entry.update(state="done", seconds=round(time.time() - t0, 1), model=name)
             return {"answer": answer, "model": name, "device": device_name(core.settings),
