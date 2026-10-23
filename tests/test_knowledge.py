@@ -257,5 +257,95 @@ class TestServersOverStdio(Base):
             self.assertEqual(json.load(f)["items"][0]["text"], "Likes tea")
 
 
+class TestAndroidRelay(Base):
+    """Android: llama-server starts the app's relay (android/mcp_bridge.c) and the tools answer inside Pumpkin."""
+
+    def setUp(self):
+        super().setUp()
+        self.hosts = []
+
+    def tearDown(self):
+        for h in self.hosts:
+            h.close()
+        super().tearDown()
+
+    def host(self, bridge=None):
+        from pumpkin import mcp_local
+        h = mcp_local.Host(bridge)
+        self.hosts.append(h)
+        return h
+
+    def talk(self, h, first, lines):
+        import socket
+        with socket.create_connection(("127.0.0.1", h.port), timeout=10) as c:
+            c.sendall((first + "\n" + "".join(json.dumps(x) + "\n" for x in lines)).encode())
+            c.shutdown(socket.SHUT_WR)
+            data = b""
+            while chunk := c.recv(65536):
+                data += chunk
+        return [json.loads(x) for x in data.decode().splitlines() if x.strip()]
+
+    def test_tools_answer_only_with_the_secret(self):
+        h = self.host()
+        save = {"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                "params": {"name": "save", "arguments": {"fact": "Likes tea"}}}
+        self.assertEqual(self.talk(h, "wrong memory", [save]), [])
+        self.assertEqual(self.talk(h, f"{h.key} nosuchserver", [save]), [])
+        self.assertEqual(memory.load(), [])
+        r = self.talk(h, f"{h.key} memory", [{"jsonrpc": "2.0", "id": 0, "method": "tools/list"}, save])
+        self.assertEqual([t["name"] for t in r[0]["result"]["tools"]], ["save", "forget"])
+        self.assertFalse(r[1]["result"]["isError"])
+        self.assertEqual(memory.load()[0]["text"], "Likes tea")
+
+    def build_relay(self):
+        import shutil
+        cc = shutil.which("cc") or shutil.which("gcc") or shutil.which("clang")
+        if sys.platform == "win32" or not cc:
+            self.skipTest("needs a C compiler on Linux or macOS")
+        out = os.path.join(self.home, "libpumpkin_mcp.so")
+        subprocess.run([cc, "-O2", "-Wall", "-Werror", "-o", out, os.path.join(ROOT, "android", "mcp_bridge.c")],
+                       check=True, capture_output=True, timeout=120)
+        return out
+
+    def test_the_real_relay_passes_stdin_and_stdout_through(self):
+        h = self.host(self.build_relay())
+        cmd = h.command("memory")
+        lines = [{"jsonrpc": "2.0", "id": 0, "method": "initialize", "params": {"protocolVersion": "2025-03-26"}},
+                 {"jsonrpc": "2.0", "method": "notifications/initialized"},
+                 {"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                  "params": {"name": "save", "arguments": {"fact": "Has a phone"}}}]
+        out = subprocess.run([cmd["command"], *cmd["args"]], input="".join(json.dumps(x) + "\n" for x in lines),
+                             capture_output=True, text=True, env=dict(os.environ, **cmd["env"]), timeout=30)
+        replies = [json.loads(x) for x in out.stdout.splitlines() if x.strip()]
+        self.assertEqual([r["id"] for r in replies], [0, 1], out.stderr)
+        self.assertEqual(memory.load()[0]["text"], "Has a phone")
+        bad = subprocess.run([cmd["command"], *cmd["args"]], input="", capture_output=True, text=True,
+                             env=dict(os.environ, PUMPKIN_MCP_KEY=""), timeout=30)
+        self.assertNotEqual(bad.returncode, 0)
+
+    def test_android_gives_llama_server_the_relay(self):
+        from unittest import mock
+        from pumpkin import core as core_mod, devices, hardware
+        os.makedirs(config.STATE_DIR, exist_ok=True)
+        bridge = os.path.join(self.home, "libpumpkin_mcp.so")
+        with open(bridge, "w") as f:
+            f.write("relay")
+        c = core_mod.Core.__new__(core_mod.Core)
+        c.settings = {"memory": True}
+        c.mcp_host = self.host(bridge)
+        with mock.patch.object(hardware, "ANDROID", True), mock.patch.object(devices, "load", return_value=[]):
+            self.assertTrue(c.tools_here())
+            with open(c.mcp_config({"web": True})) as f:
+                servers = json.load(f)["mcpServers"]
+            self.assertEqual(sorted(servers), ["files", "memory", "web"])
+            for name, s in servers.items():
+                self.assertEqual(s["command"], bridge)
+                self.assertEqual(s["args"], [str(c.mcp_host.port), name])
+                self.assertEqual(s["env"], {"PUMPKIN_MCP_KEY": c.mcp_host.key})
+            os.remove(bridge)                                    # an app built without the relay: no tools at all
+            self.assertFalse(c.tools_here())
+            self.assertIsNone(c.mcp_config({"web": True}))
+
+
 if __name__ == "__main__":
     unittest.main()

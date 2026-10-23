@@ -101,6 +101,38 @@ print("the phone's model says:", repr(text))
 assert text.strip()
 print("speed:", r.get("timings", {}).get("predicted_per_second"), "tokens/s")
 
+step("The model's own tools on the phone: documents, saved files and memory, through the app's relay")
+call("PUT", f"/pumpkin/api/presets/{preset['id']}", {"tools": True, "sandbox": False, "web": False})
+call("POST", "/pumpkin/api/llama/start", {"preset": preset["id"]})
+time.sleep(2)
+srv = wait(lambda: (s := call("GET", "/pumpkin/api/state")["server"])["state"] in ("ready", "error") and s,
+           "the model with tools", 300)
+if srv["state"] != "ready":
+    print(call("GET", "/pumpkin/api/llama/log?n=80")["log"])
+    raise SystemExit(f"the model did not start with tools: {srv['error']}")
+names = [t.get("tool") for t in call("GET", "/tools")]
+print("llama-server tools:", names)
+if not {"files_search", "files_save", "memory_save", "memory_forget"} <= set(names):
+    print(call("GET", "/pumpkin/api/llama/log?n=80")["log"])
+    raise SystemExit(f"the tools are missing on the phone: {names}")
+req = urllib.request.Request(f"http://127.0.0.1:{LOCAL}/pumpkin/api/files/upload?dir=&name=e2e-manual.md",
+                             method="POST", data=b"# Router\n\nTo reset the Pumpkin router, hold the blue button "
+                                                  b"for twelve seconds.\n",
+                             headers={"Authorization": f"Bearer {token}", "X-Pumpkin": "1"})
+opener.open(req, timeout=60).read()
+r = call("POST", "/tools", {"tool": "files_search", "params": {"query": "reset router button"}}, 120)
+print("files_search:", json.dumps(r)[:400])
+assert "(e2e-manual.md" in json.dumps(r) and "twelve seconds" in json.dumps(r), r
+r = call("POST", "/tools", {"tool": "files_save", "params": {"name": "E2E summary", "content": "# Done\n\n- one"}}, 60)
+print("files_save:", json.dumps(r)[:300])
+assert "E2E summary.docx" in json.dumps(r), r
+r = call("POST", "/tools", {"tool": "memory_save", "params": {"fact": "Runs Pumpkin on a phone"}}, 60)
+assert any(m["text"] == "Runs Pumpkin on a phone" for m in call("GET", "/pumpkin/api/memory")["items"]), r
+assert "Runs Pumpkin on a phone" in call("GET", "/pumpkin/api/state")["persona_prompt"]
+call("POST", "/tools", {"tool": "memory_forget", "params": {"what": "runs pumpkin on a phone"}}, 60)
+assert call("GET", "/pumpkin/api/memory")["items"] == []
+print("documents:", call("GET", "/pumpkin/api/docs"))
+
 step("Doctor")
 for c in call("GET", "/pumpkin/api/doctor")["checks"]:
     print(f"[{c['status']:4}] {c['area']}: {c['title']}  {c['detail']}")

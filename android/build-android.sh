@@ -40,6 +40,15 @@ for variant in arm64-v8a:libllama_server.so:fast arm64-v8a:libllama_server_basic
   ls -la "$out"
 done
 
+# ---- the tool relay llama-server starts to reach Pumpkin's own tools (android/mcp_bridge.c); small, always rebuilt
+for pair in arm64-v8a:aarch64 x86_64:x86_64; do
+  IFS=: read -r abi triple <<<"$pair"
+  cc=$(ls "$NDK"/toolchains/llvm/prebuilt/*/bin/"$triple"-linux-android26-clang | head -1)
+  mkdir -p "$HERE/app/src/main/jniLibs/$abi"
+  "$cc" -O2 -Wall -Werror -o "$HERE/app/src/main/jniLibs/$abi/libpumpkin_mcp.so" "$HERE/mcp_bridge.c"
+  "$NDK"/toolchains/llvm/prebuilt/*/bin/llvm-strip "$HERE/app/src/main/jniLibs/$abi/libpumpkin_mcp.so"
+done
+
 # ---- Pumpkin's Python package with its web UI
 rm -rf "$HERE/app/src/main/python"
 mkdir -p "$HERE/app/src/main/python"

@@ -7,8 +7,8 @@ import sys
 import threading
 import time
 
-from . import (__version__, agent, config, devices, docs, hardware, llama, memory, migrate, models, recommend, remote,
-               updates, workspace)
+from . import (__version__, agent, config, devices, docs, hardware, llama, mcp_local, memory, migrate, models,
+               recommend, remote, updates, workspace)
 
 
 def _python():
@@ -26,6 +26,7 @@ class Core:
     peers = ()                               # paired devices as they answered lately (filled in the background)
     peers_at = 0
     indexer = None
+    mcp_host = None
 
     def __init__(self):
         config.ensure_dirs()
@@ -51,7 +52,10 @@ class Core:
         self.reports = agent.Reports(self.settings)
         self.runner = agent.Runner(self)
         self.helper = devices.Helper(self)
-        self.indexer = None if hardware.ANDROID else docs.Indexer(self.settings)
+        self.indexer = docs.Indexer(self.settings)
+        if hardware.ANDROID:
+            # the app has no Python program for llama-server to start: its tools answer from here (mcp_local)
+            self.mcp_host = mcp_local.Host(os.environ.get("PUMPKIN_MCP_BRIDGE"))
         self.peers = []                      # paired devices as they answered lately: online, models
         self.peers_at = 0
         threading.Thread(target=self._watch_peers, daemon=True).start()
@@ -127,7 +131,7 @@ class Core:
         p = self.personas.get(self.settings["persona"])
         text = (p or {}).get("prompt", "")
         pre = (self.server.preset or {}) if self.server.state in ("loading", "ready") else {}
-        tools = bool(pre.get("tools")) and not hardware.ANDROID
+        tools = bool(pre.get("tools")) and self.tools_here()
         ctx = int(pre.get("ctx") or 8192)
         # every word here is sent with every message; on a 4-8k model it has to stay small
         if tools:
@@ -246,27 +250,50 @@ class Core:
                 servers.update((json.load(f) or {}).get("mcpServers") or {})
         except (OSError, ValueError, AttributeError):
             pass
-        if preset.get("web", True) and not hardware.ANDROID:     # the app has no separate Python to run it
-            pkg_parent = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-            env = {"PYTHONPATH": pkg_parent}
-            for k in ("PUMPKIN_SEARXNG", "BRAVE_API_KEY"):
-                if os.environ.get(k):
-                    env[k] = os.environ[k]
-            servers.setdefault("web", {"command": _python(), "args": ["-m", "pumpkin.mcp_web"], "env": env})
-        if not hardware.ANDROID:
-            # your documents and files the model saves for you, and what it remembers about you
-            servers.setdefault("files", self._builtin("pumpkin.mcp_files", 300_000))
-            if self.settings["memory"]:
-                servers.setdefault("memory", self._builtin("pumpkin.mcp_memory"))
-        if any(d.get("enabled", True) for d in devices.load()) and not hardware.ANDROID:
-            # a phone can take minutes, so the call may wait up to 30 minutes
-            servers.setdefault("devices", self._builtin("pumpkin.mcp_devices", 1_800_000))
+        if self.mcp_host:                                       # Android: the tools answer from this process
+            self._app_tools(servers, preset)
+        elif not hardware.ANDROID:
+            self._computer_tools(servers, preset)
         if not servers:
             return None
         path = os.path.join(config.STATE_DIR, "mcp-effective.json")
         with open(path, "w") as f:
             json.dump({"mcpServers": servers}, f, indent=2)
         return path
+
+    def tools_here(self):
+        """Pumpkin's own tools work here: always on a computer, on Android when the app has its tool relay."""
+        return not hardware.ANDROID or bool(self.mcp_host and self.mcp_host.usable())
+
+    def _app_tools(self, servers, preset):
+        """Android: llama-server starts the app's relay, which passes each call to this process (mcp_local)."""
+        if not self.mcp_host.usable():
+            return                                              # an app built without the relay
+        h = self.mcp_host
+        if preset.get("web", True):
+            servers.setdefault("web", h.command("web"))
+        servers.setdefault("files", h.command("files", 300_000))
+        if self.settings["memory"]:
+            servers.setdefault("memory", h.command("memory"))
+        if any(d.get("enabled", True) for d in devices.load()):
+            servers.setdefault("devices", h.command("devices", 1_800_000))
+
+    def _computer_tools(self, servers, preset):
+        """Pumpkin's tool servers as Python programs that llama-server starts."""
+        if preset.get("web", True):
+            pkg_parent = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            env = {"PYTHONPATH": pkg_parent}
+            for k in ("PUMPKIN_SEARXNG", "BRAVE_API_KEY"):
+                if os.environ.get(k):
+                    env[k] = os.environ[k]
+            servers.setdefault("web", {"command": _python(), "args": ["-m", "pumpkin.mcp_web"], "env": env})
+        # your documents and files the model saves for you, and what it remembers about you
+        servers.setdefault("files", self._builtin("pumpkin.mcp_files", 300_000))
+        if self.settings["memory"]:
+            servers.setdefault("memory", self._builtin("pumpkin.mcp_memory"))
+        if any(d.get("enabled", True) for d in devices.load()):
+            # a phone can take minutes, so the call may wait up to 30 minutes
+            servers.setdefault("devices", self._builtin("pumpkin.mcp_devices", 1_800_000))
 
     @staticmethod
     def _builtin(module, timeout_ms=None):
@@ -548,6 +575,8 @@ class Core:
             self.server.stop()
         except Exception:  # noqa: BLE001
             pass
+        if self.mcp_host:
+            self.mcp_host.close()
         try:
             workspace.fix_owner(self.settings)
             workspace.stop()

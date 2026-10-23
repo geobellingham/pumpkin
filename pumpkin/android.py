@@ -69,6 +69,8 @@ def _start(files_dir, native_dir, cache_dir=""):
                       XDG_STATE_HOME=os.path.join(home, ".local", "state"))
     if cache_dir:
         os.environ["TMPDIR"] = cache_dir
+    # the relay llama-server starts to reach Pumpkin's own tools (files, memory, web, devices); see mcp_local
+    os.environ["PUMPKIN_MCP_BRIDGE"] = os.path.join(native_dir, "libpumpkin_mcp.so")
     try:
         import certifi                                    # HTTPS for Hugging Face and GitHub
         os.environ.setdefault("SSL_CERT_FILE", certifi.where())

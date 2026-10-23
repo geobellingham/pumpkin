@@ -2,10 +2,7 @@
 
 llama-server starts it as `python3 -m pumpkin.mcp_devices` and talks JSON-RPC over stdin/stdout. The tools show
 up as devices_list and devices_ask."""
-import json
-import sys
-
-from . import devices
+from . import devices, mcp_base
 
 TOOLS = [
     {"name": "list", "description": "List the user's other devices, whether online, and their models.",
@@ -56,39 +53,7 @@ def _me():
 
 
 def main():
-    for line in sys.stdin:
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            msg = json.loads(line)
-        except ValueError:
-            continue
-        mid, method = msg.get("id"), msg.get("method")
-        if mid is None:
-            continue
-        try:
-            if method == "initialize":
-                result = {"protocolVersion": (msg.get("params") or {}).get("protocolVersion", "2024-11-05"),
-                          "capabilities": {"tools": {}}, "serverInfo": {"name": "pumpkin-devices", "version": "0.1"}}
-            elif method == "tools/list":
-                result = {"tools": TOOLS}
-            elif method == "tools/call":
-                p = msg.get("params") or {}
-                try:
-                    text = call(p.get("name"), p.get("arguments") or {})
-                    result = {"content": [{"type": "text", "text": text}], "isError": False}
-                except Exception as e:  # noqa: BLE001 - the model gets the reason and can try something else
-                    result = {"content": [{"type": "text", "text": f"Error: {e}"}], "isError": True}
-            elif method == "ping":
-                result = {}
-            else:
-                raise LookupError(method)
-            reply = {"jsonrpc": "2.0", "id": mid, "result": result}
-        except LookupError:
-            reply = {"jsonrpc": "2.0", "id": mid, "error": {"code": -32601, "message": f"Unknown method {method}"}}
-        sys.stdout.write(json.dumps(reply) + "\n")
-        sys.stdout.flush()
+    mcp_base.serve("pumpkin-devices", TOOLS, call, Exception)    # the model gets the reason and can try again
 
 
 if __name__ == "__main__":

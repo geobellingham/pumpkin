@@ -7,11 +7,12 @@ import html
 import json
 import os
 import re
-import sys
 import urllib.error
 import urllib.parse
 import urllib.request
 from html.parser import HTMLParser
+
+from . import mcp_base
 
 UA = ("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36")
 MAX_CHARS = int(os.environ.get("PUMPKIN_PAGE_CHARS", "12000"))
@@ -155,6 +156,9 @@ def read(url, start=0):
     return head + chunk + tail
 
 
+ERRORS = (urllib.error.URLError, OSError, ValueError, TimeoutError)
+
+
 def call(name, args):
     if name == "web_search":
         res = search(args.get("query", ""), args.get("max_results", 6))
@@ -167,39 +171,7 @@ def call(name, args):
 
 
 def main():
-    for line in sys.stdin:
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            msg = json.loads(line)
-        except ValueError:
-            continue
-        mid, method = msg.get("id"), msg.get("method")
-        if mid is None:
-            continue                                         # notifications need no reply
-        try:
-            if method == "initialize":
-                result = {"protocolVersion": (msg.get("params") or {}).get("protocolVersion", "2024-11-05"),
-                          "capabilities": {"tools": {}}, "serverInfo": {"name": "pumpkin-web", "version": "0.1"}}
-            elif method == "tools/list":
-                result = {"tools": TOOLS}
-            elif method == "tools/call":
-                p = msg.get("params") or {}
-                try:
-                    text = call(p.get("name"), p.get("arguments") or {})
-                    result = {"content": [{"type": "text", "text": text}], "isError": False}
-                except (urllib.error.URLError, OSError, ValueError, TimeoutError) as e:
-                    result = {"content": [{"type": "text", "text": f"Error: {e}"}], "isError": True}
-            elif method == "ping":
-                result = {}
-            else:
-                raise LookupError(method)
-            reply = {"jsonrpc": "2.0", "id": mid, "result": result}
-        except LookupError:
-            reply = {"jsonrpc": "2.0", "id": mid, "error": {"code": -32601, "message": f"Unknown method {method}"}}
-        sys.stdout.write(json.dumps(reply) + "\n")
-        sys.stdout.flush()
+    mcp_base.serve("pumpkin-web", TOOLS, call, ERRORS)
 
 
 if __name__ == "__main__":
