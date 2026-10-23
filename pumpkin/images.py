@@ -514,7 +514,12 @@ class ImageServer:
                 self.last_used = time.time()
                 return base64.b64decode(imgs[0]["b64_json"])
             if s in ("failed", "cancelled"):
-                raise RuntimeError(((st.get("error") or {}).get("message")) or f"The picture {s}.")
+                msg = ((st.get("error") or {}).get("message")) or f"The picture {s}."
+                if s == "failed":
+                    why = self._why()
+                    if why:
+                        msg += f" The engine log says: {why}"
+                raise RuntimeError(msg)
             time.sleep(0.5)
         raise RuntimeError("Making the picture took too long.")
 
@@ -524,6 +529,12 @@ class ImageServer:
                 return "".join(f.readlines()[-n:])
         except OSError:
             return ""
+
+    def _why(self):
+        """The lines of the engine's log that say what went wrong (the job's own message is often just 'no results')."""
+        hits = [l.strip() for l in self.log_tail(80).splitlines()
+                if re.search(r"error|fail|alloc|out of memory|not supported|unsupported|assert|abort|vk::", l, re.I)]
+        return " | ".join(h[:200] for h in hits[-3:])
 
     def _explain(self):
         tail = self.log_tail(30)
