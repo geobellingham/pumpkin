@@ -18,6 +18,8 @@ if [ ! -d "$WORK/llama.cpp/.git" ]; then
   mkdir -p "$WORK"
   git clone --quiet --depth 1 --branch "$TAG" https://github.com/ggml-org/llama.cpp "$WORK/llama.cpp"
 fi
+# llama.cpp leaves out starting other programs on Android; Pumpkin turns it on so llama-server can start the
+# tool relay below. fork()+exec() works on every Android Pumpkin supports (posix_spawn needs Android 9).
 # arm64 gets two builds: a fast one for phones with the dot-product instructions (about 2018 and newer) and a
 # basic one that runs on every 64-bit phone, such as the Galaxy S8. Pumpkin picks at startup.
 for variant in arm64-v8a:libllama_server.so:fast arm64-v8a:libllama_server_basic.so:basic x86_64:libllama_server.so:plain; do
@@ -32,6 +34,8 @@ for variant in arm64-v8a:libllama_server.so:fast arm64-v8a:libllama_server_basic
     -DANDROID_PLATFORM=android-26 -DANDROID_STL=c++_static -DCMAKE_BUILD_TYPE=Release \
     -DBUILD_SHARED_LIBS=OFF -DGGML_NATIVE=OFF -DGGML_OPENMP=OFF -DLLAMA_OPENSSL=OFF \
     -DLLAMA_BUILD_TESTS=OFF -DLLAMA_BUILD_EXAMPLES=OFF -DLLAMA_BUILD_SERVER=ON \
+    -DLLAMA_SUBPROCESS=ON -DCMAKE_C_FLAGS=-DSUBPROCESS_SPAWN_VIA_FORK=1 \
+    -DCMAKE_CXX_FLAGS=-DSUBPROCESS_SPAWN_VIA_FORK=1 \
     -DLLAMA_BUILD_NUMBER="${TAG#b}" "${extra[@]}"          # a shallow clone cannot count its own commits
   cmake --build "$WORK/build-$abi-$kind" --target llama-server -j "$JOBS"
   mkdir -p "$(dirname "$out")"
