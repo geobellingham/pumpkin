@@ -501,10 +501,11 @@ class Web:
             if ident == "install" and method == "POST":
                 core.install_image(str(body.get("id") or ""))
                 return core.images_state()
-            if ident == "generate" and method == "POST":
+            if ident in ("generate", "edit") and method == "POST":
                 try:
                     r = core.make_image(body.get("prompt"), body.get("shape") or "square", body.get("seed"),
-                                        swap_ok=body.get("swap", True) is not False)
+                                        swap_ok=body.get("swap", True) is not False, edit=ident == "edit",
+                                        source=body.get("source"))
                 except (RuntimeError, ValueError) as e:
                     raise ApiError(str(e), 409)
                 r.pop("jpeg", None)
@@ -837,12 +838,14 @@ class Web:
                     call = json.loads(body.decode() or "{}")
                 except (ValueError, UnicodeDecodeError):
                     call = {}
-                if isinstance(call, dict) and call.get("tool") == "image_generate":
+                if isinstance(call, dict) and call.get("tool") in ("image_generate", "image_edit"):
                     # Pumpkin draws the picture itself: it may stop llama-server to make room, which would cut off
                     # a call that went through it. The chat carries on once the text model is back.
                     params = call.get("params") if isinstance(call.get("params"), dict) else {}
-                    return self.json(h, self.core.image_tool(params))
+                    return self.json(h, self.core.image_tool(params, edit=call.get("tool") == "image_edit"))
             if h.command == "POST" and body and path in self.CHAT_PATHS:
+                if b"data:image/" in body:
+                    self.core.note_picture(body)            # image_edit changes the newest picture of the chat
                 try:
                     want = json.loads(body.decode() or "{}").get("model")
                 except (ValueError, AttributeError):

@@ -17,6 +17,7 @@
 
 	interface Bundle {
 		default: boolean;
+		kind: 'draw' | 'edit';
 		desc: string;
 		done: number;
 		downloading: boolean;
@@ -120,7 +121,7 @@
 	}
 
 	async function useIt(b: Bundle) {
-		if (await pumpkin.run(() => api('settings', { body: { image_model: b.id }, method: 'PUT' }), `Drawing with ${b.name}`)) void load();
+		if (await pumpkin.run(() => api('settings', { body: { [b.kind === 'edit' ? 'edit_model' : 'image_model']: b.id }, method: 'PUT' }), `Using ${b.name}`)) void load();
 	}
 
 	async function restartText() {
@@ -213,7 +214,7 @@
 	</Card>
 
 	{#if st?.supported}
-		<Card description="Each one is a drawing model with its text encoder, picked for this computer. Pumpkin chooses the quality that fits your graphics card." title="Image models">
+		<Card description="Each one is a picture model with its text encoder, picked for this computer. Pumpkin chooses the quality that fits your graphics card." title="Image models">
 			<ul class="flex flex-col divide-y divide-border/60">
 				{#each st.bundles as b (b.id)}
 					<li class="flex flex-col gap-2 py-3 sm:flex-row sm:items-center">
@@ -221,7 +222,7 @@
 							<div class="flex flex-wrap items-center gap-2">
 								<p class="text-sm font-medium">{b.name}</p>
 								{#if b.recommended}<span class="rounded-full bg-foreground/10 px-2 py-0.5 text-[11px]">Recommended</span>{/if}
-								{#if b.default && b.installed}<span class="rounded-full bg-foreground px-2 py-0.5 text-[11px] text-background">Draws in chat</span>{/if}
+								{#if b.default && b.installed}<span class="rounded-full bg-foreground px-2 py-0.5 text-[11px] text-background">{b.kind === 'edit' ? 'Edits in chat' : 'Draws in chat'}</span>{/if}
 								{#if b.fit}<span class={['rounded-full px-2 py-0.5 text-[11px] font-medium', FIT_CLASS[b.fit.level]]}>{b.fit.text}</span>{/if}
 							</div>
 							<p class="mt-0.5 text-xs text-muted-foreground">{b.desc}{b.size_gb ? ` About ${b.size_gb} GB.` : ''}</p>

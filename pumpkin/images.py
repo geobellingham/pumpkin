@@ -13,6 +13,7 @@ import json
 import os
 import re
 import shutil
+import struct
 import subprocess
 import sys
 import threading
@@ -36,7 +37,7 @@ CATALOG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "image_c
 GiB = 2 ** 30
 SIZES = {"square": (1, 1), "portrait": (3, 4), "landscape": (4, 3), "wide": (16, 9), "tall": (9, 16)}
 FLAGS = {"diffusion_model": "--diffusion-model", "model": "--model", "llm": "--llm", "vae": "--vae",
-         "t5xxl": "--t5xxl", "clip_l": "--clip_l", "clip_g": "--clip_g"}
+         "llm_vision": "--llm_vision", "t5xxl": "--t5xxl", "clip_l": "--clip_l", "clip_g": "--clip_g"}
 
 
 def catalog():
@@ -305,12 +306,51 @@ def installed(settings):
 
 def write_manifest(folder, bundle, files):
     os.makedirs(folder, exist_ok=True)
-    m = {"id": bundle["id"], "name": bundle["name"], "defaults": bundle.get("defaults") or {},
+    m = {"id": bundle["id"], "name": bundle["name"], "kind": kind(bundle), "defaults": bundle.get("defaults") or {},
          "files": [{"role": f["role"], "file": os.path.basename(f["path"]), "repo": f["repo"], "size": f["size"]}
                    for f in files]}
     with open(os.path.join(folder, MANIFEST), "w", encoding="utf-8") as fh:
         json.dump(m, fh, indent=1)
     return m
+
+
+def dims(data):
+    """Width and height of a PNG, JPEG or WebP picture, or None."""
+    try:
+        if data[:8] == b"\x89PNG\r\n\x1a\n":
+            return struct.unpack(">II", data[16:24])
+        if data[:2] == b"\xff\xd8":
+            i = 2
+            while i + 9 < len(data):
+                if data[i] != 0xFF:
+                    i += 1
+                    continue
+                mk = data[i + 1]
+                if mk in (0xD8, 0x01) or 0xD0 <= mk <= 0xD7:
+                    i += 2
+                    continue
+                n = struct.unpack(">H", data[i + 2:i + 4])[0]
+                if 0xC0 <= mk <= 0xCF and mk not in (0xC4, 0xC8, 0xCC):
+                    h, w = struct.unpack(">HH", data[i + 5:i + 9])
+                    return w, h
+                i += 2 + n
+        if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+            if data[12:16] == b"VP8X":
+                return 1 + int.from_bytes(data[24:27], "little"), 1 + int.from_bytes(data[27:30], "little")
+            if data[12:16] == b"VP8 ":
+                w, h = struct.unpack("<HH", data[26:30])
+                return w & 0x3FFF, h & 0x3FFF
+            if data[12:16] == b"VP8L":
+                b = int.from_bytes(data[21:25], "little")
+                return (b & 0x3FFF) + 1, ((b >> 14) & 0x3FFF) + 1
+    except (struct.error, IndexError):
+        pass
+    return None
+
+
+def kind(bundle):
+    """"draw" (makes pictures from words) or "edit" (changes a picture)."""
+    return (bundle or {}).get("kind") or "draw"
 
 
 def size_for(w_ratio, h_ratio, base):
@@ -353,6 +393,7 @@ class ImageServer:
             cmd += ["--cfg-scale", str(d["cfg"])]
         if d.get("sampler"):
             cmd += ["--sampling-method", d["sampler"]]
+        cmd += [str(a) for a in d.get("args") or []]
         threads = int(self.settings["threads"] or 0)
         if threads > 0:
             cmd += ["-t", str(threads)]
@@ -438,11 +479,13 @@ class ImageServer:
         with opener.open(req, timeout=timeout) as r:
             return json.loads(r.read().decode() or "{}")
 
-    def generate(self, prompt, width, height, seed=-1, negative="", timeout=1800, cancelled=lambda: False):
-        """Makes one picture and returns it as JPEG bytes."""
+    def generate(self, prompt, width, height, seed=-1, negative="", timeout=1800, cancelled=lambda: False, ref=None):
+        """Makes one picture and returns it as JPEG bytes. ref: picture bytes to change (an editing model)."""
         body = {"prompt": prompt, "negative_prompt": negative or "", "width": int(width), "height": int(height),
                 "seed": int(seed if seed is not None else -1), "batch_count": 1, "output_format": "jpeg",
                 "output_compression": 92, "embed_image_metadata": False}
+        if ref:
+            body["ref_images"] = [base64.b64encode(ref).decode()]
         try:
             job = self.http("/sdcpp/v1/img_gen", body, timeout=60)
         except urllib.error.HTTPError as e:

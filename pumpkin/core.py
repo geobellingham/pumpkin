@@ -1,8 +1,9 @@
 """Everything Pumpkin does, in one object the HTTP API calls into."""
 import base64
+import hashlib
 import json
-import re
 import os
+import re
 import shutil
 import sys
 import threading
@@ -29,6 +30,7 @@ class Core:
     indexer = None
     mcp_host = None
     image_server = None
+    last_picture = None                  # (when first seen, bytes) of the newest picture in a chat request
     mcp_image = False                    # the running text model was started with image_generate
 
     def __init__(self):
@@ -59,6 +61,7 @@ class Core:
         self.indexer = docs.Indexer(self.settings)
         self.image_server = images.ImageServer(self.settings)
         self.image_lock = threading.Lock()
+        self.pictures_seen = {}
         self.image_sizes = {}                # bundle id -> estimated GB before it is downloaded
         if hardware.ANDROID:
             # the app has no Python program for llama-server to start: its tools answer from here (mcp_local)
@@ -148,6 +151,8 @@ class Core:
                      else ".")
             if self.images_ready():
                 text += " image_generate draws a picture when the user asks for one."
+            if self.edit_ready():
+                text += " image_edit changes the picture the user attached or you drew last."
             hint = self.devices_hint()
             if hint:
                 text += " " + hint
@@ -304,7 +309,7 @@ class Core:
         if any(d.get("enabled", True) for d in devices.load()):
             # a phone can take minutes, so the call may wait up to 30 minutes
             servers.setdefault("devices", self._builtin("pumpkin.mcp_devices", 1_800_000))
-        if self.images_ready():
+        if self.images_ready() or self.edit_ready():
             # the chat's calls are answered by Pumpkin itself (server.py); this one serves the listing and agents
             servers.setdefault("image", self._builtin("pumpkin.mcp_images", 1_800_000))
         self.mcp_image = "image" in servers
@@ -481,16 +486,70 @@ class Core:
         }
 
     # ---- pictures
-    def image_default(self):
-        """The installed image model the chat draws with."""
-        inst = {k: v for k, v in images.installed(self.settings).items() if v["ready"]}
-        want = self.settings["image_model"]
+    def image_default(self, kind="draw"):
+        """The installed image model the chat draws (kind "draw") or edits pictures (kind "edit") with."""
+        inst = {k: v for k, v in images.installed(self.settings).items()
+                if v["ready"] and (v.get("kind") or "draw") == kind}
+        want = self.settings["image_model" if kind == "draw" else "edit_model"]
         if want in inst:
             return inst[want]
         for b in images.catalog():                   # the catalog's order: the recommended one first
             if b["id"] in inst:
                 return inst[b["id"]]
         return next(iter(inst.values()), None)
+
+    def edit_ready(self):
+        """The chat's model can change pictures: pictures are on, the engine and an editing model are in."""
+        if hardware.ANDROID or not self.settings["images"] or not self.image_server:
+            return False
+        return bool(images.find_engine(self.settings)) and self.image_default("edit") is not None
+
+    def note_picture(self, body):
+        """A chat request went by: remember the newest picture in it, so image_edit knows what to change."""
+        i = body.rfind(b"data:image/")
+        if i < 0:
+            return
+        m = re.match(rb"data:image/(?:png|jpe?g|webp);base64,([A-Za-z0-9+/=]+)", body[i:])
+        if not m:
+            return
+        try:
+            data = base64.b64decode(m.group(1))
+        except ValueError:
+            return
+        key = hashlib.sha1(data).hexdigest()
+        if key not in self.pictures_seen:
+            self.pictures_seen[key] = time.time()
+            for k in list(self.pictures_seen)[:-20]:
+                self.pictures_seen.pop(k, None)
+        self.last_picture = (self.pictures_seen[key], data)
+
+    def picture_to_edit(self, source=None):
+        """Bytes of the picture to change: a file in the user's Files when named, otherwise the newest picture of the
+        chat (one the user attached, or one drawn since: the newer of the two)."""
+        root = os.path.realpath(os.path.expanduser(self.settings["files_dir"]))
+        if source:
+            p = os.path.realpath(os.path.join(root, str(source).lstrip("/\\")))
+            if os.path.commonpath([root, p]) != root or not os.path.isfile(p) \
+                    or not p.lower().endswith((".png", ".jpg", ".jpeg", ".webp")):
+                raise ValueError("That picture is not in the user's Files.")
+            with open(p, "rb") as f:
+                return f.read()
+        newest = None
+        folder = os.path.join(root, "images")
+        if os.path.isdir(folder):
+            for n in os.listdir(folder):
+                fp = os.path.join(folder, n)
+                if n.lower().endswith((".png", ".jpg", ".jpeg", ".webp")) and os.path.isfile(fp):
+                    t = os.path.getmtime(fp)
+                    if newest is None or t > newest[0]:
+                        newest = (t, fp)
+        seen = self.last_picture
+        if seen and (newest is None or seen[0] >= newest[0]):
+            return seen[1]
+        if newest:
+            with open(newest[1], "rb") as f:
+                return f.read()
+        raise ValueError("There is no picture to change. Ask the user to attach one.")
 
     def images_ready(self):
         """The chat's model can draw: pictures are on, the engine and an image model are in."""
@@ -505,7 +564,7 @@ class Core:
         backend = engine.get("backend") or recommended          # the labels follow the engine that is in
         inst = images.installed(self.settings)
         dls = [j for j in self.downloads.list() if j.get("kind") == "image"]
-        default = self.image_default()
+        defaults = {k: self.image_default(k) for k in ("draw", "edit")}
         out = []
         for b in images.catalog():
             m = inst.get(b["id"])
@@ -520,7 +579,8 @@ class Core:
                 "downloading": bool(active), "error": None if active else failed,
                 "done": sum(j["done"] for j in jobs), "total": sum(j["total"] for j in jobs),
                 "size_gb": size, "fit": images.fit(size, hw, backend) if size else None,
-                "default": bool(default and default["id"] == b["id"]),
+                "kind": images.kind(b),
+                "default": bool(defaults[images.kind(b)] and defaults[images.kind(b)]["id"] == b["id"]),
                 "files": [f["file"] for f in (m or {}).get("files") or []],
             })
         engine["recommended"] = recommended
@@ -530,7 +590,7 @@ class Core:
             threading.Thread(target=self._estimate_images, daemon=True).start()
         return {"supported": not hardware.ANDROID and recommended is not None, "enabled": bool(self.settings["images"]),
                 "engine": engine, "bundles": out, "server": self.image_server.status() if self.image_server else None,
-                "ready": self.images_ready(), "swap": self.settings["image_swap"],
+                "ready": self.images_ready(), "edit_ready": self.edit_ready(), "swap": self.settings["image_swap"],
                 "keep_min": self.settings["image_keep_min"], "folder": images.models_dir(self.settings),
                 "text": self._text_draw_state()}
 
@@ -583,8 +643,9 @@ class Core:
             by_repo.setdefault(f["repo"], []).append(f["path"])
         for repo, paths in by_repo.items():
             self.downloads.add(repo, paths, dest=folder, kind="image")
-        if not self.settings["image_model"]:
-            self.settings.update({"image_model": b["id"]})
+        key = "image_model" if images.kind(b) == "draw" else "edit_model"
+        if not self.settings[key]:
+            self.settings.update({key: b["id"]})
         return m
 
     def delete_image(self, bundle_id):
@@ -600,8 +661,9 @@ class Core:
         if os.path.dirname(os.path.realpath(m["folder"])) != root:
             raise PermissionError("That folder is not one of Pumpkin's image models.")
         shutil.rmtree(m["folder"], ignore_errors=True)
-        if self.settings["image_model"] == bundle_id:
-            self.settings.update({"image_model": ""})
+        for key in ("image_model", "edit_model"):
+            if self.settings[key] == bundle_id:
+                self.settings.update({key: ""})
 
     def _text_model_gb(self):
         pre = self.server.preset or {}
@@ -630,23 +692,27 @@ class Core:
             return text + pic > vram
         return text + pic > ram * 0.8
 
-    def make_image(self, prompt, shape="square", seed=None, swap_ok=True):
-        """Draws one picture with the default image model and saves it into the user's Files (images/).
-        Returns {path, jpeg, seconds, model, swapped}."""
+    def make_image(self, prompt, shape="square", seed=None, swap_ok=True, edit=False, source=None):
+        """Draws one picture with the default image model (or, with edit, changes a picture with the editing model)
+        and saves it into the user's Files (images/). Returns {path, jpeg, seconds, model, swapped}."""
         prompt = re.sub(r"\s+", " ", str(prompt or "")).strip()
         if not prompt:
-            raise ValueError("Say what the picture should show.")
+            raise ValueError("Say what the picture should show." if not edit else "Say what to change in the picture.")
         if len(prompt) > 4000:
             prompt = prompt[:4000]
         if not self.settings["images"]:
             raise RuntimeError("Pictures are switched off in Pumpkin (Images page).")
-        m = self.image_default()
+        m = self.image_default("edit" if edit else "draw")
         if not m:
-            raise RuntimeError("No image model is installed. The user can add one on Pumpkin's Images page.")
+            raise RuntimeError("No picture-changing model is installed. The user can add Qwen Image Edit on Pumpkin's "
+                               "Images page." if edit else
+                               "No image model is installed. The user can add one on Pumpkin's Images page.")
         if not images.find_engine(self.settings):
             raise RuntimeError("The image engine is not installed. The user can add it on Pumpkin's Images page.")
         d = m.get("defaults") or {}
-        w, h = images.size_for(*images.SIZES.get(shape or "square", (1, 1)), base=int(d.get("width") or 1024))
+        ref = self.picture_to_edit(source) if edit else None
+        ratio = (images.dims(ref) if ref else None) or images.SIZES.get(shape or "square", (1, 1))
+        w, h = images.size_for(*ratio, base=int(d.get("width") or 1024))
         t0 = time.time()
         with self.image_lock:
             was = None
@@ -660,7 +726,7 @@ class Core:
                                 "swapped": bool(was)}
                 srv.start(m)
                 srv.progress.update(stage="drawing")
-                data = srv.generate(prompt, w, h, -1 if seed is None else seed)
+                data = srv.generate(prompt, w, h, -1 if seed is None else seed, ref=ref)
             finally:
                 srv.busy, srv.progress = False, None
                 if was:
@@ -672,7 +738,7 @@ class Core:
                         pass
         folder = os.path.join(os.path.expanduser(self.settings["files_dir"]), "images")
         os.makedirs(folder, exist_ok=True)
-        name = (config.slug(prompt[:48]) or "picture") + time.strftime("-%Y%m%d-%H%M%S") + ".jpg"
+        name = ("edit-" if edit else "") + (config.slug(prompt[:48]) or "picture") + time.strftime("-%Y%m%d-%H%M%S") + ".jpg"
         with open(os.path.join(folder, name), "wb") as f:
             f.write(data)
         if self.indexer:
@@ -680,11 +746,12 @@ class Core:
         return {"path": f"images/{name}", "jpeg": data, "seconds": round(time.time() - t0, 1), "model": m["name"],
                 "swapped": bool(was), "width": w, "height": h}
 
-    def image_tool(self, params):
-        """The chat called image_generate. The picture goes back as an image line the chat shows (and gives a
-        vision model); the text tells the model it is done."""
+    def image_tool(self, params, edit=False):
+        """The chat called image_generate (or image_edit). The picture goes back as an image line the chat shows (and
+        gives a vision model); the text tells the model it is done."""
         try:
-            r = self.make_image(params.get("prompt"), params.get("shape") or "square", params.get("seed"))
+            r = self.make_image(params.get("prompt"), params.get("shape") or "square", params.get("seed"),
+                                edit=edit, source=params.get("source") if edit else None)
         except (RuntimeError, ValueError, OSError) as e:
             return {"error": str(e)}
         b64 = base64.b64encode(r["jpeg"]).decode()

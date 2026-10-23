@@ -1,4 +1,4 @@
-"""Built-in MCP server for pictures: the tool reaches the model as image_generate.
+"""Built-in MCP server for pictures: the tools reach the model as image_generate and image_edit.
 
 llama-server starts it as `python -m pumpkin.mcp_images`, so the chat's model sees the tool. The chat's own calls
 never get here: Pumpkin answers them itself (server.py), because it may have to stop llama-server to make room
@@ -16,16 +16,22 @@ TOOLS = [
      "inputSchema": {"type": "object", "properties": {"prompt": {"type": "string"},
                                                       "shape": {"type": "string", "enum": SHAPES}},
                      "required": ["prompt"]}},
+    {"name": "edit", "description": "Change the picture the user attached, or the one you drew last: say what to "
+                                    "change in a short English instruction (\"make it night\", \"remove the car\"). "
+                                    "The user sees the new picture.",
+     "inputSchema": {"type": "object", "properties": {"prompt": {"type": "string"}, "source": {
+         "type": "string", "description": "Optional: a picture in the user's Files, like images/cat.jpg"}},
+                     "required": ["prompt"]}},
 ]
 
 
 def call(name, args):
-    if name != "generate":
+    if name not in ("generate", "edit"):
         raise LookupError(f"Unknown tool {name}")
     s = config.Settings()
     body = json.dumps({"prompt": args.get("prompt", ""), "shape": args.get("shape") or "square",
-                       "swap": False}).encode()
-    req = urllib.request.Request(f"http://127.0.0.1:{int(s['port'])}/pumpkin/api/images/generate", data=body,
+                       "source": args.get("source"), "swap": False}).encode()
+    req = urllib.request.Request(f"http://127.0.0.1:{int(s['port'])}/pumpkin/api/images/{name}", data=body,
                                  method="POST", headers={"Content-Type": "application/json", "X-Pumpkin": "1",
                                                          "Authorization": f"Bearer {config.token()}"})
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))

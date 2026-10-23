@@ -5,21 +5,114 @@
     "desc": "Photos, art and readable text in pictures. The best quality for its size.",
     "recommended": true,
     "files": [
-      {"role": "diffusion_model", "repo": "leejet/Z-Image-Turbo-GGUF", "match": "\\.gguf$",
-       "quants": ["Q8_0", "Q6_K", "Q5_K", "Q4_K", "Q3_K"], "fallback": "Q4_K"},
-      {"role": "llm", "repo": "unsloth/Qwen3-4B-Instruct-2507-GGUF", "match": "Q4_K_M\\.gguf$"},
-      {"role": "vae", "repo": "Comfy-Org/z_image_turbo", "match": "^split_files/vae/ae\\.safetensors$"}
+      {
+        "role": "diffusion_model",
+        "repo": "leejet/Z-Image-Turbo-GGUF",
+        "match": "\\.gguf$",
+        "quants": [
+          "Q8_0",
+          "Q6_K",
+          "Q5_K",
+          "Q4_K",
+          "Q3_K"
+        ],
+        "fallback": "Q4_K"
+      },
+      {
+        "role": "llm",
+        "repo": "unsloth/Qwen3-4B-Instruct-2507-GGUF",
+        "match": "Q4_K_M\\.gguf$"
+      },
+      {
+        "role": "vae",
+        "repo": "Comfy-Org/z_image_turbo",
+        "match": "^split_files/vae/ae\\.safetensors$"
+      }
     ],
-    "defaults": {"steps": 9, "cfg": 1.0, "sampler": "euler", "width": 1024, "height": 1024}
+    "defaults": {
+      "steps": 9,
+      "cfg": 1.0,
+      "sampler": "euler",
+      "width": 1024,
+      "height": 1024
+    }
   },
   {
     "id": "sdxs",
     "name": "SDXS (tiny)",
     "desc": "Very small and fast, even without a graphics card. Simple pictures, 512 pixels.",
     "files": [
-      {"role": "model", "repo": "concedo/sdxs-512-tinySDdistilled-GGUF", "match": "\\.gguf$",
-       "quants": ["Q8_0", "F16", "Q5_1", "Q5_0", "Q4_1", "Q4_0"]}
+      {
+        "role": "model",
+        "repo": "concedo/sdxs-512-tinySDdistilled-GGUF",
+        "match": "\\.gguf$",
+        "quants": [
+          "Q8_0",
+          "F16",
+          "Q5_1",
+          "Q5_0",
+          "Q4_1",
+          "Q4_0"
+        ]
+      }
     ],
-    "defaults": {"steps": 1, "cfg": 1.0, "width": 512, "height": 512}
+    "defaults": {
+      "steps": 1,
+      "cfg": 1.0,
+      "width": 512,
+      "height": 512
+    }
+  },
+  {
+    "id": "qwen-image-edit",
+    "kind": "edit",
+    "name": "Qwen Image Edit",
+    "desc": "Changes a picture you attach or one it drew: \"make it night\", \"remove the car\", \"change the text\". Big: it runs slowly and part of it sits in RAM on most graphics cards.",
+    "files": [
+      {
+        "role": "diffusion_model",
+        "repo": "QuantStack/Qwen-Image-Edit-2509-GGUF",
+        "match": "\\.gguf$",
+        "quants": [
+          "Q8_0",
+          "Q6_K",
+          "Q5_K_M",
+          "Q5_K_S",
+          "Q4_K_M",
+          "Q4_K_S",
+          "Q3_K_M",
+          "Q3_K_S",
+          "Q2_K"
+        ],
+        "fallback": "Q4_K_S"
+      },
+      {
+        "role": "llm",
+        "repo": "unsloth/Qwen2.5-VL-7B-Instruct-GGUF",
+        "match": "Q4_K_M\\.gguf$"
+      },
+      {
+        "role": "llm_vision",
+        "repo": "unsloth/Qwen2.5-VL-7B-Instruct-GGUF",
+        "match": "mmproj.*F16\\.gguf$"
+      },
+      {
+        "role": "vae",
+        "repo": "Comfy-Org/Qwen-Image_ComfyUI",
+        "match": "^split_files/vae/qwen_image_vae\\.safetensors$"
+      }
+    ],
+    "defaults": {
+      "steps": 20,
+      "cfg": 2.5,
+      "sampler": "euler",
+      "width": 1024,
+      "height": 1024,
+      "args": [
+        "--flow-shift",
+        "3",
+        "--offload-to-cpu"
+      ]
+    }
   }
 ]

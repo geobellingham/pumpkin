@@ -30,6 +30,8 @@ chat with tools, web search, scheduled agent tasks, voice and phone access, all 
   runs [stable-diffusion.cpp](https://github.com/leejet/stable-diffusion.cpp) with Z-Image Turbo (or a tiny
   model for computers without a graphics card) on the Images page. When the text model and the image model
   do not fit in memory together, the text model pauses while the picture is drawn and comes back by itself.
+  Add Qwen Image Edit and the chat can also change a picture you attach or one it drew ("make it night",
+  "remove the car"). It is a big model, so it is slower and part of it runs from RAM on most graphics cards.
 - **It remembers you.** Tell it your name, your work or how you like answers, and every new chat knows.
   The Memory page shows each fact so you can edit or delete it, or switch memory off. It stays on this
   device.
@@ -279,7 +281,7 @@ MCP config, reports folder and speed history on first start, and finds models in
 - More natural voices generated on your computer (Kokoro, Orpheus)
 - "Look at my screen" for vision models
 - Quality benchmarks in the app
-- Signed Windows and Mac builds
+- Signed Windows builds ([code signing policy](docs/CODE_SIGNING.md)) and Mac builds
 
 ## Contributing
 

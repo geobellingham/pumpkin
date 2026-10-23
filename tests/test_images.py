@@ -30,6 +30,15 @@ def tree(*files):
     return [{"type": "file", "path": p, "size": int(gb * GB)} for p, gb in files]
 
 
+def fixtures_png(w=64, h=64):
+    import struct
+    import zlib
+    rows = b"".join(b"\x00" + b"\x20\x30\x80" * w for _ in range(h))
+    chunk = lambda t, d: struct.pack(">I", len(d)) + t + d + struct.pack(">I", zlib.crc32(t + d) & 0xffffffff)
+    return (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 2, 0, 0, 0))
+            + chunk(b"IDAT", zlib.compress(rows)) + chunk(b"IEND", b""))
+
+
 class TestEngine(unittest.TestCase):
     NAMES = ["sd-master-abc1234-bin-win-cpu-x64.zip", "sd-master-abc1234-bin-win-cuda12-x64.zip",
              "sd-master-abc1234-bin-win-vulkan-x64.zip", "sd-master-abc1234-bin-win-rocm-7.1-x64.zip",
@@ -87,6 +96,37 @@ class TestBundles(unittest.TestCase):
         p = self.pick(15)
         self.assertEqual(p["llm"], "Qwen3-4B-Instruct-2507-Q4_K_M.gguf")
         self.assertEqual(p["vae"], "split_files/vae/ae.safetensors")
+
+    def test_the_editing_model_has_its_five_files(self):
+        q = next(b for b in images.catalog() if b["id"] == "qwen-image-edit")
+        self.assertEqual(images.kind(q), "edit")
+        self.assertEqual(images.kind(self.Z), "draw")
+        trees = {"QuantStack/Qwen-Image-Edit-2509-GGUF": tree(("Qwen-Image-Edit-2509-Q8_0.gguf", 21.8),
+                                                              ("Qwen-Image-Edit-2509-Q4_K_S.gguf", 12.0),
+                                                              ("Qwen-Image-Edit-2509-Q3_K_M.gguf", 9.7)),
+                 "unsloth/Qwen2.5-VL-7B-Instruct-GGUF": tree(("Qwen2.5-VL-7B-Instruct-Q4_K_M.gguf", 4.7),
+                                                             ("Qwen2.5-VL-7B-Instruct-Q8_0.gguf", 8.1),
+                                                             ("mmproj-F16.gguf", 1.3), ("mmproj-BF16.gguf", 1.3)),
+                 "Comfy-Org/Qwen-Image_ComfyUI": tree(("split_files/vae/qwen_image_vae.safetensors", 0.25),
+                                                      ("split_files/text_encoders/x.safetensors", 9))}
+        got = {f["role"]: f["path"] for f in images.resolve(q, trees, 15)}
+        self.assertEqual(sorted(got), ["diffusion_model", "llm", "llm_vision", "vae"])
+        self.assertEqual(got["diffusion_model"], "Qwen-Image-Edit-2509-Q4_K_S.gguf")   # the usual one when nothing fits
+        self.assertTrue(got["llm_vision"].startswith("mmproj"))
+        self.assertEqual(images.resolve(q, trees, 30)[0]["path"], "Qwen-Image-Edit-2509-Q8_0.gguf")
+
+    def test_picture_sizes_are_read_without_a_library(self):
+        import struct
+        import zlib
+        w, h = 40, 24
+        chunk = lambda t, d: struct.pack(">I", len(d)) + t + d + struct.pack(">I", zlib.crc32(t + d) & 0xffffffff)
+        png = (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 2, 0, 0, 0))
+               + chunk(b"IEND", b""))
+        self.assertEqual(images.dims(png), (40, 24))
+        jpg = (b"\xff\xd8\xff\xe0\x00\x04ab" + b"\xff\xc0\x00\x0b\x08" + struct.pack(">HH", 30, 50)
+               + b"\x01\x01\x11\x00")
+        self.assertEqual(images.dims(jpg), (50, 30))
+        self.assertIsNone(images.dims(b"not a picture"))
 
     def test_a_missing_file_says_which(self):
         trees = dict(self.TREES, **{"Comfy-Org/z_image_turbo": tree(("other.bin", 1))})
@@ -254,6 +294,56 @@ class TestDrawingInChat(unittest.TestCase):
         self.assertEqual(self.core.image_server.state, "ready")
         st, img = self.call("POST", "/pumpkin/api/images/stop")
         self.assertEqual(self.core.image_server.state, "off")
+
+    def test_chat_edits_the_picture_it_was_given(self):
+        q = images.bundle_info("qwen-image-edit")
+        folder = os.path.join(self.tmp, "image-models", "qwen-image-edit")
+        names = {"diffusion_model": "edit-Q4_K_S.gguf", "llm": "vl-Q4_K_M.gguf", "llm_vision": "mmproj-F16.gguf",
+                 "vae": "qwen_image_vae.safetensors"}
+        images.write_manifest(folder, q, [{"role": r, "repo": "x/y", "path": n, "size": 3} for r, n in names.items()])
+        for n in names.values():
+            with open(os.path.join(folder, n), "wb") as f:
+                f.write(b"abc")
+        self.core.settings.update({"image_swap": "never", "edit_model": ""})
+        st, state = self.call("GET", "/pumpkin/api/images")
+        qe = next(b for b in state["bundles"] if b["id"] == "qwen-image-edit")
+        self.assertEqual((qe["kind"], qe["installed"], qe["default"]), ("edit", True, True))
+        sdxs = next(b for b in state["bundles"] if b["id"] == "sdxs")
+        self.assertTrue(sdxs["default"])                                    # one default for drawing, one for editing
+        self.assertTrue(state["edit_ready"])
+
+        # no picture anywhere: the model is told
+        self.core.last_picture = None
+        for n in os.listdir(os.path.join(self.files, "images")):
+            os.remove(os.path.join(self.files, "images", n))
+        st, r = self.call("POST", "/tools", {"tool": "image_edit", "params": {"prompt": "make it night"}})
+        self.assertIn("no picture to change", r.get("error", ""))
+
+        # the user attached a picture: a chat request that carries it is noted
+        png = fixtures_png()
+        body = {"model": "x", "messages": [{"role": "user", "content": [
+            {"type": "text", "text": "make it night"},
+            {"type": "image_url", "image_url": {"url": "data:image/png;base64," + base64.b64encode(png).decode()}}]}]}
+        self.call("POST", "/v1/chat/completions", body)
+        st, r = self.call("POST", "/tools", {"tool": "image_edit", "params": {"prompt": "make it night"}}, 120)
+        self.assertEqual(st, 200, r)
+        self.assertTrue(r["plain_text_response"].splitlines()[-1].startswith("data:image/jpeg;base64,"), r)
+        calls = self.sd_calls()
+        start = [c["start"] for c in calls if "start" in c][-1]
+        for flag in ("--diffusion-model", "--llm", "--llm_vision", "--vae", "--flow-shift"):
+            self.assertIn(flag, start)
+        gen = [c["img_gen"] for c in calls if "img_gen" in c][-1]
+        self.assertEqual(base64.b64decode(gen["ref_images"][0]), png)
+        self.assertEqual((gen["width"], gen["height"]), (1024, 1024))       # a square picture stays square
+        saved = os.listdir(os.path.join(self.files, "images"))
+        self.assertTrue(any(n.startswith("edit-") for n in saved), saved)
+
+        # a drawing made since is what "it" means now; a named file works too
+        self.core.last_picture = (time.time() - 100, png)
+        st, r = self.call("POST", "/pumpkin/api/images/edit", {"prompt": "add snow", "source": "../../etc/passwd"})
+        self.assertEqual(st, 409)
+        self.assertIn("not in the user's Files", r.get("error", ""))
+        self.core.image_server.stop()
 
     def test_errors_reach_the_model(self):
         st, r = self.call("POST", "/tools", {"tool": "image_generate", "params": {"prompt": "  "}})

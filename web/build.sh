@@ -31,10 +31,10 @@ sed -i "s/bundleStrategy: 'single'/bundleStrategy: 'split'/" svelte.config.js
 # no service worker: its offline copy could keep an old app (or an empty page) on screen after an update
 sed -i "s#from 'virtual:pwa-register/svelte'#from '\$lib/pumpkin/no-sw'#" src/lib/hooks/use-pwa.svelte.ts
 grep -q "lib/pumpkin/no-sw" src/lib/hooks/use-pwa.svelte.ts
-# a picture the model drew (image_generate) shows in the chat itself instead of inside a folded tool block
+# a picture the model drew (image_generate, image_edit) shows in the chat itself instead of inside a folded tool block
 TB=src/lib/components/app/chat/ChatMessages/ChatMessage/ChatMessageToolCall/ChatMessageToolCallBlock.svelte
 sed -i "0,/^\timport ChatMessageToolCallBlockDefault/s##\timport PumpkinToolImage from '\$lib/pumpkin/components/ToolImage.svelte';\n&#" "$TB"
-sed -i "s#^{\#if isSearchCall}#{\#if section.toolName === 'image_generate'}\n\t<PumpkinToolImage {isStreaming} {section} />\n{:else if isSearchCall}#" "$TB"
+sed -i "s#^{\#if isSearchCall}#{\#if section.toolName === 'image_generate' || section.toolName === 'image_edit'}\n\t<PumpkinToolImage {isStreaming} {section} />\n{:else if isSearchCall}#" "$TB"
 grep -q "PumpkinToolImage {isStreaming}" "$TB"
 npm ci --no-audit --no-fund
 npm install --no-save --no-audit --no-fund qrcode-generator@1.4.4

@@ -56,6 +56,7 @@ DEFAULT_SETTINGS = {
     "doc_folders": [],                 # more folders to make searchable, besides the work folder
     "images": True,                    # the chat's model may draw pictures (Images page) once an image model is in
     "image_dir": os.path.join(USER_DIR, "image-models"),
+    "edit_model": "",                  # the picture-changing model the chat uses; empty = the first one installed
     "image_model": "",                 # the image model the chat draws with; empty = the first one installed
     "image_port": 8092,                # sd-server, only ever on 127.0.0.1
     "image_swap": "auto",              # auto: stop the text model while drawing when both do not fit | always | never
