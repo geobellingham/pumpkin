@@ -379,6 +379,10 @@ def _index_file(c, path, ms):
             parts = extract(path)
         except Exception as e:  # noqa: BLE001 - one odd file must not stop the rest
             error = str(e)[:300] or e.__class__.__name__
+    _store(c, path, ms, parts, error, ext)
+
+
+def _store(c, path, ms, parts, error, ext):
     chars = 0
     empty = 0
     for n, (place, text) in enumerate(parts, 1):
@@ -400,6 +404,76 @@ def _index_file(c, path, ms):
 STOP = set("a an and are as at be but by for from has have how i in is it its me my of on or our so that the "
            "their them there these they this to was we what when where which who why will with you your do does "
            "did can could should would about into than then also not no yes any all some".split())
+
+
+def scan_parts(path, ext, read_image):
+    """The pages of a scanned file as (place, text): read_image(bytes) -> text is the vision model.
+    A picture is one page. A scanned PDF is one picture per page (pypdf hands those over without drawing the page)."""
+    if ext in SCAN_EXT:
+        if ext in (".tif", ".tiff"):
+            raise ValueError("TIFF scans are not supported yet. Save the page as PNG or JPEG.")
+        with open(path, "rb") as f:
+            return [("", read_image(f.read()))]
+    if ext != ".pdf":
+        return []
+    if VENDOR not in sys.path:
+        sys.path.append(VENDOR)
+    from pypdf import PdfReader
+    r = PdfReader(path)
+    if r.is_encrypted:
+        r.decrypt("")
+    out, skipped = [], 0
+    for n, page in enumerate(r.pages[:MAX_SCAN_PAGES], 1):
+        text = ""
+        try:
+            for img in page.images:
+                try:
+                    text += read_image(img.data) + "\n"
+                except ValueError:
+                    skipped += 1                     # a format the vision model cannot take (JPEG 2000, fax)
+        except Exception:  # noqa: BLE001 - a page whose picture cannot be pulled out
+            skipped += 1
+        out.append((f"p. {n}", text.strip()))
+    if skipped and not any(t for _, t in out):
+        raise ValueError("The pictures in this PDF are in a format the vision model cannot read.")
+    return out
+
+
+MAX_SCAN_PAGES = 150
+
+
+def read_scans(settings, reader, progress=None, cancelled=lambda: False):
+    """Reads every indexed file that has no text (scans) through reader(path, ext) -> [(place, text)] and stores
+    what it finds, so the search and the model can use it. Returns how many files gave text."""
+    c = connect()
+    try:
+        todo = [r[0] for r in c.execute("SELECT path FROM files WHERE chars = 0 AND error IS NULL").fetchall()]
+        done = found = 0
+        for path in todo:
+            if cancelled():
+                break
+            ext = os.path.splitext(path)[1].lower()
+            try:
+                st = os.stat(path)
+            except OSError:
+                done += 1
+                continue
+            _state["current"] = os.path.basename(path)
+            error, parts = None, []
+            try:
+                parts = reader(path, ext)
+            except Exception as e:  # noqa: BLE001 - one bad scan must not stop the rest
+                error = str(e)[:300] or e.__class__.__name__
+            _drop(c, path)
+            _store(c, path, (st.st_mtime, st.st_size), parts, error, ext)
+            found += 1 if any((t or "").strip() for _, t in parts) else 0
+            done += 1
+            if progress:
+                progress(done, len(todo))
+        return found
+    finally:
+        _state["current"] = ""
+        c.close()
 
 
 def _terms(query):

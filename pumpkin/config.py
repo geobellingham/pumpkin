@@ -54,6 +54,10 @@ DEFAULT_SETTINGS = {
     "memory": True,                    # remember facts about you across chats (Memory page), kept on this device
     "doc_index": True,                 # keep your documents searchable for the model (Files page)
     "doc_folders": [],                 # more folders to make searchable, besides the work folder
+    "vision_model": "",                # the vision model that reads scans and describes pictures; empty = the smallest one you have
+    "vision_port": 8093,
+    "vision_relay": True,              # a text-only chat model gets a description of the pictures you attach
+    "vision_keep_min": 5,              # minutes the vision model stays loaded after its last job (0 = never frees)
     "keep_context": True,              # save the conversation a model has read when it stops and load it at the next start
     "images": True,                    # the chat's model may draw pictures (Images page) once an image model is in
     "image_dir": os.path.join(USER_DIR, "image-models"),

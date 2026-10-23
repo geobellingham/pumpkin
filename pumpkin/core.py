@@ -10,7 +10,7 @@ import threading
 import time
 
 from . import (__version__, agent, config, devices, docs, hardware, images, llama, mcp_local, memory, migrate, models,
-               recommend, remote, updates, workspace)
+               recommend, remote, updates, vision, workspace)
 
 
 def _python():
@@ -52,6 +52,7 @@ class Core:
         if not hardware.ANDROID:
             llama.kill_leftover()            # a model server left over from before still holds memory and the port
             images.kill_leftover()
+            vision.kill_leftover()
         self.server = llama.ServerManager(self.settings, self.library)
         self.server.persona_prompt = self.persona_prompt
         self.server.mcp_config = self.mcp_config
@@ -61,6 +62,8 @@ class Core:
         self.helper = devices.Helper(self)
         self.indexer = docs.Indexer(self.settings)
         self.image_server = images.ImageServer(self.settings)
+        self.vision = vision.Helper(self.settings, self.library)
+        self.vision_seen = {}                 # picture hash -> what the vision model said (a chat re-sends its pictures)
         self.image_lock = threading.Lock()
         self.pictures_seen = {}
         self.image_sizes = {}                # bundle id -> estimated GB before it is downloaded
@@ -686,7 +689,10 @@ class Core:
         return total / images.GiB
 
     def image_needs_swap(self, manifest):
-        """Whether the text model must make room while drawing. auto: only when both do not fit."""
+        return self.needs_swap(manifest.get("size_gb") or 0)
+
+    def needs_swap(self, size_gb):
+        """Whether the text model must make room for another model of this size. auto: only when both do not fit."""
         mode = self.settings["image_swap"]
         if self.server.state not in ("loading", "ready") or mode == "never":
             return False
@@ -697,7 +703,7 @@ class Core:
         vram = 0 if g.get("too_old") else (g.get("vram_total") or 0)
         ram = hw.get("ram_total") or 0
         text = self._text_model_gb() * 1.15 + 0.5            # its context (KV cache) needs room too
-        pic = (manifest.get("size_gb") or 0) * 1.1 + 1.0       # and the picture's working memory
+        pic = size_gb * 1.1 + 1.0                              # and the other model's working memory
         if vram >= 2 and not g.get("unified"):
             live = hardware.live()                           # what is really free now, whatever the estimate says
             if live.get("vram_total") and live.get("vram_used") is not None and not live.get("unified") \
@@ -790,6 +796,99 @@ class Core:
             f"The picture is shown to the user and saved as {r['path']} in their Files ({r['model']}, "
             f"{r['seconds']} s). Do not describe it or paste a link unless asked.\n"
             f"data:image/jpeg;base64,{b64}")}
+
+    # ---- the vision helper
+    def vision_run(self, fn, swap_ok=True):
+        """Runs fn(helper) with the vision model loaded. If the text model and the vision model do not fit
+        together, the text model pauses meanwhile and comes back by itself (like it does for pictures)."""
+        m = self.vision.model()
+        if not m:
+            raise RuntimeError("No vision model is installed. Download one with vision on the Models page "
+                               "(Gemma 3 4B is a good small one).")
+        if not llama.find_server(self.settings):
+            raise RuntimeError("llama-server was not found. Open Settings to download it.")
+        with self.image_lock:
+            was = None
+            if swap_ok and self.needs_swap(self.vision.size_gb(m)):
+                was = dict(self.server.preset)
+                self.server.stop()
+            self.vision.busy = True
+            try:
+                self.vision.start(m)
+                return fn(self.vision)
+            finally:
+                self.vision.busy = False
+                if was:
+                    self.vision.stop()
+                    try:
+                        self.server.start(was)
+                        self.server.wait_ready(timeout=900)
+                    except Exception:  # noqa: BLE001 - the answer is still worth returning
+                        pass
+
+    def text_model_sees(self):
+        """The running chat model takes pictures itself (it has a vision projector)."""
+        pre = self.server.preset or {}
+        return bool(pre.get("mmproj"))
+
+    def relay_images(self, body):
+        """A chat request carries pictures for a model that cannot see: swap each for the vision model's
+        description. Returns the new request body (bytes)."""
+        try:
+            req = json.loads(body.decode("utf-8"))
+        except (ValueError, UnicodeDecodeError):
+            return body
+        changed = False
+        for msg in req.get("messages") or []:
+            parts = msg.get("content") if isinstance(msg, dict) else None
+            if not isinstance(parts, list):
+                continue
+            for i, part in enumerate(parts):
+                if not isinstance(part, dict) or part.get("type") != "image_url":
+                    continue
+                url = (part.get("image_url") or {}).get("url") or ""
+                m = re.match(r"data:image/[a-z+]+;base64,(.+)", url, re.S)
+                if not m:
+                    continue
+                try:
+                    data = base64.b64decode(m.group(1))
+                except ValueError:
+                    continue
+                key = hashlib.sha1(data).hexdigest()
+                if key not in self.vision_seen:
+                    try:
+                        text = self.vision_run(lambda h, d=data: h.describe(d))
+                        self.vision_seen[key] = text or "(the vision model saw nothing to describe)"
+                    except (RuntimeError, ValueError, OSError) as e:
+                        self.vision_seen[key] = f"(could not be read: {e})"
+                    for k in list(self.vision_seen)[:-50]:
+                        self.vision_seen.pop(k, None)
+                parts[i] = {"type": "text", "text": f"[A picture the user attached. A vision model describes it: "
+                                                     f"{self.vision_seen[key]}]"}
+                changed = True
+        return json.dumps(req).encode() if changed else body
+
+    def vision_state(self):
+        st = self.vision.status()
+        st.update(relay=bool(self.settings["vision_relay"]), text_sees=self.text_model_sees(),
+                  scans=docs.status(self.settings).get("scans", 0),
+                  reading=next((j["id"] for j in self.jobs.values() if j["kind"] == "scans" and j["state"] == "running"),
+                               None))
+        return st
+
+    def read_scans(self):
+        """Reads every scanned page and photo of paper in the document index with the vision model."""
+        def fn(progress, cancelled, job):
+            def reader(path, ext):
+                return docs.scan_parts(path, ext, lambda data: self.vision_run(
+                    lambda h: h.describe(data, vision.TRANSCRIBE, 1500)))
+            return docs.read_scans(self.settings, reader, progress, cancelled)
+        if any(j["kind"] == "scans" and j["state"] == "running" for j in self.jobs.values()):
+            raise RuntimeError("Scans are already being read.")
+        if not self.vision.model():
+            raise RuntimeError("No vision model is installed. Download one with vision on the Models page "
+                               "(Gemma 3 4B is a good small one).")
+        return self.start_job("scans", fn)
 
     # ---- background jobs (llama-server download)
     def start_job(self, kind, fn, **extra):
@@ -904,6 +1003,8 @@ class Core:
             self.mcp_host.close()
         if self.image_server:
             self.image_server.stop()
+        if getattr(self, "vision", None):
+            self.vision.stop()
         try:
             workspace.fix_owner(self.settings)
             workspace.stop()
