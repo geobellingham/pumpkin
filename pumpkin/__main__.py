@@ -120,6 +120,36 @@ def close_window_browser(profile):
         pass
 
 
+def clean_window_profile(profile):
+    """Pumpkin's window keeps its own Edge profile. Older versions installed a service worker there, and Edge keeps
+    using it (and its cached copy of the app) even after Pumpkin stops installing one: the window then stays empty
+    until a hard reload. So the service worker folder is removed before every start, and the file caches after each
+    Pumpkin update. Chats and settings (Local Storage, IndexedDB) are left alone."""
+    default = os.path.join(profile, "Default")
+    if not os.path.isdir(default):
+        return
+    marker = os.path.join(profile, "pumpkin-version")
+    try:
+        seen = open(marker).read().strip()
+    except OSError:
+        seen = ""
+    gone = ["Service Worker"]
+    if seen != __version__:
+        gone += ["Cache", "Code Cache", "GPUCache"]
+    for name in gone:
+        path = os.path.join(default, name)
+        for _ in range(10):                      # Edge may still be letting go of the files for a moment
+            shutil.rmtree(path, ignore_errors=True)
+            if not os.path.exists(path):
+                break
+            time.sleep(0.3)
+    try:
+        with open(marker, "w") as f:
+            f.write(__version__)
+    except OSError:
+        pass
+
+
 def windows_window(url):
     """Edge (on every Windows 10 and 11) or Chrome in app mode: a window of its own, no tabs or address bar.
     A separate profile keeps Pumpkin's sign-in apart from your browsing."""
@@ -133,6 +163,7 @@ def windows_window(url):
         return False
     profile = os.path.join(config.DATA_DIR, "window")
     close_window_browser(profile)
+    clean_window_profile(profile)
     subprocess.Popen([exe, f"--app={url}", f"--user-data-dir={profile}", "--no-first-run",
                       "--no-default-browser-check", "--window-size=1280,860"],
                      stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)

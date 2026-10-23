@@ -259,6 +259,23 @@ class TestSpeculativeDecoding(unittest.TestCase):
         self.assertNotIn("--spec-default", self.cmd({}, ["-fa"]))                            # older llama-server
 
 
+class TestWindowProfile(unittest.TestCase):
+    def test_service_worker_always_and_caches_after_an_update(self):
+        from pumpkin import __main__ as cli
+        prof = tempfile.mkdtemp()
+        d = os.path.join(prof, "Default")
+        for name in ("Service Worker", "Cache", "Code Cache", "GPUCache", "IndexedDB", "Local Storage"):
+            os.makedirs(os.path.join(d, name, "x"))
+        cli.clean_window_profile(prof)
+        left = sorted(os.listdir(d))
+        self.assertEqual(left, ["IndexedDB", "Local Storage"])            # chats and settings stay
+        for name in ("Service Worker", "Cache"):
+            os.makedirs(os.path.join(d, name))
+        cli.clean_window_profile(prof)                                   # same version: only the service worker
+        self.assertEqual(sorted(os.listdir(d)), ["Cache", "IndexedDB", "Local Storage"])
+        cli.clean_window_profile(os.path.join(prof, "missing"))          # no profile yet: nothing to do
+
+
 class TestOldGpuIsLeftOut(unittest.TestCase):
     def test_device_list(self):
         from unittest import mock
