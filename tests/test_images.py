@@ -50,6 +50,10 @@ class TestEngine(unittest.TestCase):
         self.assertEqual(self.match("vulkan", "linux"), ["sd-master-abc1234-bin-Linux-Ubuntu-24.04-x86_64-vulkan.zip"])
         self.assertEqual(self.match("metal", "darwin"), ["sd-master-abc1234-bin-Darwin-macOS-15.7-arm64.zip"])
 
+    def test_a_mac_build_says_which_macos_it_needs(self):
+        self.assertEqual(images.mac_needs("sd-master-995-fd21ecf-bin-Darwin-macOS-26.0-arm64.zip"), 26)
+        self.assertEqual(images.mac_needs("sd-master-abc-bin-win-cpu-x64.zip"), 0)
+
     def test_newest_release_with_the_build(self):
         rels = [{"tag_name": "master-3", "draft": True, "assets": [{"name": self.NAMES[1]}]},
                 {"tag_name": "master-2", "assets": [{"name": self.NAMES[0]}]},

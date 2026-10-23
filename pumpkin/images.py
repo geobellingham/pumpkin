@@ -102,6 +102,21 @@ def pick_release(releases, backend, system=None, arch=None):
     return None, None
 
 
+def mac_version():
+    import platform
+    try:
+        return int((platform.mac_ver()[0] or "0").split(".")[0])
+    except ValueError:
+        return 0
+
+
+def mac_needs(asset_name):
+    """The macOS a Mac build was made on (its name says, e.g. ...-Darwin-macOS-26.0-arm64.zip); older systems cannot
+    load it."""
+    m = re.search(r"macOS-(\d+)", asset_name or "")
+    return int(m.group(1)) if m else 0
+
+
 def find_engine(settings):
     """The sd-server to use: the one set in Settings, or the newest downloaded one."""
     own = (settings["sd_server"] or "").strip()
@@ -147,6 +162,10 @@ def download_engine(backend, progress=None, cancelled=lambda: False):
         rel, asset = pick_release(releases, backend)
     if not rel:
         raise RuntimeError("No stable-diffusion.cpp build for this computer was found in its recent releases.")
+    need = mac_needs(asset["name"]) if sys.platform == "darwin" else 0
+    if need and 0 < mac_version() < need:
+        raise RuntimeError(f"stable-diffusion.cpp's Mac build needs macOS {need} or newer, and this Mac has macOS "
+                           f"{mac_version()}. Update macOS to make pictures here, or let a paired PC draw.")
     tag = rel.get("tag_name") or "latest"
     os.makedirs(SD_DIR, exist_ok=True)
     target = os.path.join(SD_DIR, f"{config.slug(tag)}-{backend}")
