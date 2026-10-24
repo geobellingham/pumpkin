@@ -15,6 +15,8 @@ chat with tools, web search, scheduled agent tasks, voice and phone access, all 
 
 ## What it does
 
+The [guide](docs/GUIDE.md) explains every feature and how to use it.
+
 - **One-click models.** Pick a model and Pumpkin chooses the best quant for your GPU and RAM, downloads it,
   makes a preset and starts it. Picks favour the most downloaded models from the uploaders most people trust
   (unsloth, ggml-org, bartowski and the model makers). A computer without a graphics card still gets models

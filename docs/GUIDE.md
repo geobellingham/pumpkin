@@ -1,0 +1,363 @@
+# Pumpkin guide
+
+Everything Pumpkin can do, and how to use each part. For installing, see the [README](../README.md#install).
+
+Pumpkin opens on the chat. The grid icon on the left (or the status chip at the top right) opens
+Pumpkin's own pages: Overview, Models, Presets, Agent, Code, Tasks, Files, Images, Memory, Prompts,
+Reports, Voice, Devices, Phone, Doctor and Settings.
+
+**Contents**
+
+- [Getting started](#getting-started)
+- [Models](#models)
+- [Presets](#presets)
+- [Chatting](#chatting)
+- [Tools: web search, files and more](#tools-web-search-files-and-more)
+- [Your documents](#your-documents)
+- [Pictures a model can't see](#pictures-a-model-cant-see)
+- [Drawing pictures](#drawing-pictures)
+- [Editing pictures](#editing-pictures)
+- [Short videos](#short-videos)
+- [Pumpkin Code](#pumpkin-code)
+- [Memory](#memory)
+- [Personas, agent limits and MCP servers](#personas-agent-limits-and-mcp-servers)
+- [Tasks on a schedule](#tasks-on-a-schedule)
+- [Saved prompts](#saved-prompts)
+- [Reports and the speed test](#reports-and-the-speed-test)
+- [Files](#files)
+- [Voice](#voice)
+- [Using it from your phone](#using-it-from-your-phone)
+- [Devices working together](#devices-working-together)
+- [Doctor](#doctor)
+- [Settings](#settings)
+- [Commands](#commands)
+- [Where things are kept](#where-things-are-kept)
+- [When something goes wrong](#when-something-goes-wrong)
+
+---
+
+## Getting started
+
+The first start walks you through four steps:
+
+1. **Your computer.** Pumpkin shows your GPU, video memory and RAM. If LM Studio, Ollama, the Hugging Face
+   cache, Jan or GPT4All already downloaded models, tick the ones to use. They are used where they are,
+   nothing is copied.
+2. **What for.** Chat, coding, research or agents. This sets the starting persona and which models are
+   recommended.
+3. **Model server.** Pumpkin downloads the llama.cpp build for your GPU (CUDA or Vulkan for NVIDIA, Vulkan
+   for AMD and Intel, Metal on a Mac, CPU otherwise).
+4. **Your model.** Pick one you have or install the recommended one. It downloads, starts and opens the chat.
+
+## Models
+
+**Models page.** Three parts:
+
+- **Recommended.** Models picked for your hardware, each with a fit label: *fits your GPU*, *runs with RAM
+  offload* (slower), *works, slowly* (processor only) or *too big*. Click **Install** and Pumpkin picks the
+  best quant that fits, downloads it, makes a preset and can start it.
+- **Find more models.** Search any GGUF on Hugging Face. Every file gets the same fit label, so you can see
+  which quant to take before downloading.
+- **Models on this computer.** Everything Pumpkin found, with its size. **Scan folders again** after you add
+  files by hand. Deleting a model that is running stops it first.
+
+Tips:
+- MoE models (names with A3B, A22B...) run well even when they don't fit the GPU, because only a small part
+  is used for each word.
+- A model with "VL" or a vision projector (mmproj file) can see pictures you attach.
+- Models that need a license accepted on huggingface.co need your Hugging Face token (Settings).
+
+## Presets
+
+A preset is a model plus how to run it. **Presets page > Edit** on a preset:
+
+| Setting | What it does |
+|---|---|
+| Context | How much text the model can hold at once (your chat, documents, tool results). More context uses more memory. The estimate below shows whether it still fits. |
+| Memory for context | The KV cache type. `q8_0` halves its memory with almost no loss; `q4_0` saves more but can hurt quality. |
+| Vision file | The mmproj file that lets the model see pictures. Pumpkin fills it in when it finds one. |
+| Tools | Gives the model your documents, memory, saving files, your devices, and (with Docker) commands in a sandbox. Turn this on for agents and tasks. |
+| Web search | Built-in web search and page reading. No API key. |
+| Faster replies | Speculative decoding: a small draft model guesses ahead and the big one checks. Same answers, often faster on dense models; it can be slower on MoE models, so measure with the speed test. |
+| Thinking budget | How long a thinking model may think before it answers. |
+| Unload when idle | Frees the GPU after this many minutes without use. |
+| GPU headroom | Memory kept free on the card for other programs. |
+| Extra llama-server options | Any other llama-server flag, for experts. |
+
+Start a preset with its play button, from the status chip, or just pick it in the chat's model list.
+
+If a model runs out of memory while loading, Pumpkin starts it again with a shorter context and keeps the
+setting that worked. If it crashes later, Pumpkin starts it again.
+
+## Chatting
+
+The chat is the llama.cpp web UI. Some things Pumpkin adds:
+
+- **Switch models** from the model list next to the send button. Pumpkin stops the current model and starts
+  the new one. Models on your paired devices show up here too, like *Qwen3 27B (on Gaming PC)*.
+- **Long chats survive restarts.** When a model stops (or pauses to draw a picture), Pumpkin saves what it
+  has read and loads it back next time, so a long chat doesn't have to be read again. Settings >
+  *Remember the conversation across restarts*.
+- **Attach files and pictures** with the paperclip. Pictures work with any model (see
+  [Pictures a model can't see](#pictures-a-model-cant-see)).
+
+## Tools: web search, files and more
+
+Turn on **Tools** in a preset (and **Web search** if you want it), then restart the model. In the chat,
+just ask. The model decides when to use a tool, and each call shows in the chat. What it can do:
+
+| Ask for | Tool it uses |
+|---|---|
+| "What's new with llama.cpp this week?" | Web search and page reading |
+| "What does my lease say about notice?" | Your documents ([below](#your-documents)) |
+| "Write this up as a Word file" | Saving files to `~/Pumpkin/files/outputs` (Word, web page, Markdown, CSV) |
+| "Remember that I work nights" | Memory |
+| "Draw a fox in the snow" | Pictures (with an image model installed) |
+| "Ask my Mac's model for a second opinion" | Devices (with a paired device) |
+| "Run this Python and plot the result" | The Docker sandbox (needs Docker) |
+
+Small models are less reliable with tools. Qwen3 and Qwen3.6, GLM, Gemma 3 and Devstral do well.
+
+## Your documents
+
+The model can search your PDFs, Word files, slides, spreadsheets, notes and emails, and says where each
+fact came from, like *(lease.pdf, p. 4)*.
+
+1. Put files in `~/Pumpkin/files`, or **Files page > Your documents > add a folder** to use one you already
+   have. Pumpkin reads them on your computer and keeps watching for changes.
+2. Start a model with **Tools** on.
+3. Ask: "What does my lease say about the notice period?" or "Summarise the bank PDFs and save it as a Word
+   file."
+
+The search box on the Files page tries a search without the model.
+
+**Scans and photos of paper.** Files with no text (a scanned PDF, a photo of a receipt) are counted as
+"pictures or scans without text". With a vision model installed, press **Read scans**: the vision model
+copies the text from each page so the search can find it. It takes a while for many pages.
+
+Pumpkin never changes your own files. It only writes into `~/Pumpkin/files/outputs`.
+
+## Pictures a model can't see
+
+Attach a picture to a chat with any model. If the model can see (it has a vision file), the picture goes
+straight to it. If it can't (for example Qwen3 80B), a small vision model looks first and tells it what's
+there, text included.
+
+1. Install a small vision model on the Models page, for example **Gemma 3 4B** (it comes with its vision
+   file).
+2. Check **Settings > Let text-only models see pictures** is on (it is by default).
+3. Chat with your text-only model, attach a picture, ask about it.
+
+If both models don't fit in memory together, the chat model pauses for a few seconds while the picture is
+read, then comes back by itself. The vision model frees its memory after 5 idle minutes.
+
+The chat model gets a description of the picture, so "what does this say" and "what's in this photo" work
+well, while fine visual detail can get lost. For that, use a model that sees for itself.
+
+## Drawing pictures
+
+1. **Images page > install the engine** (stable-diffusion.cpp, the right build for your GPU).
+2. Install an image model: **Z-Image Turbo** for photos, art and readable text, or **SDXS (tiny)** for
+   computers without a graphics card.
+3. Try it on the Images page, or in a chat with Tools on: "draw a red fox in the snow, watercolour".
+
+The picture shows in the chat and is saved in `Files/images`. Shapes: square, portrait, landscape, wide,
+tall (ask for them in words).
+
+**Memory.** If the text model and the image model don't fit together, the text model pauses while the
+picture is drawn and comes back by itself. Images page > Memory sets this to *When needed* (default),
+*Always* or *Never*. The image model frees its memory after a few idle minutes.
+
+## Editing pictures
+
+Install **Qwen Image Edit** on the Images page (about 20 GB with its parts). Then, in a chat with Tools on:
+
+- Attach a photo and say what to change: "make it night", "remove the car", "change the sign to say OPEN".
+- Or change a picture it just drew: "now add snow".
+
+The new picture is saved in `Files/images` with a name starting with `edit-`. It's a big model, so expect
+minutes, and on most graphics cards part of it runs from RAM.
+
+## Short videos
+
+Install **Wan 2.2 (5B)** on the Images page. Then, in a chat with Tools on:
+
+- "Make a 3 second video of a pumpkin rolling down a hill."
+- Attach a picture and say "make a video of this, the camera slowly moves in" to bring it to life.
+
+The clip plays in the chat and is saved in `Files/videos`. Clips are 1 to 5 seconds (2 by default). It is
+slow: a few seconds of video take several minutes even on a good graphics card, and the text model pauses
+meanwhile if memory is short.
+
+## Pumpkin Code
+
+A coding agent that works in a project folder: it reads the code, changes files, runs commands and tests,
+and keeps going until the job is done.
+
+**In the app:** Code page.
+
+1. Pick the project folder (type it, use **Browse**, or click a recent one).
+2. Pick how much it may do on its own:
+   - **Ask first** (default): it asks before every file change and every command.
+   - **Edit freely**: changes files without asking, asks before commands.
+   - **Never ask**: works on its own. Risky commands (sudo, git push, deleting folders, git reset --hard)
+     still ask.
+3. Pick the model, write the job ("fix the failing test", "add a dark mode toggle to settings") and
+   **Start**.
+
+While it works you see what it reads, each change as a diff, each command with its output, and its plan.
+When it asks, answer **Yes**, **Yes to all** (for this session), or type what to do instead and press **No**.
+**Undo** takes back the last file change (press again for the one before). The square button stops it.
+
+**In a terminal:** go to the project folder and run
+
+```sh
+pumpkin code                       # start, then type the job
+pumpkin code "fix the failing test"
+pumpkin code -c                    # continue the last session in this folder
+pumpkin code -m coder              # use a preset whose name contains "coder"
+pumpkin code --mode edits          # ask, edits or auto
+```
+
+At the `>` prompt, type the job. Answer questions with `y` (yes), `a` (always) or `n`, or type what to do
+instead. Ctrl+C stops it. Commands: `/mode ask|edits|auto`, `/undo`, `/todo`, `/model NAME`, `/new`,
+`/help`, `/quit`.
+
+Sessions are shared: one started in the terminal shows on the Code page, so you can follow it and answer
+from your phone. With notifications on, you get one when it is waiting for you.
+
+Tips:
+- Put an `AGENTS.md` (or `CLAUDE.md`, `PUMPKIN.md`) in the project with how to build and test it. Pumpkin
+  Code reads it first.
+- Use a model that is good at tool calls (Qwen3 Coder 30B A3B, Qwen3.6, GLM, Devstral) and at least 32k of
+  context. Long sessions are summarised by themselves when they get close to the limit.
+- It can only touch files inside the project folder. Commands run on your computer as you (not in the
+  Docker sandbox), which is why it asks first by default.
+
+## Memory
+
+Tell the model things about you ("I'm a nurse", "keep answers short") and it saves them. Every new chat
+starts with them. **Memory page**: see every fact, edit, forget, add your own, or switch memory off. It is
+one file on your computer. The model is told never to save passwords or card numbers.
+
+## Personas, agent limits and MCP servers
+
+**Agent page:**
+
+- **Personas** are the system prompt every chat and task starts with. Pick one, edit them, or add your own.
+- **Agent limits**: how many tool steps a task may take, and how much of each tool result is kept.
+- **MCP servers**: add extra tools in the same JSON format as Cursor and Claude Desktop (for example the
+  filesystem or GitHub servers). Restart the model to load them. They run as you, outside the sandbox.
+
+## Tasks on a schedule
+
+Agent jobs that run by themselves, like "every weekday at 8:00, brief me on the news".
+
+1. **Tasks page > Start from a template** (news, security, weather, price watch, a daily lesson) or make
+   your own. Words in angle brackets need your details.
+2. Set the time, days and preset. Tick *Stop the model afterwards* to free the GPU when it's done.
+3. Save. **Run** tries it straight away.
+
+Each run saves a Markdown report (Reports page) and can notify your phone. For tasks to run with the
+window closed, turn on **Settings > Start Pumpkin when I log in**.
+
+## Saved prompts
+
+**Prompts page**: prompts you use often. Put one in the chat box, or run it in the background as a task.
+
+## Reports and the speed test
+
+**Reports page**: every task run, readable and deletable. The **speed test** measures how fast the running
+model reads and writes, so you can compare presets (context sizes, quants, faster replies on or off).
+
+## Files
+
+**Files page**: the AI's work folder, `~/Pumpkin/files` (the sandbox sees it as `/workspace`). View,
+download, upload and delete files, from your phone too. Pictures are in `images`, videos in `videos`,
+documents the model writes in `outputs`. Files the AI made are only downloaded, never opened as pages
+inside Pumpkin.
+
+## Voice
+
+Tap the microphone in the chat for hands-free voice chat: you talk, it answers out loud, sentence by
+sentence as the answer streams. **Voice page**: language, and *Read typed replies aloud*.
+
+## Using it from your phone
+
+**Phone page**, then pick:
+
+- **Home network**: nothing to install, works on your Wi-Fi. Not encrypted, so only on a network you trust.
+- **Anywhere (Tailscale)**: encrypted and works away from home. Pumpkin ticks off each setup step as you do
+  it.
+
+Scan the QR code with the phone's camera. It signs the phone in (the code works once, for ten minutes).
+*Share > Add to Home Screen* gives you an app icon.
+
+**Phone notifications**: install the free ntfy app, subscribe to a topic, paste the topic on the Phone page.
+Tasks then push a notification when they finish.
+
+Pumpkin also runs on Android by itself, models included. See the [README](../README.md#android-beta).
+
+## Devices working together
+
+Pair the Pumpkins on your PC, Mac and phone, and one model can use the others.
+
+1. On the helper: **Devices > Let my other devices use this one**, copy the code.
+2. On the device you chat on: **Devices > Add a device**, paste the code.
+3. The helper's models appear in your chat's model list. Pick one to chat with it directly.
+4. Restart your model with **Tools** on. It gets `devices_list` and `devices_ask` and can hand work to a
+   device by itself, or when you ask: "have my Mac write the first draft, then check it".
+
+The devices need to reach each other: same Wi-Fi, or Tailscale on both. A helper only gives answers: no
+access to your files, settings or chats. **Make a new code** cuts off every device paired so far.
+
+## Doctor
+
+**Doctor page** (or `pumpkin doctor` in a terminal): checks the GPU driver, Vulkan or CUDA, Docker, disk
+space, Tailscale and more, and gives the command that fixes each problem.
+
+## Settings
+
+- **Chat settings**: sampling, display and tools in the chat.
+- **Folders**: where models are found, where new ones download, where reports go.
+- **Behaviour**: keep the computer awake while a model is loaded, remember conversations across restarts,
+  let text-only models see pictures, start the last model automatically, notifications, start Pumpkin at
+  login.
+- **Performance and network**: CPU threads, ports.
+- **Hugging Face token**: only for models that need a license accepted.
+- **Signed-in devices**: see every browser and phone signed in, sign one out, or make a new access key.
+- **Updates**: Pumpkin checks GitHub twice a day and updates in one click.
+- **Privacy**: the full list of what Pumpkin sends over the network and when. No accounts, analytics or
+  crash reports.
+
+## Commands
+
+```text
+pumpkin                     open Pumpkin (starts it in the background if needed)
+pumpkin code                Pumpkin Code in this folder (see above)
+pumpkin link                print the sign-in links for this computer and your phone
+pumpkin doctor              check the setup
+pumpkin service install     start Pumpkin when you log in
+pumpkin stop                stop Pumpkin and the model
+pumpkin --version           which version you have
+```
+
+## Where things are kept
+
+| What | Linux and Mac | Windows |
+|---|---|---|
+| Settings, memory, access key | `~/.config/pumpkin` | `%APPDATA%\pumpkin` |
+| Models, files, reports | `~/Pumpkin` | `%USERPROFILE%\Pumpkin` |
+| llama.cpp, image engine, saved conversations, Code sessions, document index | `~/.local/share/pumpkin` | `%LOCALAPPDATA%\pumpkin` |
+| Logs | `~/.local/state/pumpkin` | `%LOCALAPPDATA%\pumpkin\state` |
+
+## When something goes wrong
+
+| Problem | Try |
+|---|---|
+| The model won't start / out of memory | Pumpkin already retried with a shorter context. Pick a smaller quant, lower the context, or use `q8_0` memory for context in the preset. |
+| The model doesn't use tools | Turn on **Tools** in the preset and restart the model. Try a model that is better with tools. |
+| No picture: "not enough free memory" | Images page > Memory > *Always*, so the text model always pauses while drawing. |
+| A paired device's model doesn't call `devices_ask` | Restart the chat model after pairing, so it gets the tool. |
+| The phone can't connect | Same Wi-Fi in home-network mode; with Tailscale, check both are signed in. The Phone page shows what's missing. |
+| Anything else | The Doctor page. If it doesn't help, open an issue on GitHub with what it shows. |
