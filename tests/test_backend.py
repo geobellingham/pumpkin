@@ -293,6 +293,7 @@ class TestServer(unittest.TestCase):
         self.call("POST", "/pumpkin/api/llama/start", {"preset": pre["id"]})
         self.assertTrue(self.wait(ready))
 
+    @unittest.skipIf(os.name == "nt", "the fake llama-server is a Python script behind a .cmd file on Windows")
     def test_4d_a_leftover_server_is_stopped_at_start(self):
         import subprocess
         import sys
