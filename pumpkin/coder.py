@@ -372,6 +372,7 @@ class Session:
         self.cancel = False
         self.created = self.updated = time.time()
         self.tokens = 0
+        self._sock = None                    # the connection to the model while it answers (Stop cuts it)
         self.phase = {"kind": "idle", "label": "", "since": time.time()}   # what the model is doing right now
         self.streamed = 0                    # pieces of the answer written in the current step
         self._answer = threading.Event()
@@ -455,6 +456,13 @@ class Session:
 
     def stop(self):
         self.cancel = True
+        sock = getattr(self, "_sock", None)
+        if sock is not None:
+            # the model may be reading a long prompt and sending nothing yet: cut the connection so it stops now
+            try:
+                sock.shutdown(socket.SHUT_RDWR)
+            except OSError:
+                pass
         if self.pending:
             self.answer(self.pending["id"], "no", "Stopped by the user.")
 
@@ -509,6 +517,9 @@ class Session:
                 try:
                     msg = self._complete(tools=True)
                     cut = 0
+                    if self.cancel:
+                        self.emit("info", text="Stopped.")
+                        break
                 except _Hung:
                     hang += 1
                     if hang > 2:
@@ -705,9 +716,19 @@ class Session:
         conn.request("POST", "/v1/chat/completions", body=body,
                      headers={"Content-Type": "application/json", **llama.auth_header()})
         sock = conn.sock                          # the response takes the connection over: keep the socket to cut it
+        self._sock = sock                         # Stop cuts it
         self.set_phase("summarising" if messages is not None else "reading",
                        "Summarising the earlier work" if messages is not None else "Reading the conversation")
-        r = conn.getresponse()
+        try:
+            if self.cancel:
+                raise ConnectionAbortedError("stopped")
+            r = conn.getresponse()
+        except (OSError, http.client.HTTPException):
+            self._sock = None
+            conn.close()
+            if self.cancel:
+                return {"content": "", "thinking": "", "tool_calls": []}
+            raise
         if r.status != 200:
             raw = r.read().decode("utf-8", "replace")
             try:
@@ -807,9 +828,10 @@ class Session:
                                            (f"Preparing {nm}" if nm else "Choosing what to do next"))
                     finish = ch.get("finish_reason") or finish
         except (OSError, http.client.HTTPException):
-            if not hung[0]:
+            if not hung[0] and not self.cancel:
                 raise
         finally:
+            self._sock = None
             done.set()
             conn.close()
             self.live = None

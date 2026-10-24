@@ -284,6 +284,19 @@ class TestSession(unittest.TestCase):
         st, r = self.call("POST", "files/artifact", {"content": "<html><title>My page</title></html>", "language": "html"})
         self.assertEqual((st, r.get("path")), (200, "artifacts/My page.html"))
 
+    def test_i_stop_works_while_the_model_is_still_reading(self):
+        p = self.start_model()
+        st, v = self.call("POST", "code", {"root": self.proj, "mode": "auto", "preset": p["id"], "text": "Say Hi SLOWREAD"})
+        sid = v["id"]
+        self.wait_for(sid, lambda v: v.get("phase") and v["phase"]["kind"] == "reading", timeout=20)
+        time.sleep(0.5)
+        t0 = time.time()
+        self.call("POST", f"code/{sid}/stop", {})
+        v = self.wait_for(sid, lambda v: v["state"] == "idle", timeout=10)
+        self.assertLess(time.time() - t0, 5)                         # right away, not when the model answers
+        self.assertIsNone(v["error"])
+        self.assertIn("Stopped.", [e.get("text") for e in v["events"] if e["kind"] == "info"])
+
     def test_f_a_file_is_written_in_parts(self):
         t = coder.Tools(self.proj, web=False)
         full, old, new = t.plan_write("big.css", "a{}\n")

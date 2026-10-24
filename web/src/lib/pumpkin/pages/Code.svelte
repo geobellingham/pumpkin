@@ -220,10 +220,19 @@
 		poll();
 	}
 
+	let stopping = $state(false);
+
 	async function stop() {
-		if (view) await pumpkin.run(() => api(`code/${view!.id}/stop`, { body: {} }));
+		if (!view || stopping) return;
+		stopping = true;
+		await pumpkin.run(() => api(`code/${view!.id}/stop`, { body: {} }));
 		poll();
 	}
+
+	// the stop went through once the session is no longer busy
+	$effect(() => {
+		if (stopping && view && view.state !== 'running' && view.state !== 'waiting') stopping = false;
+	});
 
 	async function remove(id: string) {
 		await pumpkin.run(() => api(`code/${id}`, { method: 'DELETE' }), 'Session deleted');
@@ -455,7 +464,10 @@
 		</header>
 
 		<div aria-live="polite" class={['flex items-center gap-2 border-b border-border/60 px-3 py-2 text-xs md:px-4', busy ? 'bg-muted/40' : 'text-muted-foreground']}>
-			{#if view.state === 'waiting'}
+			{#if stopping}
+				<span class="size-2 shrink-0 animate-pulse rounded-full bg-muted-foreground"></span>
+				<span class="font-medium">Stopping</span>
+			{:else if view.state === 'waiting'}
 				<span class="size-2 shrink-0 rounded-full bg-sky-500"></span>
 				<span class="font-medium">Waiting for your answer</span>
 			{:else if busy && view.phase}
@@ -578,7 +590,9 @@
 				rows="1"
 			></textarea>
 			{#if busy}
-				<Button aria-label="Stop" class="size-10 shrink-0 rounded-full" onclick={stop} size="icon" type="button" variant="secondary"><Square class="h-4 w-4" /></Button>
+				<Button aria-label={stopping ? 'Stopping' : 'Stop'} class="size-10 shrink-0 rounded-full" disabled={stopping} onclick={stop} size="icon" type="button" variant="secondary">
+					{#if stopping}<LoaderCircle class="h-4 w-4 animate-spin" />{:else}<Square class="h-4 w-4" />{/if}
+				</Button>
 			{:else}
 				<Button aria-label="Send" class="size-10 shrink-0 rounded-full" disabled={!message.trim()} size="icon" type="submit"><ArrowUp class="h-4 w-4" /></Button>
 			{/if}
