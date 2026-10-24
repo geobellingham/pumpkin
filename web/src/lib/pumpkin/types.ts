@@ -208,6 +208,8 @@ export interface Check {
 export interface Settings {
 	autostart_model: boolean;
 	check_updates: boolean;
+	code_max_steps: number;
+	code_max_tokens: number;
 	checklist_hidden: boolean;
 	compact_chat: boolean;
 	doc_folders: string[];

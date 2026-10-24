@@ -239,8 +239,9 @@ When it asks, answer **Yes**, **Yes to all** (for this session), or type what to
 **Undo** takes back the last file change (press again for the one before). The square button stops it.
 A bar above the conversation says what the model is doing right now (reading, thinking, writing, running a
 command, waiting for you), for how long and how many tokens, and the header shows how full the model's memory
-is. If an answer is cut off while it writes a big file, Pumpkin Code asks it to write smaller pieces and goes on
-by itself.
+is. There is no limit on how long one answer may be (Agent page > *Longest answer in Pumpkin Code*, 0 = as long as
+it needs). If a model runs out of context in the middle of a file, Pumpkin Code asks it to send the file in parts
+and goes on by itself.
 
 **In a terminal:** go to the project folder and run
 

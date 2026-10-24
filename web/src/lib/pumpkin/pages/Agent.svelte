@@ -131,6 +131,12 @@
 				<Field hint="Longer tool results are cut to keep the context small." label="Characters kept per tool result">
 					<Input bind:value={settings.tool_chars} min="1000" onchange={() => saveSettings({ tool_chars: Number(settings!.tool_chars) })} step="1000" type="number" />
 				</Field>
+				<Field hint="Pumpkin Code: the most the model may write in one answer, in tokens. 0 means no limit: it writes as long as it needs, until its context is full." label="Longest answer in Pumpkin Code">
+					<Input bind:value={settings.code_max_tokens} min="0" onchange={() => saveSettings({ code_max_tokens: Number(settings!.code_max_tokens) })} step="1024" type="number" />
+				</Field>
+				<Field hint="Pumpkin Code: tool calls it makes for one request before it checks in with you." label="Steps per request in Pumpkin Code">
+					<Input bind:value={settings.code_max_steps} min="1" onchange={() => saveSettings({ code_max_steps: Number(settings!.code_max_steps) })} type="number" />
+				</Field>
 				<Field hint="The Docker image the model's commands run in. It is created fresh for each model start." label="Sandbox image">
 					<Input bind:value={settings.sandbox_image} onchange={() => saveSettings({ sandbox_image: settings!.sandbox_image })} />
 				</Field>

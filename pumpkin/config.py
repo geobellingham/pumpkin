@@ -63,7 +63,7 @@ DEFAULT_SETTINGS = {
     "vision_keep_min": 5,              # minutes the vision model stays loaded after its last job (0 = never frees)
     "code_recent": [],                 # project folders Pumpkin Code worked in, newest first
     "code_max_steps": 80,              # tool calls Pumpkin Code makes for one request before it checks in
-    "code_max_tokens": 16384,          # longest single answer in Pumpkin Code (never above a third of the context)
+    "code_max_tokens": 0,              # longest single answer in Pumpkin Code in tokens; 0 = as long as it needs
     "keep_context": True,              # save the conversation a model has read when it stops and load it at the next start
     "images": True,                    # the chat's model may draw pictures (Images page) once an image model is in
     "image_dir": os.path.join(USER_DIR, "image-models"),

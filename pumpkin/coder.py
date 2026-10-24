@@ -90,9 +90,8 @@ class Tools:
             _tool("edit", "Change a file: replace old (exact text, including spaces and indentation, unique in the "
                           "file) with new. Read the file first. Set all to replace every occurrence.",
                   {"path": s, "old": s, "new": s, "all": {"type": "boolean"}}, ["path", "old", "new"]),
-            _tool("write", "Create a file, or replace a whole file, with content. Prefer edit for changes. Keep each "
-                           "call under about 250 lines: for a longer file write the first part, then add the rest "
-                           "with append set to true, one part per call.",
+            _tool("write", "Create a file, or replace a whole file, with content. Prefer edit for changes. Set append "
+                           "to true to add content to the end of a file that exists.",
                   {"path": s, "content": s, "append": {"type": "boolean"}}, ["path", "content"]),
             _tool("bash", f"Run a command in the project folder with {self.shell_name} and get its output: build, "
                           f"test, git, install. Not for long-running servers. Timeout in seconds (default 120).",
@@ -503,14 +502,13 @@ class Session:
                 except _CutOff as e:
                     cut += 1
                     if cut > 3:
-                        raise RuntimeError("The model keeps writing more than fits in one answer. Ask for the file in "
-                                           "smaller parts, or raise the longest answer in Settings.") from e
-                    self.emit("info", text="The model's answer was too long and was cut off while it wrote a file. "
-                                           "It is trying again in smaller pieces.")
+                        raise RuntimeError("The model keeps running out of room while it writes. A bigger context for this "
+                                           "model (Presets) gives it more room.") from e
+                    self.emit("info", text="The model ran out of room in the middle of writing a file. It is trying "
+                                           "again, writing the file in parts.")
                     self.messages.append({"role": "user", "content": "(Your last answer was cut off because it was "
-                                          "too long, so nothing was written. Write less per call: at most about 250 "
-                                          "lines, and for a bigger file send the first part with write, then each "
-                                          "next part with write and append set to true.)"})
+                                          "too long, so nothing was written. Send the file in parts: the first part "
+                                          "with write, then each next part with write and append set to true.)"})
                     continue
                 calls = msg.get("tool_calls") or []
                 entry = {"role": "assistant", "content": msg.get("content") or ""}
@@ -661,8 +659,10 @@ class Session:
     # ---- the model
     def _payload(self, tools):
         p = {"messages": self.messages, "stream": True, "stream_options": {"include_usage": True},
-             "temperature": 0.3, "top_p": 0.95,
-             "max_tokens": self.m.answer_limit()}
+             "temperature": 0.3, "top_p": 0.95}
+        limit = self.m.answer_limit()
+        if limit:                                # no limit: the model writes as long as it needs, until the context is full
+            p["max_tokens"] = limit
         if tools:
             p["tools"] = self.tools.definitions()
             p["parallel_tool_calls"] = True
@@ -949,10 +949,11 @@ class Manager:
             return 0
 
     def answer_limit(self):
-        """The longest single answer: what Settings says, but never more than a third of the model's memory."""
-        want = int(self.settings_get("code_max_tokens", 16384))
-        ctx = self.ctx()
-        return max(1024, min(want, ctx // 3) if ctx else want)
+        """The longest single answer in tokens, or 0 for no limit (the default)."""
+        try:
+            return max(0, int(self.settings_get("code_max_tokens", 0)))
+        except (TypeError, ValueError):
+            return 0
 
     def tool_limit(self):
         ctx = self.ctx() or 16384
@@ -976,8 +977,7 @@ class Manager:
             "- Look before you act: find the right code with ls, glob and grep, and read files before you change "
             "them. Never guess what a file contains.\n"
             "- Change files with edit (exact old text, copied from read, then the new text). Use write only for new "
-            "files or full rewrites. Never put more than about 250 lines in one call: write a big file in parts "
-            "(the first part, then append=true for each next part), or your answer gets cut off.\n"
+            "files or full rewrites.\n"
             "- Make the change the user asked for and nothing more. Keep the project's style.\n"
             "- After changing code, check it: run the tests, a build, or the program, and fix what fails.\n"
             "- For a job with several steps, keep a todo list with the todo tool and mark steps done as you go.\n"

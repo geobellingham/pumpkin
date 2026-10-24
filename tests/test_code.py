@@ -238,7 +238,7 @@ class TestSession(unittest.TestCase):
         sid = v["id"]
         v = self.wait_for(sid, lambda v: v["state"] == "idle" and any(e["kind"] == "done" for e in v["events"]), timeout=40)
         self.assertIsNone(v["error"])                                 # it did not stop with an error
-        self.assertTrue(any("cut off" in str(e.get("text")) for e in v["events"] if e["kind"] == "info"))
+        self.assertTrue(any("ran out of room" in str(e.get("text")) for e in v["events"] if e["kind"] == "info"))
         with open(os.path.join(self.proj, "hello.py")) as f:
             self.assertEqual(f.read(), 'print("Hi")\n')
         s = self.core.code.get(sid)
