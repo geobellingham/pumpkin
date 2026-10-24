@@ -320,6 +320,7 @@ class TestServer(unittest.TestCase):
         self.assertTrue(ready())                              # it came back after making room
         self.core.vision.stop()
 
+    @unittest.skipIf(os.name == "nt", "the fake llama-server is a Python script behind a .cmd file on Windows")
     def test_4d_a_leftover_server_is_stopped_at_start(self):
         import subprocess
         import sys
