@@ -58,6 +58,9 @@ DEFAULT_SETTINGS = {
     "vision_port": 8093,
     "vision_relay": True,              # a text-only chat model gets a description of the pictures you attach
     "vision_keep_min": 5,              # minutes the vision model stays loaded after its last job (0 = never frees)
+    "code_recent": [],                 # project folders Pumpkin Code worked in, newest first
+    "code_max_steps": 80,              # tool calls Pumpkin Code makes for one request before it checks in
+    "code_max_tokens": 8192,           # longest single answer in Pumpkin Code
     "keep_context": True,              # save the conversation a model has read when it stops and load it at the next start
     "images": True,                    # the chat's model may draw pictures (Images page) once an image model is in
     "image_dir": os.path.join(USER_DIR, "image-models"),

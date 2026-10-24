@@ -9,7 +9,7 @@ import sys
 import threading
 import time
 
-from . import (__version__, agent, config, devices, docs, hardware, images, llama, mcp_local, memory, migrate, models,
+from . import (__version__, agent, coder, config, devices, docs, hardware, images, llama, mcp_local, memory, migrate, models,
                recommend, remote, updates, vision, workspace)
 
 
@@ -63,6 +63,7 @@ class Core:
         self.indexer = docs.Indexer(self.settings)
         self.image_server = images.ImageServer(self.settings)
         self.vision = vision.Helper(self.settings, self.library)
+        self.code = coder.Manager(self)
         self.vision_seen = {}                 # picture hash -> what the vision model said (a chat re-sends its pictures)
         self.image_lock = threading.Lock()
         self.pictures_seen = {}
@@ -865,6 +866,13 @@ class Core:
             f"The picture is shown to the user and saved as {r['path']} in their Files ({r['model']}, "
             f"{r['seconds']} s). Do not describe it or paste a link unless asked.\n"
             f"data:image/jpeg;base64,{b64}")}
+
+    def code_waiting(self, session, data):
+        """Pumpkin Code waits for a yes: tell the user, who may have stepped away."""
+        if not self.settings["notifications"]:
+            return
+        what = f"Change {data.get('path')}?" if data.get("path") else f"Run {str(data.get('command', ''))[:80]}?"
+        agent.notify(self.settings, f"Pumpkin Code is waiting: {session.title[:40]}", what)
 
     # ---- the vision helper
     def vision_run(self, fn, swap_ok=True):

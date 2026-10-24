@@ -281,6 +281,11 @@ def cmd_service(args):
         print(json.dumps(service.status(), indent=2))
 
 
+def cmd_code(args):
+    from . import code_cli
+    code_cli.run(args)
+
+
 def urllib_post(name, body=None):
     req = urllib.request.Request(f"{base_url()}/pumpkin/api/{name}", data=json.dumps(body or {}).encode(),
                                  headers={"Content-Type": "application/json", "X-Pumpkin": "1",
@@ -324,10 +329,17 @@ def main(argv=None):
     sub.add_parser("stop", help="stop Pumpkin and the model")
     sub.add_parser("up", help="start Pumpkin in the background without opening it")
     sub.add_parser("url", help="print this computer's sign-in link")
+    c = sub.add_parser("code", help="Pumpkin Code: a coding agent in this folder, with your local model")
+    c.add_argument("prompt", nargs="*", help="what to do (or type it once it starts)")
+    c.add_argument("-d", "--dir", help="the project folder (default: this one)")
+    c.add_argument("-c", "--continue", dest="cont", action="store_true", help="continue the last session here")
+    c.add_argument("-m", "--model", help="the preset to use (part of its name)")
+    c.add_argument("--mode", choices=["ask", "edits", "auto"], default="ask",
+                   help="ask before changes (default), change files freely, or never ask")
     args = ap.parse_args(argv)
     config.ensure_dirs()
     {"serve": cmd_serve, "open": cmd_open, "link": cmd_link, "doctor": cmd_doctor, "service": cmd_service,
-     "stop": cmd_stop, "up": cmd_up, "url": cmd_url, None: cmd_open}[args.cmd](args)
+     "stop": cmd_stop, "up": cmd_up, "url": cmd_url, "code": cmd_code, None: cmd_open}[args.cmd](args)
 
 
 if __name__ == "__main__":

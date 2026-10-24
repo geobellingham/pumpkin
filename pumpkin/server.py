@@ -65,6 +65,27 @@ def _read_body(h):
     return h.rfile.read(n) if n else b""
 
 
+def _folders(path):
+    """The folders in a folder of this computer, for picking a project."""
+    base = os.path.realpath(os.path.expanduser(path or "~"))
+    if not os.path.isdir(base):
+        raise ApiError(f"{path} is not a folder.", 404)
+    out = []
+    try:
+        names = sorted(os.listdir(base), key=str.lower)
+    except OSError as e:
+        raise ApiError(f"Cannot open {base}: {e}", 403)
+    for n in names:
+        if n.startswith(".") or n in ("node_modules", "__pycache__"):
+            continue
+        fp = os.path.join(base, n)
+        if os.path.isdir(fp):
+            out.append({"name": n, "path": fp, "git": os.path.isdir(os.path.join(fp, ".git"))})
+    parent = os.path.dirname(base)
+    return {"path": base, "parent": parent if parent != base else None, "folders": out[:400],
+            "git": os.path.isdir(os.path.join(base, ".git"))}
+
+
 class ApiError(Exception):
     def __init__(self, msg, code=400):
         super().__init__(msg)
@@ -804,6 +825,49 @@ class Web:
                     return {"job": core.read_scans()}
                 except RuntimeError as e:
                     raise ApiError(str(e), 409)
+
+        # ---- Pumpkin Code: the coding agent
+        if head == "code":
+            cm = core.code
+            if method == "GET" and not ident:
+                return {"sessions": cm.list(), "recent": [r for r in (core.settings["code_recent"] or [])
+                                                          if os.path.isdir(r)],
+                        "presets": [{"id": p["id"], "name": p.get("name")} for p in core.presets.all()],
+                        "running": (core.server.preset or {}).get("name") if core.server.state in ("ready", "loading")
+                        else None, "home": os.path.expanduser("~"), "android": hardware.ANDROID}
+            if method == "POST" and not ident:
+                s = cm.create(body.get("root"), body.get("mode") or "ask", body.get("preset") or None)
+                if body.get("text"):
+                    s.send(body["text"])
+                return s.view()
+            if method == "GET" and ident == "folders":
+                return _folders(arg("path", ""))
+            s = cm.get(ident)
+            action = parts[2] if len(parts) > 2 else None
+            if method == "GET" and not action:
+                return s.view(int(arg("after", "0") or 0))
+            if method == "DELETE" and not action:
+                cm.delete(ident)
+                return {"ok": True}
+            if method == "POST" and action == "send":
+                s.send(body.get("text"))
+                return s.view(int(body.get("after") or 0))
+            if method == "POST" and action == "answer":
+                s.answer(body.get("id"), body.get("allow") if body.get("allow") in ("yes", "always", "no") else "no",
+                         body.get("note", ""))
+                return {"ok": True}
+            if method == "POST" and action == "stop":
+                s.stop()
+                return {"ok": True}
+            if method == "POST" and action == "undo":
+                return {"path": s.undo_last()}
+            if method == "POST" and action == "mode":
+                s.set_mode(body.get("mode"))
+                return s.summary()
+            if method == "POST" and action == "model":
+                s.preset = body.get("preset") or None
+                s.save()
+                return s.summary()
 
         # ---- the helper that looks at pictures for models without vision
         if head == "vision" and method == "GET" and not ident:

@@ -48,6 +48,14 @@ chat with tools, web search, scheduled agent tasks, voice and phone access, all 
   device.
 - **Agents with tools.** Models can search the web and read pages (built in, no API key), run
   commands in a Docker sandbox, and use any MCP server you add.
+- **Pumpkin Code.** A coding agent for your projects, on the Code page or with `pumpkin code` in a
+  terminal. Give it a folder and a job ("fix the failing test", "add a dark mode") and it reads the code,
+  changes files, runs commands and tests, and keeps going until it is done. It shows each change as a diff
+  and asks before changing files or running commands (or not, if you say so), and every change can be
+  undone. It follows the project's `AGENTS.md`, keeps a plan as it works, and summarises long sessions
+  so they fit the model's context. A session started in the terminal can be followed on your phone.
+  It works best with a model that is good at tool calls (Qwen3 Coder, Qwen3.6, GLM, Devstral) and
+  32k of context or more.
 - **Switch models from the chat.** Every preset shows up in the chat's model list. Pick another one
   and Pumpkin stops the current model and starts that one for you.
 - **Uses the models you already have.** Finds LM Studio, Ollama, Hugging Face, llama.cpp, Jan and GPT4All

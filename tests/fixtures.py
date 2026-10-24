@@ -124,6 +124,32 @@ class H(BaseHTTPRequestHandler):
             msgs = body.get("messages", [])
             seen = os.path.join(os.path.dirname(os.path.abspath(args[args.index("-m") + 1])), "chat-%d.json" % port)
             json.dump(body, open(seen, "w"))
+            names = [t.get("function", {}).get("name") for t in body.get("tools") or []]
+            if names and "edit" in names and "bash" in names:          # Pumpkin Code
+                done = sum(1 for m in msgs if m.get("role") == "tool")
+                plan = [("todo", {"items": [{"text": "Find the greeting"}, {"text": "Change it"}]}),
+                        ("read", {"path": "hello.py"}),
+                        ("edit", {"path": "hello.py", "old": 'print("Hello")', "new": 'print("Hi")'}),
+                        ("bash", {"command": sys.executable.replace("\\", "/") + " hello.py"})]
+                s.send_response(200); s.send_header("Content-Type", "text/event-stream"); s.end_headers()
+                send = lambda d, fin=None: s.wfile.write(("data: " + json.dumps({"choices": [{"delta": d, "finish_reason": fin}]}) + "\n\n").encode())
+                if done < len(plan):
+                    name, a = plan[done]
+                    raw = json.dumps(a)
+                    send({"reasoning_content": "Next I will use " + name})
+                    send({"tool_calls": [{"index": 0, "id": "c%d" % done, "type": "function", "function": {"name": name, "arguments": raw[:5]}}]})
+                    send({"tool_calls": [{"index": 0, "function": {"arguments": raw[5:]}}]})
+                    send({}, "tool_calls")
+                else:
+                    for w in ["I changed", " the greeting", " to Hi and ran it."]:
+                        send({"content": w})
+                    send({}, "stop")
+                s.wfile.write(("data: " + json.dumps({"choices": [], "usage": {"prompt_tokens": 900, "completion_tokens": 40}}) + "\n\n").encode())
+                s.wfile.write(b"data: [DONE]\n\n"); s.wfile.flush(); s.close_connection = True; return
+            if body.get("stream") and "Summarise this coding session" in json.dumps(msgs):
+                s.send_response(200); s.send_header("Content-Type", "text/event-stream"); s.end_headers()
+                s.wfile.write(("data: " + json.dumps({"choices": [{"delta": {"content": "SUMMARY: greeting changed"}}]}) + "\n\n").encode())
+                s.wfile.write(b"data: [DONE]\n\n"); s.wfile.flush(); s.close_connection = True; return
             if "--mmproj" in args and "image_url" in json.dumps(msgs):
                 text = "A photo of an orange pumpkin on a table.\nText in the picture: HARVEST 42"
                 return s.j({"choices": [{"message": {"role": "assistant", "content": text}}]})
