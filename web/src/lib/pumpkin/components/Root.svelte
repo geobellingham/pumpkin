@@ -14,6 +14,11 @@
 		pumpkinVoice.init();
 	});
 
+	// on Pumpkin's own pages the chat's logo button (top left) hides: the page has its own Pumpkin title
+	$effect(() => {
+		document.documentElement.classList.toggle('pumpkin-page', onPumpkinPage);
+	});
+
 	// phone-only layout rules (see the style block)
 	$effect(() => {
 		document.documentElement.classList.toggle('pumpkin-phone', pumpkin.state?.platform === 'android');
@@ -34,6 +39,13 @@
 </script>
 
 <style>
+	/* Pumpkin's pages cover the chat's logo button, so only one pumpkin shows at the top */
+	:global(html.pumpkin-page [aria-label='Expand navigation']),
+	:global(html.pumpkin-page [aria-label='Go to start']) {
+		visibility: hidden;
+		pointer-events: none !important;
+	}
+
 	/* native menus (drop-downs, date pickers, scrollbars) follow the dark theme instead of staying white */
 	:global(html.dark) {
 		color-scheme: dark;

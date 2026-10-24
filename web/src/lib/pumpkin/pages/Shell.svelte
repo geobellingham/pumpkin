@@ -134,7 +134,7 @@
 	</div>
 {:else}
 	<div class={['mx-auto w-full px-5 pt-3 pb-24 md:px-8 md:pt-6', section === 'code' ? 'max-w-[96rem]' : 'max-w-6xl 2xl:max-w-7xl']}>
-		<header class="flex h-12 items-center gap-2 pl-12 md:pl-0">
+		<header class="flex h-12 items-center gap-2">
 			<a
 				aria-label="Back to chat"
 				class="-ml-2 flex size-10 items-center justify-center rounded-full hover:bg-muted"
