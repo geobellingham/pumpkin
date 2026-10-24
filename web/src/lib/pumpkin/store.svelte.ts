@@ -61,6 +61,10 @@ class PumpkinStore {
 	toast = $state<{ kind: 'error' | 'ok'; text: string } | null>(null);
 	/** set by pages that want faster polling (downloads, installs, runs) */
 	fast = $state(0);
+	/** seconds the server's clock is ahead of this browser's, so "since" times read right on a phone too */
+	skew = 0;
+	/** the last few minutes of speed and memory, for the Overview's small graphs */
+	history = $state<{ gpu: number | null; ram: number | null; speed: number | null; vram: number | null }[]>([]);
 
 	private started = false;
 	private lastModel: string | null = null;
@@ -143,11 +147,25 @@ class PumpkinStore {
 			this.available = true;
 			this.offline = false;
 			this.state = s;
+			if (s.now) this.skew = s.now - Date.now() / 1000;
+			this.sample(s);
 			this.sync(s);
 		} catch {
 			if (this.available === null) this.available = false;
 			else this.offline = true;
 		}
+	}
+
+	private sample(s: T.State): void {
+		const on = s.server.state === 'ready' || s.server.state === 'external';
+		const busy = s.activity?.some((a) => a.kind === 'model' && a.state === 'working');
+		const speed = on && busy ? (s.metrics.predicted_tokens_seconds ?? null) : on ? 0 : null;
+		const next = [
+			...this.history,
+			{ gpu: s.live.gpu_busy ?? null, ram: s.live.ram_used ?? null, speed, vram: s.live.vram_used ?? null }
+		];
+
+		this.history = next.slice(-90);
 	}
 
 	/**
@@ -180,7 +198,7 @@ class PumpkinStore {
 	}
 
 	say(text: string, kind: 'error' | 'ok' = 'ok'): void {
-		this.toast = { kind, text };
+		this.toast = { kind, text: text.length > 280 ? text.slice(0, 280) + '…' : text };
 
 		const mine = this.toast;
 

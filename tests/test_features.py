@@ -405,3 +405,80 @@ class TestMappedRam(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestSetupChecklistAndLongChats(unittest.TestCase):
+    """The setup checklist (steps can be skipped) and the chat that outgrows the model's memory."""
+
+    def make(self, **settings):
+        c = Core.__new__(Core)
+        base = dict(config.DEFAULT_SETTINGS)
+        base.update(settings)
+
+        class S(dict):
+            def update(self, d):
+                dict.update(self, d)
+
+        c.settings = S(base)
+        return c
+
+    def test_skipping_a_step_is_remembered_and_can_be_undone(self):
+        c = self.make()
+        c.presets = type("P", (), {"all": lambda s: []})()
+        c.tasks = type("T", (), {"all": lambda s: []})()
+        c.library = type("L", (), {"scan": lambda s: []})()
+        c.vision = type("V", (), {"model": lambda s: None})()
+        c.server = type("Sv", (), {"preset": None})()
+        c.image_default = lambda kind="draw": None
+        steps = {s["id"]: s for s in c.checklist()["steps"]}
+        self.assertFalse(steps["video"]["skipped"])
+        self.assertFalse(steps["model"]["optional"])                 # the basics cannot be skipped
+        steps = {s["id"]: s for s in c.skip_step("video")["steps"]}
+        self.assertTrue(steps["video"]["skipped"])
+        steps = {s["id"]: s for s in c.skip_step("video", False)["steps"]}
+        self.assertFalse(steps["video"]["skipped"])
+        c.skip_step("model")                                          # a basic step ignores it
+        self.assertFalse({s["id"]: s for s in c.checklist()["steps"]}["model"]["skipped"])
+
+    def test_a_chat_that_fits_is_left_alone(self):
+        c = self.make()
+        c.server = type("Sv", (), {"preset": {"ctx": 8000}})()
+        body = json.dumps({"messages": [{"role": "user", "content": "hello"}]}).encode()
+        self.assertEqual(c.prepare_chat(body), body)
+        self.assertGreater(c.chat_tokens, 0)
+
+    def test_a_chat_that_does_not_fit_gets_a_summary_of_its_older_part(self):
+        c = self.make(llama_port=1)
+        c.server = type("Sv", (), {"preset": {"ctx": 2000}})()
+        asked = []
+
+        from pumpkin import llama
+
+        def fake(port, path, payload=None, **kw):
+            asked.append(payload)
+            return {"choices": [{"message": {"content": "They discussed cats."}}]}
+
+        real, llama.http = llama.http, fake
+        try:
+            msgs = [{"role": "system", "content": "Be kind."}]
+            for i in range(6):
+                msgs += [{"role": "user", "content": f"question {i} " + "cats " * 300},
+                         {"role": "assistant", "content": f"answer {i} " + "dogs " * 300}]
+            msgs.append({"role": "user", "content": "and the last one?"})
+            out = json.loads(c.prepare_chat(json.dumps({"messages": msgs}).encode()))["messages"]
+            self.assertEqual(out[0]["content"], "Be kind.")                       # the system message stays first
+            self.assertIn("They discussed cats.", out[1]["content"])
+            self.assertEqual(out[-1]["content"], "and the last one?")             # the newest turn is kept whole
+            self.assertLess(len(out), len(msgs))
+            self.assertIn("summarised", c.chat_note[1])
+            # the same chat a message later reuses the summary: the model is not asked again
+            n = len(asked)
+            msgs += [{"role": "assistant", "content": "ok"}, {"role": "user", "content": "thanks"}]
+            c.prepare_chat(json.dumps({"messages": msgs}).encode())
+            self.assertEqual(len(asked), n)
+            # switched off, it is left alone
+            c.settings["compact_chat"] = False
+            raw = json.dumps({"messages": msgs}).encode()
+            self.assertEqual(c.prepare_chat(raw), raw)
+        finally:
+            llama.http = real

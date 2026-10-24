@@ -90,8 +90,10 @@ class Tools:
             _tool("edit", "Change a file: replace old (exact text, including spaces and indentation, unique in the "
                           "file) with new. Read the file first. Set all to replace every occurrence.",
                   {"path": s, "old": s, "new": s, "all": {"type": "boolean"}}, ["path", "old", "new"]),
-            _tool("write", "Create a file, or replace a whole file, with content. Prefer edit for changes.",
-                  {"path": s, "content": s}, ["path", "content"]),
+            _tool("write", "Create a file, or replace a whole file, with content. Prefer edit for changes. Keep each "
+                           "call under about 250 lines: for a longer file write the first part, then add the rest "
+                           "with append set to true, one part per call.",
+                  {"path": s, "content": s, "append": {"type": "boolean"}}, ["path", "content"]),
             _tool("bash", f"Run a command in the project folder with {self.shell_name} and get its output: build, "
                           f"test, git, install. Not for long-running servers. Timeout in seconds (default 120).",
                   {"command": s, "timeout": n}, ["command"]),
@@ -242,12 +244,15 @@ class Tools:
                              f"unique, or set all to replace every one.")
         return full, text, text.replace(old, new) if all_ else text.replace(old, new, 1)
 
-    def plan_write(self, path, content):
+    def plan_write(self, path, content, append=False):
         full = self.path(path)
         if os.path.isdir(full):
             raise ValueError(f"{path} is a folder.")
         old = self.file_text(full) if os.path.exists(full) else None
-        return full, old, str(content if content is not None else "")
+        text = str(content if content is not None else "")
+        if append and old is not None:
+            text = old + ("" if old.endswith("\n") or not old else "\n") + text
+        return full, old, text
 
     def save(self, full, text):
         os.makedirs(os.path.dirname(full), exist_ok=True)
@@ -360,6 +365,8 @@ class Session:
         self.cancel = False
         self.created = self.updated = time.time()
         self.tokens = 0
+        self.phase = {"kind": "idle", "label": "", "since": time.time()}   # what the model is doing right now
+        self.streamed = 0                    # pieces of the answer written in the current step
         self._answer = threading.Event()
         self._lock = threading.Lock()
         self.tools = Tools(self.root, web=not hardware.ANDROID)
@@ -375,14 +382,23 @@ class Session:
         self.updated = time.time()
         return ev
 
+    def set_phase(self, kind, label=""):
+        """What the model is doing right now: reading, thinking, writing, calling, tool, waiting, summarising."""
+        if self.phase.get("kind") != kind or self.phase.get("label") != label:
+            self.phase = {"kind": kind, "label": label, "since": time.time()}
+        if kind in ("reading", "idle"):
+            self.streamed = 0
+
     def summary(self):
         return {"id": self.id, "root": self.root, "title": self.title or os.path.basename(self.root), "mode": self.mode,
-                "state": self.state, "updated": self.updated, "created": self.created, "preset": self.preset}
+                "state": self.state, "updated": self.updated, "created": self.created, "preset": self.preset,
+                "phase": self.phase if self.state in ("running", "waiting") else None}
 
     def view(self, after=0):
         return {**self.summary(), "events": [e for e in self.events if e["n"] > after], "live": self.live,
                 "pending": self.pending, "todo": self.todo, "error": self.error, "undo": len(self.undo),
                 "tokens": self.tokens, "ctx": self.m.ctx(), "shell": self.tools.shell_name,
+                "streamed": self.streamed, "now": time.time(),
                 "last": self.events[-1]["n"] if self.events else 0}
 
     # ---- saving
@@ -475,12 +491,27 @@ class Session:
     def _run(self):
         try:
             steps = int(self.m.settings_get("code_max_steps", 80))
+            cut = 0
             for _ in range(steps):
                 if self.cancel:
                     self.emit("info", text="Stopped.")
                     break
                 self._compact_if_needed()
-                msg = self._complete(tools=True)
+                try:
+                    msg = self._complete(tools=True)
+                    cut = 0
+                except _CutOff as e:
+                    cut += 1
+                    if cut > 3:
+                        raise RuntimeError("The model keeps writing more than fits in one answer. Ask for the file in "
+                                           "smaller parts, or raise the longest answer in Settings.") from e
+                    self.emit("info", text="The model's answer was too long and was cut off while it wrote a file. "
+                                           "It is trying again in smaller pieces.")
+                    self.messages.append({"role": "user", "content": "(Your last answer was cut off because it was "
+                                          "too long, so nothing was written. Write less per call: at most about 250 "
+                                          "lines, and for a bigger file send the first part with write, then each "
+                                          "next part with write and append set to true.)"})
+                    continue
                 calls = msg.get("tool_calls") or []
                 entry = {"role": "assistant", "content": msg.get("content") or ""}
                 if calls:
@@ -499,13 +530,14 @@ class Session:
                 self.emit("info", text=f"It took {steps} steps without finishing. Say \"go on\" to let it continue.")
             self.state = "idle"
         except Exception as e:  # noqa: BLE001 - the session must not die with the thread
-            self.state, self.error = "error", str(e) or e.__class__.__name__
+            self.state, self.error = "error", (str(e) or e.__class__.__name__)[:800]
             self.emit("error", text=self.error)
             # an assistant message whose calls have no answers would break the next request
             while self.messages and self.messages[-1]["role"] == "assistant" and self.messages[-1].get("tool_calls"):
                 self.messages.pop()
         finally:
             self.live, self.pending = None, None
+            self.set_phase("idle")
             self.emit("done")
             try:
                 self.save()
@@ -524,6 +556,7 @@ class Session:
             self.emit("tool", name=name, args={"raw": str(raw)[:2000]}, ok=False, result="The arguments were not valid JSON.")
             return "Error: the arguments were not valid JSON. Send one JSON object."
         ev = {"name": name, "args": _short_args(args)}
+        self.set_phase("tool", _tool_label(name, args))
         try:
             text, ok, extra = self._do(name, args)
         except (ValueError, PermissionError, FileNotFoundError, IsADirectoryError, NotADirectoryError,
@@ -539,8 +572,10 @@ class Session:
     def _ask(self, kind, **data):
         """Waits for the user's yes or no. Returns (allowed, note)."""
         self._answer.clear()
+        before = dict(self.phase)
         self.pending = {"id": config.new_id(), "kind": kind, **data}
         self.state = "waiting"
+        self.set_phase("waiting", "Waiting for your answer")
         self.emit("ask", what=kind, **{k: v for k, v in self.pending.items() if k != "kind"})
         self.m.notify(self, data)
         while not self._answer.wait(1):
@@ -548,6 +583,7 @@ class Session:
                 break
         p, self.pending = self.pending, None
         self.state = "running"
+        self.set_phase(before.get("kind", "tool"), before.get("label", ""))
         ans = (p or {}).get("answer") or "no"
         self.emit("answer", id=(p or {}).get("id"), allow=ans, note=(p or {}).get("note", ""))
         if ans == "always":
@@ -587,7 +623,7 @@ class Session:
             if name == "edit":
                 full, old, new = t.plan_edit(a.get("path"), a.get("old"), a.get("new"), bool(a.get("all")))
             else:
-                full, old, new = t.plan_write(a.get("path"), a.get("content"))
+                full, old, new = t.plan_write(a.get("path"), a.get("content"), bool(a.get("append")))
             rel = t.rel(full)
             diff = unified(rel, old, new)
             what = (f"edit {rel}" if old is not None else f"create {rel}")
@@ -626,7 +662,7 @@ class Session:
     def _payload(self, tools):
         p = {"messages": self.messages, "stream": True, "stream_options": {"include_usage": True},
              "temperature": 0.3, "top_p": 0.95,
-             "max_tokens": int(self.m.settings_get("code_max_tokens", 8192))}
+             "max_tokens": self.m.answer_limit()}
         if tools:
             p["tools"] = self.tools.definitions()
             p["parallel_tool_calls"] = True
@@ -643,6 +679,8 @@ class Session:
         conn = http.client.HTTPConnection("127.0.0.1", port, timeout=3600)
         conn.request("POST", "/v1/chat/completions", body=body,
                      headers={"Content-Type": "application/json", **llama.auth_header()})
+        self.set_phase("summarising" if messages is not None else "reading",
+                       "Summarising the earlier work" if messages is not None else "Reading the conversation")
         r = conn.getresponse()
         if r.status != 200:
             raw = r.read().decode("utf-8", "replace")
@@ -654,7 +692,9 @@ class Session:
             if r.status == 400 and "context" in str(err).lower() and messages is None:
                 self._compact(force=True)
                 return self._complete(tools)
-            raise RuntimeError(f"The model answered with an error: {err}")
+            if re.search(r"parse tool call|tool call arguments|invalid string|unexpected end of", str(err), re.I):
+                raise _CutOff(str(err)[:300])
+            raise RuntimeError(f"The model answered with an error: {str(err)[:600]}")
         text, thinking, calls = [], [], {}
         live = self.live = {"text": "", "thinking": ""}
         finish = None
@@ -672,6 +712,12 @@ class Session:
                     j = json.loads(data)
                 except ValueError:
                     continue
+                if j.get("error"):
+                    e = j["error"]
+                    e = e.get("message") if isinstance(e, dict) else e
+                    if re.search(r"parse tool call|tool call arguments|invalid string", str(e), re.I):
+                        raise _CutOff(str(e)[:300])
+                    raise RuntimeError(f"The model answered with an error: {str(e)[:600]}")
                 u, tm = j.get("usage") or {}, j.get("timings") or {}
                 if u.get("prompt_tokens"):
                     self.tokens = int(u["prompt_tokens"]) + int(u.get("completion_tokens") or 0)
@@ -683,9 +729,15 @@ class Session:
                     if d.get("content"):
                         text.append(d["content"])
                         live["text"] += d["content"]
+                        self.streamed += 1
+                        if messages is None:
+                            self.set_phase("writing", "Writing the answer")
                     if d.get("reasoning_content"):
                         thinking.append(d["reasoning_content"])
                         live["thinking"] += d["reasoning_content"]
+                        self.streamed += 1
+                        if messages is None:
+                            self.set_phase("thinking", "Thinking")
                     for tc in d.get("tool_calls") or []:
                         i = tc.get("index", len(calls))
                         cur = calls.setdefault(i, {"id": "", "type": "function", "function": {"name": "", "arguments": ""}})
@@ -697,6 +749,9 @@ class Session:
                         if f.get("arguments"):
                             cur["function"]["arguments"] += f["arguments"]
                         live["tools"] = [c["function"]["name"] for c in calls.values()]
+                        self.streamed += 1
+                        if messages is None:
+                            self.set_phase("calling", "Choosing what to do next")
                     finish = ch.get("finish_reason") or finish
         finally:
             conn.close()
@@ -756,6 +811,20 @@ class Session:
                          {"role": "assistant", "content": "Understood. I will continue from here."}] + msgs[keep_from:]
         self.tokens = self._size()
         self.emit("compact", text=summary)
+
+
+class _CutOff(Exception):
+    """The model's answer ended in the middle of a tool call (too long for one answer)."""
+
+
+def _tool_label(name, a):
+    """A short line for what a tool call is doing, for the activity indicator."""
+    arg = str(a.get("command") or a.get("path") or a.get("pattern") or a.get("query") or a.get("url") or "")
+    arg = re.sub(r"\s+", " ", arg)[:60]
+    verb = {"ls": "Listing", "glob": "Finding files", "grep": "Searching for", "read": "Reading", "edit": "Editing",
+            "write": "Writing", "bash": "Running", "todo": "Updating the plan", "web_search": "Searching the web for",
+            "read_webpage": "Reading"}.get(name, f"Using {name}")
+    return f"{verb} {arg}".strip()
 
 
 def _short_args(a):
@@ -879,6 +948,12 @@ class Manager:
         except (TypeError, ValueError):
             return 0
 
+    def answer_limit(self):
+        """The longest single answer: what Settings says, but never more than a third of the model's memory."""
+        want = int(self.settings_get("code_max_tokens", 16384))
+        ctx = self.ctx()
+        return max(1024, min(want, ctx // 3) if ctx else want)
+
     def tool_limit(self):
         ctx = self.ctx() or 16384
         return max(4000, min(30000, int(ctx * 3 * 0.15)))
@@ -901,7 +976,8 @@ class Manager:
             "- Look before you act: find the right code with ls, glob and grep, and read files before you change "
             "them. Never guess what a file contains.\n"
             "- Change files with edit (exact old text, copied from read, then the new text). Use write only for new "
-            "files or full rewrites.\n"
+            "files or full rewrites. Never put more than about 250 lines in one call: write a big file in parts "
+            "(the first part, then append=true for each next part), or your answer gets cut off.\n"
             "- Make the change the user asked for and nothing more. Keep the project's style.\n"
             "- After changing code, check it: run the tests, a build, or the program, and fix what fails.\n"
             "- For a job with several steps, keep a todo list with the todo tool and mark steps done as you go.\n"

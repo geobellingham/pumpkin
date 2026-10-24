@@ -1,13 +1,16 @@
 <script lang="ts">
-	import { CircleAlert, CircleCheck, LoaderCircle, MessageSquareText, Play } from '@lucide/svelte';
+	import { CircleAlert, ListChecks, LoaderCircle, MessageSquareText, Play } from '@lucide/svelte';
 	import { Button } from '$lib/components/ui/button';
+	import Activity from '../components/Activity.svelte';
 	import Card from '../components/Card.svelte';
+	import Checklist from '../components/Checklist.svelte';
 	import Meter from '../components/Meter.svelte';
 	import Progress from '../components/Progress.svelte';
+	import Sparkline from '../components/Sparkline.svelte';
 	import StatusDot from '../components/StatusDot.svelte';
 	import { useSpeed } from '../speed.svelte';
 	import { api, pumpkin } from '../store.svelte';
-	import type { Preset } from '../types';
+	import type { Preset, Settings } from '../types';
 	import { onMount } from 'svelte';
 
 	const speed = useSpeed();
@@ -49,67 +52,41 @@
 	});
 
 	const running = $derived(s?.server.preset?.id);
-	const steps = $derived(
-		s
-			? [
-					{ done: s.has_server, href: '#/pumpkin/settings', label: 'Get llama-server, the engine that runs models' },
-					{ done: s.has_models, href: '#/pumpkin/models', label: 'Install a model that fits your computer' },
-					{ done: !!presets?.length, href: '#/pumpkin/presets', label: 'Have a preset to start it with' }
-				]
-			: []
-	);
-	const allDone = $derived(steps.every((x) => x.done));
+	let checklistHidden = $state<boolean | null>(null);
+
+	onMount(async () => {
+		checklistHidden = (await api<Settings>('settings').catch(() => null))?.checklist_hidden ?? false;
+	});
+
+	async function setHidden(v: boolean) {
+		checklistHidden = v;
+		await pumpkin.run(() => api('settings', { body: { checklist_hidden: v }, method: 'PUT' }));
+	}
+
+	const hist = $derived(pumpkin.history);
+	const live = $derived(s?.live);
+	const gpuMemLabel = $derived(s?.platform === 'android' ? 'For models' : live?.unified ? 'GPU memory' : 'Video memory');
+
+	function span(sec: number | null | undefined): string {
+		if (sec == null) return '–';
+
+		const m = Math.floor(sec / 60);
+
+		if (m < 60) return `${m} min`;
+
+		const h = Math.floor(m / 60);
+
+		return h < 48 ? `${h} h ${m % 60} min` : `${Math.floor(h / 24)} days`;
+	}
+
+	function count(n?: number | null): string {
+		if (!n) return '–';
+
+		return n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${(n / 1e3).toFixed(1)}k` : String(Math.round(n));
+	}
 </script>
 
 <div class="flex flex-col gap-4">
-	<section class="rounded-2xl bg-muted/50 p-4 md:p-5">
-		<div class="flex flex-wrap items-start justify-between gap-x-3 gap-y-1">
-			<div class="min-w-0">
-				<div class="flex items-baseline gap-1.5">
-					<span class={['text-4xl font-semibold tracking-tight tabular-nums', speed.value == null && 'text-muted-foreground/50']}>
-						{speed.value != null ? speed.value.toFixed(1) : '0.0'}
-					</span>
-					<span class="text-sm text-muted-foreground">tokens / s</span>
-				</div>
-
-				<div class="mt-1 truncate text-sm text-muted-foreground">
-					{pumpkin.modelName ?? 'Pick a preset below to start a model'}
-				</div>
-			</div>
-
-			<div class="flex shrink-0 items-center gap-1.5 pt-1 text-xs font-medium">
-				<StatusDot />
-				{statusText}
-			</div>
-		</div>
-
-		<div class="mt-4 flex flex-col gap-3 sm:flex-row sm:gap-4">
-			<Meter label={s?.platform === 'android' ? 'For models' : s?.live.unified ? 'GPU memory' : 'VRAM'} total={s?.live.vram_total} used={s?.live.vram_used} />
-			<Meter label="RAM" total={s?.live.ram_total} used={s?.live.ram_used} />
-		</div>
-
-		{#if s?.server.state === 'error' && s.server.error}
-			<p class="mt-4 flex flex-wrap gap-2 rounded-xl bg-destructive/10 p-3 text-sm text-destructive">
-				<CircleAlert class="mt-0.5 h-4 w-4 shrink-0" />
-				<span class="min-w-0 flex-1 break-all">{s.server.error}</span>
-				<a class="shrink-0 underline" href="#/pumpkin/settings">See log</a>
-			</p>
-		{:else if s?.server.notice && (s.server.state === 'ready' || s.server.state === 'loading')}
-			<p class="mt-4 rounded-xl bg-muted/50 p-3 text-sm text-muted-foreground">{s.server.notice}</p>
-		{/if}
-
-		<div class="mt-4 flex flex-wrap gap-2">
-			{#if s?.server.state === 'ready' || s?.server.state === 'loading'}
-				<Button class="rounded-full" href="#/" size="sm">
-					<MessageSquareText class="h-4 w-4" /> Chat
-				</Button>
-				<Button class="rounded-full" onclick={() => pumpkin.stopModel()} size="sm" variant="outline">
-					Stop model
-				</Button>
-			{/if}
-		</div>
-	</section>
-
 	{#each s?.installs ?? [] as inst (inst.id)}
 		<Card title="Installing {inst.model}">
 			{#if inst.state === 'error'}
@@ -132,23 +109,109 @@
 		<Card description="Brought over from LLM Studio: {s.migrated.join(', ')}." title="Welcome to Pumpkin" />
 	{/if}
 
-	{#if !allDone && presets !== null}
-		<Card description="Three steps and you can chat with a model running on this computer." title="Get started">
-			<ol class="flex flex-col gap-1">
-				{#each steps as step, i (i)}
-					<li>
-						<a class="flex items-center gap-3 rounded-xl px-2 py-2 text-sm hover:bg-muted/60" href={step.href}>
-							{#if step.done}
-								<CircleCheck class="h-5 w-5 shrink-0 text-emerald-500" />
-							{:else}
-								<span class="flex size-5 shrink-0 items-center justify-center rounded-full border border-border text-[11px]">{i + 1}</span>
-							{/if}
-							<span class={step.done ? 'text-muted-foreground line-through' : ''}>{step.label}</span>
-						</a>
-					</li>
-				{/each}
-			</ol>
+	<div class="grid gap-4 lg:grid-cols-3">
+		<section class="rounded-2xl bg-muted/50 p-4 md:p-5 lg:col-span-2">
+			<div class="flex flex-wrap items-start justify-between gap-x-3 gap-y-1">
+				<div class="min-w-0">
+					<h2 class="truncate text-lg leading-tight font-semibold">{pumpkin.modelName ?? 'No model running'}</h2>
+					<p class="mt-0.5 truncate text-sm text-muted-foreground">
+						{#if s?.server.preset}
+							{Math.round(s.server.preset.ctx / 1024)}k context{s.server.preset.tools ? ', tools' : ''}{s.server.preset.web ? ', web search' : ''}{s.server.preset.mmproj ? ', sees pictures' : ''}
+						{:else}
+							Pick a preset below to start one.
+						{/if}
+					</p>
+				</div>
+
+				<div class="flex shrink-0 items-center gap-1.5 pt-1 text-xs font-medium">
+					<StatusDot />
+					{statusText}
+				</div>
+			</div>
+
+			<div class="mt-4 grid items-end gap-x-6 gap-y-3 sm:grid-cols-[auto_minmax(0,1fr)]">
+				<div class="flex items-baseline gap-1.5">
+					<span class={['text-5xl leading-none font-semibold tracking-tight tabular-nums', speed.value == null && 'text-muted-foreground/50']}>
+						{speed.value != null ? speed.value.toFixed(1) : '0.0'}
+					</span>
+					<span class="text-sm text-muted-foreground">tokens a second</span>
+				</div>
+				<div class="min-w-0">
+					<Sparkline label="Speed over the last few minutes" values={hist.map((h) => h.speed)} />
+				</div>
+			</div>
+
+			<dl class="mt-4 grid grid-cols-2 gap-x-4 gap-y-3 border-t border-border/60 pt-4 text-sm sm:grid-cols-4">
+				<div>
+					<dt class="text-xs text-muted-foreground">Reading speed</dt>
+					<dd class="font-medium tabular-nums">{s?.metrics.prompt_tokens_seconds ? `${Math.round(s.metrics.prompt_tokens_seconds)} a second` : '–'}</dd>
+				</div>
+				<div>
+					<dt class="text-xs text-muted-foreground">Written so far</dt>
+					<dd class="font-medium tabular-nums">{count(s?.metrics.tokens_predicted_total)}</dd>
+				</div>
+				<div>
+					<dt class="text-xs text-muted-foreground">Longest chat held</dt>
+					<dd class="font-medium tabular-nums">{count(s?.metrics.n_tokens_max)}</dd>
+				</div>
+				<div>
+					<dt class="text-xs text-muted-foreground">Running for</dt>
+					<dd class="font-medium tabular-nums">{span(s?.server.uptime)}</dd>
+				</div>
+			</dl>
+
+			{#if s?.server.state === 'error' && s.server.error}
+				<p class="mt-4 flex flex-wrap gap-2 rounded-xl bg-destructive/10 p-3 text-sm text-destructive">
+					<CircleAlert class="mt-0.5 h-4 w-4 shrink-0" />
+					<span class="min-w-0 flex-1 break-all">{s.server.error}</span>
+					<a class="shrink-0 underline" href="#/pumpkin/settings">See log</a>
+				</p>
+			{:else if s?.server.notice && (s.server.state === 'ready' || s.server.state === 'loading')}
+				<p class="mt-4 rounded-xl bg-background/60 p-3 text-sm text-muted-foreground">{s.server.notice}</p>
+			{/if}
+
+			{#if s?.server.state === 'ready' || s?.server.state === 'loading'}
+				<div class="mt-4 flex flex-wrap gap-2">
+					<Button class="rounded-full" href="#/" size="sm">
+						<MessageSquareText class="h-4 w-4" /> Chat
+					</Button>
+					<Button class="rounded-full" onclick={() => pumpkin.stopModel()} size="sm" variant="outline">
+						Stop model
+					</Button>
+				</div>
+			{/if}
+		</section>
+
+		<Card title="Memory">
+			<div class="flex flex-col gap-4">
+				<div class="flex flex-col gap-1.5">
+					<Meter label={gpuMemLabel} total={live?.vram_total} used={live?.vram_used} />
+					{#if live?.vram_total}<Sparkline class="h-6" label="Video memory over the last few minutes" max={live.vram_total} values={hist.map((h) => h.vram)} />{/if}
+				</div>
+				<div class="flex flex-col gap-1.5">
+					<Meter cached={live?.model_ram} label="RAM" total={live?.ram_total} used={live?.ram_used} />
+					{#if live?.ram_total}<Sparkline class="h-6" label="RAM over the last few minutes" max={live.ram_total} values={hist.map((h) => h.ram)} />{/if}
+				</div>
+				{#if live?.gpu_busy != null}
+					<div class="flex items-baseline justify-between border-t border-border/60 pt-3 text-xs text-muted-foreground">
+						<span>Graphics card busy</span>
+						<span class="text-sm font-medium text-foreground tabular-nums">{Math.round(live.gpu_busy)}%</span>
+					</div>
+				{/if}
+			</div>
 		</Card>
+	</div>
+
+	<Card description="Everything Pumpkin is working on, live." title="Right now">
+		<Activity />
+	</Card>
+
+	{#if checklistHidden === false}
+		<Checklist onhide={() => setHidden(true)} />
+	{:else if checklistHidden}
+		<button class="flex items-center gap-2 self-start text-xs text-muted-foreground underline underline-offset-2" onclick={() => setHidden(false)} type="button">
+			<ListChecks class="size-4" /> Show the setup list
+		</button>
 	{/if}
 
 	<Card title="Presets">

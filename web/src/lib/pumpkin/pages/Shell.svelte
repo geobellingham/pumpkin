@@ -126,7 +126,7 @@
 		This page needs the Pumpkin server. Open Pumpkin with the <code>pumpkin</code> command.
 	</div>
 {:else}
-	<div class="mx-auto w-full max-w-5xl px-5 pt-3 pb-24 md:px-8 md:pt-6">
+	<div class={['mx-auto w-full px-5 pt-3 pb-24 md:px-8 md:pt-6', section === 'code' ? 'max-w-[96rem]' : 'max-w-6xl 2xl:max-w-7xl']}>
 		<header class="flex h-12 items-center gap-2 pl-12 md:pl-0">
 			<a
 				aria-label="Back to chat"

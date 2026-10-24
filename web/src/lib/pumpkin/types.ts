@@ -28,7 +28,32 @@ export interface Install {
 	total: number;
 }
 
+export interface ActivityItem {
+	context?: { total: number; used: number };
+	detail?: string | null;
+	id: string;
+	kind: 'agent' | 'code' | 'download' | 'image' | 'job' | 'model' | 'vision';
+	label: string;
+	note?: string;
+	progress?: number | null;
+	since?: number | null;
+	state: 'idle' | 'loading' | 'paused' | 'waiting' | 'working';
+	title: string;
+}
+
+export interface ChecklistStep {
+	done: boolean;
+	href: string;
+	id: string;
+	optional: boolean;
+	skipped: boolean;
+	text: string;
+	title: string;
+}
+
 export interface State {
+	activity: ActivityItem[];
+	now: number;
 	update?: { available: boolean; latest: string };
 	agent: { busy: boolean; job: string | null; log_seq: number };
 	downloads: number;
@@ -37,13 +62,19 @@ export interface State {
 	installs: Install[];
 	live: {
 		gpu_busy?: number | null;
+		model_ram?: number;
 		ram_total?: number;
 		ram_used?: number;
 		unified?: boolean;
 		vram_total?: number;
 		vram_used?: number;
 	};
-	metrics: { predicted_tokens_seconds?: number | null };
+	metrics: {
+		n_tokens_max?: number | null;
+		predicted_tokens_seconds?: number | null;
+		prompt_tokens_seconds?: number | null;
+		tokens_predicted_total?: number | null;
+	};
 	migrated: string[];
 	persona: string;
 	persona_prompt: string;
@@ -177,6 +208,8 @@ export interface Check {
 export interface Settings {
 	autostart_model: boolean;
 	check_updates: boolean;
+	checklist_hidden: boolean;
+	compact_chat: boolean;
 	doc_folders: string[];
 	doc_index: boolean;
 	download_dir: string;
@@ -200,6 +233,7 @@ export interface Settings {
 	reports_dir: string;
 	sandbox_image: string;
 	setup_done: boolean;
+	setup_skipped: string[];
 	threads: number;
 	tool_chars: number;
 }

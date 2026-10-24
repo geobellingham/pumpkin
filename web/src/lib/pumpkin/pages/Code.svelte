@@ -30,6 +30,7 @@
 		created: number;
 		id: string;
 		mode: string;
+		phase?: { kind: string; label: string; since: number } | null;
 		preset: string | null;
 		root: string;
 		state: string;
@@ -60,6 +61,8 @@
 		last: number;
 		live: { text: string; thinking: string; tools?: string[] } | null;
 		pending: Pending | null;
+		phase?: { kind: string; label: string; since: number } | null;
+		streamed?: number;
 		shell: string;
 		todo: { done: boolean; text: string }[];
 		tokens: number;
@@ -112,7 +115,17 @@
 		if (open) void openSession(open);
 	});
 
-	onDestroy(() => clearTimeout(timer));
+	let clock = $state(Date.now());
+	const clockTimer = setInterval(() => (clock = Date.now()), 1000);
+
+	onDestroy(() => {
+		clearTimeout(timer);
+		clearInterval(clockTimer);
+	});
+
+	const seconds = $derived(view?.phase ? Math.max(0, Math.round(clock / 1000 + pumpkin.skew - view.phase.since)) : 0);
+	const clockText = $derived(seconds < 60 ? `${seconds}s` : `${Math.floor(seconds / 60)}m ${String(seconds % 60).padStart(2, '0')}s`);
+	const speedNow = $derived(pumpkin.state?.metrics.predicted_tokens_seconds ?? null);
 
 	async function openSession(id: string) {
 		clearTimeout(timer);
@@ -412,20 +425,54 @@
 		{/if}
 	</div>
 {:else}
-	<div class="flex h-[calc(100dvh-9rem)] min-h-[28rem] flex-col rounded-2xl border border-border/60">
-		<header class="flex flex-wrap items-center gap-2 border-b border-border/60 px-3 py-2">
-			<button aria-label="All sessions" class="rounded-full p-1.5 hover:bg-muted" onclick={closeSession} type="button"><ArrowLeft class="h-4 w-4" /></button>
-			<div class="min-w-0 flex-1 basis-[calc(100%-3rem)] md:basis-0">
-				<p class="truncate text-sm font-medium">{view.title || 'New session'}</p>
-				<p class="truncate text-xs text-muted-foreground">{short(view.root)}{view.ctx ? `, ${usedPct}% of the context` : ''}</p>
+	<div class="flex h-[calc(100dvh-8rem)] min-h-[28rem] flex-col overflow-hidden rounded-2xl border border-border/60">
+		<header class="border-b border-border/60 px-3 py-2.5 md:px-4">
+			<div class="flex items-center gap-2">
+				<button aria-label="All sessions" class="shrink-0 rounded-full p-1.5 hover:bg-muted" onclick={closeSession} type="button"><ArrowLeft class="h-4 w-4" /></button>
+				<div class="min-w-0 flex-1">
+					<p class="truncate text-sm font-medium">{view.title || 'New session'}</p>
+					<p class="truncate text-xs text-muted-foreground">{short(view.root)}</p>
+				</div>
+
+				{#if view.ctx}
+					<div class="hidden w-40 shrink-0 sm:block" title="How much of the model's memory this session uses">
+						<div class="mb-1 flex justify-between text-[11px] text-muted-foreground"><span>Memory</span><span class="tabular-nums">{usedPct}%</span></div>
+						<div class="h-1.5 overflow-hidden rounded-full bg-foreground/10">
+							<div class={['h-full rounded-full transition-[width] duration-500', usedPct > 72 ? 'bg-amber-500' : 'bg-foreground/70']} style="width: {usedPct}%"></div>
+						</div>
+					</div>
+				{/if}
+
+				<Button class="shrink-0 rounded-full" disabled={!view.undo || busy} onclick={undo} size="sm" title="Take back the last file change" variant="ghost"><Undo2 class="h-4 w-4" /> <span class="max-sm:hidden">Undo</span></Button>
 			</div>
-			<Segmented bind:value={mode} onchange={setMode} options={MODES} />
-			<div class="w-40 md:w-44"><Select ariaLabel="Model" bind:value={preset} onchange={setModel} options={presetOptions} /></div>
-			<Button class="rounded-full" disabled={!view.undo || busy} onclick={undo} size="sm" title="Take back the last file change" variant="ghost"><Undo2 class="h-4 w-4" /> Undo</Button>
+
+			<div class="mt-2 flex flex-wrap items-center gap-2 pl-9">
+				<Segmented bind:value={mode} onchange={setMode} options={MODES} />
+				<div class="w-full min-w-48 sm:w-64"><Select ariaLabel="Model" bind:value={preset} onchange={setModel} options={presetOptions} /></div>
+			</div>
 		</header>
 
+		<div aria-live="polite" class={['flex items-center gap-2 border-b border-border/60 px-3 py-2 text-xs md:px-4', busy ? 'bg-muted/40' : 'text-muted-foreground']}>
+			{#if view.state === 'waiting'}
+				<span class="size-2 shrink-0 rounded-full bg-sky-500"></span>
+				<span class="font-medium">Waiting for your answer</span>
+			{:else if busy && view.phase}
+				<span class="size-2 shrink-0 animate-pulse rounded-full bg-orange-500"></span>
+				<span class="min-w-0 truncate"><span class="font-medium">{view.phase.label}</span></span>
+				<span class="shrink-0 text-muted-foreground tabular-nums">{clockText}</span>
+				{#if view.streamed && ['thinking', 'writing', 'calling', 'summarising'].includes(view.phase.kind)}
+					<span class="shrink-0 text-muted-foreground tabular-nums">· {view.streamed} tokens{speedNow ? `, ${speedNow.toFixed(1)} a second` : ''}</span>
+				{/if}
+			{:else if busy}
+				<span class="size-2 shrink-0 animate-pulse rounded-full bg-orange-500"></span><span class="font-medium">Working</span>
+			{:else}
+				<span class="size-2 shrink-0 rounded-full bg-emerald-500"></span><span>Ready for the next job</span>
+			{/if}
+			<span class="ml-auto hidden shrink-0 text-muted-foreground md:inline">{MODE_HELP[mode]}</span>
+		</div>
+
 		<div bind:this={feed} class="flex-1 overflow-y-auto px-3 py-4 md:px-5" onscroll={onFeedScroll}>
-			<div class="mx-auto flex max-w-3xl flex-col gap-3">
+			<div class="mx-auto flex max-w-4xl flex-col gap-3">
 				{#each events as e (e.n)}
 					{#if e.kind === 'user'}
 						<div class="ml-auto max-w-[85%] rounded-2xl bg-muted px-4 py-2.5 text-sm whitespace-pre-wrap">{e.text}</div>

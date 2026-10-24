@@ -128,6 +128,8 @@ class H(BaseHTTPRequestHandler):
             json.dump(body, open(seen, "w"))
             names = [t.get("function", {}).get("name") for t in body.get("tools") or []]
             if names and "edit" in names and "bash" in names:          # Pumpkin Code
+                if "TOOBIG" in json.dumps(msgs[:3]) and "cut off because" not in json.dumps(msgs):
+                    return s.j({"error": {"code": 500, "message": "Failed to parse tool call arguments as JSON: parse error at line 1, column 24500: syntax error while parsing value - invalid string: missing closing quote"}}, 500)
                 done = sum(1 for m in msgs if m.get("role") == "tool")
                 plan = [("todo", {"items": [{"text": "Find the greeting"}, {"text": "Change it"}]}),
                         ("read", {"path": "hello.py"}),

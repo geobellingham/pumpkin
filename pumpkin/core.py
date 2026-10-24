@@ -33,6 +33,10 @@ class Core:
     last_picture = None                  # (when first seen, bytes) of the newest picture in a chat request
     mcp_devices = False                  # the running text model was started with devices_ask
     mcp_image = False                    # the running text model was started with image_generate
+    chat_tokens = 0                      # about how much of the model's memory the newest chat request uses
+    chat_at = 0.0
+    chat_note = None                     # (when, text) the chat's older part was summarised
+    chat_summary = None                  # {"n", "hash", "text"} the summary the chat is using
 
     def __init__(self):
         config.ensure_dirs()
@@ -482,14 +486,14 @@ class Core:
         proc = getattr(self.server, "proc", None)
         mapped = hardware.mapped_ram(proc.pid) if proc and proc.poll() is None else 0.0
         if mapped > 0.1 and live.get("ram_total"):
-            # the model's weights in RAM that the system counts as free cache
-            live["model_ram"] = round(mapped, 1)
-            live["ram_used"] = min(live["ram_total"], live.get("ram_used", 0) + mapped)
+            # the model's file kept in RAM. The system counts it as cache, not as used, and so does every system
+            # monitor, so "ram_used" stays what they show and the cached part is reported next to it
+            live["model_ram"] = round(min(mapped, live["ram_total"]), 1)
         srv = self.server.status()
         met = llama.metrics(self.server.port) if srv["state"] in ("ready", "external") else {}
         r = self.runner
         return {
-            "version": __version__, "server": srv, "live": live,
+            "version": __version__, "now": time.time(), "server": srv, "live": live,
             "metrics": {k: met.get(k) for k in ("predicted_tokens_seconds", "prompt_tokens_seconds",
                                                  "tokens_predicted_total", "n_tokens_max")},
             "agent": {"busy": r.busy, "job": (r.current or {}).get("name"),
@@ -507,7 +511,222 @@ class Core:
             "update": updates.cached_status(),
             "platform": "android" if hardware.ANDROID else sys.platform,
             "remote": self.settings["remote"],
+            "activity": self.activity(met, srv),
+            "metrics_more": {k: met.get(k) for k in ("requests_processing", "requests_deferred",
+                                                      "n_decode_total", "prompt_tokens_total")},
         }
+
+    # ---- what is happening right now
+    def activity(self, met=None, srv=None):
+        """Everything Pumpkin is busy with, one entry each, for the Overview and Pumpkin Code. An entry:
+        id, kind, title, state (working | loading | paused | idle), label, detail, progress (0..1 or None), since."""
+        now = time.time()
+        out = []
+        srv = srv or self.server.status()
+        met = met or {}
+        pre = srv.get("preset") or self.server.preset or {}
+        picture = self.image_server.progress if self.image_server else None
+        if srv["state"] == "loading":
+            out.append({"id": "text", "kind": "model", "title": pre.get("name") or "Model", "state": "loading",
+                        "label": "Loading into memory", "since": now - (srv.get("uptime") or 0)})
+        elif srv["state"] in ("ready", "external"):
+            busy = bool(met.get("requests_processing"))
+            ctx = int(pre.get("ctx") or 0)
+            used = int(self.chat_tokens) if self.chat_tokens and now - self.chat_at < 6 * 3600 else 0
+            item = {"id": "text", "kind": "model", "title": pre.get("name") or "Model",
+                    "state": "working" if busy else "idle", "label": "Answering" if busy else "Ready"}
+            if busy and met.get("predicted_tokens_seconds"):
+                item["detail"] = f"{met['predicted_tokens_seconds']:.1f} tokens a second"
+            if ctx and used:
+                item["context"] = {"used": min(used, ctx), "total": ctx}
+            if self.chat_note and now - self.chat_note[0] < 90:
+                item["note"] = self.chat_note[1]
+            out.append(item)
+        elif picture and picture.get("swapped"):
+            out.append({"id": "text", "kind": "model", "title": pre.get("name") or "Model", "state": "paused",
+                        "label": "Paused so the picture has room"})
+        v = self.vision.status()
+        if v["state"] in ("loading", "ready") or v["busy"]:
+            out.append({"id": "vision", "kind": "vision", "title": v.get("model") or "Vision model",
+                        "state": "working" if v["busy"] else ("loading" if v["state"] == "loading" else "idle"),
+                        "label": "Looking at a picture" if v["busy"] else
+                                 ("Loading into memory" if v["state"] == "loading" else "Loaded, frees itself when idle")})
+        i = self.image_server.status() if self.image_server else {}
+        if i.get("busy") or i.get("state") in ("loading", "ready"):
+            stage = (picture or {}).get("stage")
+            out.append({"id": "image", "kind": "image", "title": i.get("model") or "Image model",
+                        "state": "working" if i.get("busy") and stage != "loading" else
+                                 ("loading" if i.get("busy") or i.get("state") == "loading" else "idle"),
+                        "label": {"loading": "Loading into memory", "drawing": "Drawing", "video": "Making the video"}
+                                 .get(stage, "Working") if i.get("busy") else "Loaded, frees itself when idle",
+                        "since": (picture or {}).get("since")})
+        for d in self.downloads.list():
+            if d["state"] in ("queued", "downloading"):
+                out.append({"id": "dl-" + d["id"], "kind": "download", "title": d["repo"].split("/")[-1],
+                            "state": "working", "label": "Downloading",
+                            "progress": (d["done"] / d["total"]) if d.get("total") else None,
+                            "detail": f"{d['speed'] / 1e6:.1f} MB a second" if d.get("speed") else None})
+        for j in list(self.jobs.values()):
+            if j["state"] == "running" and j["kind"] in ("install", "scans", "llama"):
+                out.append({"id": "job-" + j["id"], "kind": "job", "title": j.get("model") or j["kind"].capitalize(),
+                            "state": "working", "label": j.get("phase") or "Working",
+                            "progress": (j["done"] / j["total"]) if j.get("total") else None})
+        r = self.runner
+        if r.busy:
+            out.append({"id": "agent", "kind": "agent", "title": (r.current or {}).get("name") or "Task",
+                        "state": "working", "label": "Running a scheduled task"})
+        try:
+            for s in [x.summary() for x in list(self.code.sessions.values())]:
+                if s.get("phase"):
+                    out.append({"id": "code-" + s["id"], "kind": "code", "title": s["title"], "state":
+                                "waiting" if s["state"] == "waiting" else "working", "label": s["phase"]["label"],
+                                "since": s["phase"]["since"]})
+        except Exception:  # noqa: BLE001 - the list is for show
+            pass
+        return out
+
+    def checklist(self):
+        """The things that make Pumpkin better once they are set up, each done, skipped or still to do."""
+        s = self.settings
+        skipped = set(s["setup_skipped"] or [])
+        phone = hardware.ANDROID
+        draw = None if phone else (bool(images.find_engine(s)) and self.image_default("draw") is not None)
+        sees = self.text_model_sees() or bool(self.vision.model()) or any(
+            m.get("kind") == "model" and m.get("mmproj") for m in self.library.scan())
+        steps = [
+            ("engine", "Get the engine", "llama-server runs the models. Pumpkin downloads the right one for this computer.",
+             "#/pumpkin/settings", bool(llama.find_server(s)), False),
+            ("model", "Install a model", "Pick one that fits this computer. Pumpkin shows what runs well.",
+             "#/pumpkin/models", any(m["kind"] == "model" for m in self.library.scan()), False),
+            ("preset", "Start a model", "A preset is a model with its settings. Pumpkin makes one when a model is installed.",
+             "#/pumpkin/presets", bool(self.presets.all()), False),
+            ("vision", "Let the chat see pictures",
+             "Attach a picture or a scanned page and the model reads it. A small vision model is enough, even when your "
+             "main model cannot see.", "#/pumpkin/models", bool(sees), True),
+            ("pictures", "Draw pictures",
+             "Install the image engine and a model, then ask the chat to draw. Desktop only.",
+             "#/pumpkin/images", bool(draw), True) if not phone else None,
+            ("edit", "Change pictures you attach", "Qwen Image Edit changes a picture from a sentence.",
+             "#/pumpkin/images", bool(self.image_default("edit")) and bool(images.find_engine(s)), True)
+            if not phone else None,
+            ("video", "Make short videos", "Wan 2.2 turns a sentence, or a picture, into a clip.",
+             "#/pumpkin/images", bool(self.image_default("video")) and bool(images.find_engine(s)), True)
+            if not phone else None,
+            ("documents", "Search your documents",
+             "Point Pumpkin at folders and the model finds answers in your own files, scans included.",
+             "#/pumpkin/files", bool(s["doc_folders"]), True),
+            ("code", "Try Pumpkin Code", "A coding agent that reads and edits a project folder. Desktop only.",
+             "#/pumpkin/code", bool(s["code_recent"]), True) if not phone else None,
+            ("tasks", "Schedule a task", "A morning briefing, or anything you want done at a set time.",
+             "#/pumpkin/tasks", any(t.get("enabled") for t in self.tasks.all()), True),
+            ("phone", "Use Pumpkin from your phone", "Chat with your models from anywhere, over your own network.",
+             "#/pumpkin/phone", s["remote"] != "off", True) if not phone else None,
+            ("notify", "Get a notification when a task finishes", "Pumpkin sends it to your phone through ntfy.",
+             "#/pumpkin/settings", bool(s["ntfy_topic"]), True),
+        ]
+        out = []
+        for st in steps:
+            if not st:
+                continue
+            sid, title, text, href, done, optional = st
+            out.append({"id": sid, "title": title, "text": text, "href": href, "done": bool(done),
+                        "optional": optional, "skipped": optional and sid in skipped and not done})
+        return {"steps": out, "hidden": bool(s["checklist_hidden"])}
+
+    def skip_step(self, step_id, skipped=True):
+        keep = [x for x in (self.settings["setup_skipped"] or []) if x != step_id]
+        if skipped:
+            keep.append(step_id)
+        self.settings.update({"setup_skipped": keep})
+        return self.checklist()
+
+    # ---- long chats
+    @staticmethod
+    def _plain(m):
+        """One chat message as text, pictures and tool calls as short notes."""
+        c = m.get("content")
+        if isinstance(c, list):
+            c = " ".join(p.get("text", "") if p.get("type") == "text" else "[a picture]" for p in c if isinstance(p, dict))
+        c = str(c or "")
+        calls = "; ".join(f'{t.get("function", {}).get("name")}({str(t.get("function", {}).get("arguments"))[:200]})'
+                          for t in m.get("tool_calls") or [] if isinstance(t, dict))
+        return f"[{m.get('role')}] {c}" + (f" calls: {calls}" if calls else "")
+
+    @classmethod
+    def _chat_size(cls, req):
+        """About how many tokens a chat request takes: three characters a token, a picture about 700."""
+        n = 0
+        for m in req.get("messages") or []:
+            if isinstance(m, dict):
+                n += len(cls._plain(m)) // 3 + 8 + 700 * sum(
+                    1 for p in (m.get("content") if isinstance(m.get("content"), list) else [])
+                    if isinstance(p, dict) and p.get("type") == "image_url")
+        if req.get("tools"):
+            n += len(json.dumps(req["tools"])) // 3
+        return n
+
+    @classmethod
+    def _chat_hash(cls, msgs):
+        return hashlib.sha1("\n".join(cls._plain(m) for m in msgs).encode("utf-8", "replace")).hexdigest()
+
+    def prepare_chat(self, body):
+        """A chat request is about to go to the model. Notes how full the model's memory is and, when the chat no
+        longer fits, swaps its older part for a summary (the chat on screen keeps every message). Returns the body."""
+        try:
+            req = json.loads(body.decode("utf-8"))
+        except (ValueError, UnicodeDecodeError):
+            return body
+        msgs = req.get("messages") if isinstance(req, dict) else None
+        if not isinstance(msgs, list) or not msgs or not all(isinstance(m, dict) for m in msgs):
+            return body
+        ctx = int((self.server.preset or {}).get("ctx") or 0)
+        used = self._chat_size(req)
+        self.chat_tokens, self.chat_at = used, time.time()
+        if not ctx or not self.settings["compact_chat"] or used <= ctx * 0.8 or req.get("prompt"):
+            return body
+        lead = 0
+        while lead < len(msgs) and msgs[lead].get("role") in ("system", "developer"):
+            lead += 1
+        rest = msgs[lead:]
+        cache = self.chat_summary
+        base, carried = None, ""
+        if cache and len(rest) >= cache["n"] and self._chat_hash(rest[:cache["n"]]) == cache["hash"]:
+            base, carried = cache["n"], cache["text"]
+            small = dict(req, messages=msgs[:lead] + self._summary_pair(carried) + rest[base:])
+            if self._chat_size(small) <= ctx * 0.8:
+                return self._compacted(small, len(rest[:base]))
+        users = [i for i, m in enumerate(rest) if m.get("role") == "user"]
+        cut = users[-2] if len(users) >= 2 else (users[-1] if users else len(rest))
+        if cut <= (base or 0):
+            return body                                  # nothing older is left to summarise
+        old = rest[(base or 0):cut]
+        text = ("\n".join(self._plain(m)[:3000] for m in old))
+        text = text[-int(ctx * 2.2):]
+        ask = [{"role": "system", "content": "You summarise a conversation so it can continue."},
+               {"role": "user", "content": "Summarise this conversation for whoever continues it: what the user wants, "
+                "what was decided or found, names, numbers and anything still open. Keep their exact wording for "
+                "instructions. Be brief.\n\n" + (f"Summary so far:\n{carried}\n\nThen:\n" if carried else "") + text}]
+        r = llama.http(int(self.settings["llama_port"]), "/v1/chat/completions",
+                       {"messages": ask, "max_tokens": 1200, "temperature": 0.2, "stream": False}, timeout=900)
+        summary = ""
+        if isinstance(r, dict) and not r.get("error"):
+            summary = (((r.get("choices") or [{}])[0].get("message") or {}).get("content") or "").strip()
+        if not summary:
+            return body                                  # the model answers with its own error
+        self.chat_summary = {"n": cut, "hash": self._chat_hash(rest[:cut]), "text": summary}
+        small = dict(req, messages=msgs[:lead] + self._summary_pair(summary) + rest[cut:])
+        return self._compacted(small, cut)
+
+    @staticmethod
+    def _summary_pair(text):
+        return [{"role": "user", "content": f"Summary of our conversation so far:\n{text}"},
+                {"role": "assistant", "content": "Understood. I will continue from there."}]
+
+    def _compacted(self, req, count):
+        self.chat_tokens = self._chat_size(req)
+        self.chat_note = (time.time(), f"The first {count} messages are summarised so the chat fits the model's memory. "
+                                       f"The chat on screen still shows all of them.")
+        return json.dumps(req).encode()
 
     # ---- pictures
     def image_default(self, kind="draw"):

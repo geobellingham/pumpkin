@@ -45,6 +45,9 @@ DEFAULT_SETTINGS = {
     "ntfy_server": "https://ntfy.sh",
     "keep_awake": True,                # stop the computer from sleeping while a model is loaded
     "setup_done": False,
+    "setup_skipped": [],               # setup checklist steps the user skipped
+    "checklist_hidden": False,         # the setup checklist is hidden from the Overview
+    "compact_chat": True,              # a chat that fills the model's memory gets its older part summarised
     "check_updates": True,             # ask GitHub twice a day if a new Pumpkin is out
     "share": False,                    # other Pumpkins may ask this one's model (Devices page)
     "share_opened_lan": False,         # sharing turned on home-network listening, so turning it off undoes that
@@ -60,7 +63,7 @@ DEFAULT_SETTINGS = {
     "vision_keep_min": 5,              # minutes the vision model stays loaded after its last job (0 = never frees)
     "code_recent": [],                 # project folders Pumpkin Code worked in, newest first
     "code_max_steps": 80,              # tool calls Pumpkin Code makes for one request before it checks in
-    "code_max_tokens": 8192,           # longest single answer in Pumpkin Code
+    "code_max_tokens": 16384,          # longest single answer in Pumpkin Code (never above a third of the context)
     "keep_context": True,              # save the conversation a model has read when it stops and load it at the next start
     "images": True,                    # the chat's model may draw pictures (Images page) once an image model is in
     "image_dir": os.path.join(USER_DIR, "image-models"),

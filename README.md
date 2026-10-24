@@ -45,6 +45,11 @@ The [guide](docs/GUIDE.md) explains every feature and how to use it.
 - **It keeps your place.** When a model stops or is swapped out (to draw a picture, say), Pumpkin saves the
   conversation it has read and loads it back at the next start, so a long chat with a big context does not
   have to be read again. Switch it off in Settings.
+- **A dashboard that shows what is going on.** The Overview shows speed with a graph, memory, and one live
+  line for everything Pumpkin is working on (the model, the vision and image models, downloads, tasks, Code
+  sessions), and a setup list for the extras (vision, pictures, video, documents, phone) where every step can
+  be skipped. Pumpkin Code shows the same live status. A chat that outgrows the model's memory is summarised
+  instead of stopping.
 - **It remembers you.** Tell it your name, your work or how you like answers, and every new chat knows.
   The Memory page shows each fact so you can edit or delete it, or switch memory off. It stays on this
   device.

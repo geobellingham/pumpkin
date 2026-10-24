@@ -9,6 +9,8 @@ Reports, Voice, Devices, Phone, Doctor and Settings.
 **Contents**
 
 - [Getting started](#getting-started)
+- [The Overview: what is running right now](#the-overview-what-is-running-right-now)
+- [Setup list](#setup-list)
 - [Models](#models)
 - [Presets](#presets)
 - [Chatting](#chatting)
@@ -48,6 +50,30 @@ The first start walks you through four steps:
 3. **Model server.** Pumpkin downloads the llama.cpp build for your GPU (CUDA or Vulkan for NVIDIA, Vulkan
    for AMD and Intel, Metal on a Mac, CPU otherwise).
 4. **Your model.** Pick one you have or install the recommended one. It downloads, starts and opens the chat.
+
+## The Overview: what is running right now
+
+The Overview page is the dashboard.
+
+- **The running model**: its name and settings, the speed of the last answer with a small graph of the last
+  few minutes, how fast it reads a prompt, how much it has written, the longest chat it held, and how long
+  it has been running.
+- **Memory**: video memory and RAM, each with a graph, and how busy the graphics card is. RAM shows what
+  your system's own monitor shows. On Linux, the part of the model file the system keeps in RAM as cache is
+  drawn as a lighter segment next to it: the system counts it as free and gives it back when something needs
+  it.
+- **Right now**: one line for everything Pumpkin is working on. The model (loading, answering, or paused so a
+  picture has room), the vision model, the image model (loading, drawing, making a video), downloads, installs,
+  scheduled tasks and Pumpkin Code sessions, each with how long it has been at it. The model's line also
+  shows how full its memory is for your chat.
+
+## Setup list
+
+Below that, **Set up Pumpkin** lists what makes Pumpkin better once it is set up: the engine, a model, seeing
+pictures, drawing, editing and video, searching your documents, Pumpkin Code, a scheduled task, phone access
+and notifications. Each step opens the page where you do it. **Skip** anything you do not need, and **Show
+skipped** brings it back. **Hide** removes the list from the Overview; **Show the setup list** puts it back.
+The first three steps (engine, model, preset) cannot be skipped.
 
 ## Models
 
@@ -98,6 +124,9 @@ The chat is the llama.cpp web UI. Some things Pumpkin adds:
 - **Long chats survive restarts.** When a model stops (or pauses to draw a picture), Pumpkin saves what it
   has read and loads it back next time, so a long chat doesn't have to be read again. Settings >
   *Remember the conversation across restarts*.
+- **Long chats are summarised, not stopped.** When a chat no longer fits the model's memory, Pumpkin sends
+  the model a summary of the older messages and the newest ones in full. The chat on screen keeps every
+  message; the Overview shows when it happened. Settings > *Summarise long chats instead of stopping*.
 - **Attach files and pictures** with the paperclip. Pictures work with any model (see
   [Pictures a model can't see](#pictures-a-model-cant-see)).
 
@@ -208,6 +237,10 @@ and keeps going until the job is done.
 While it works you see what it reads, each change as a diff, each command with its output, and its plan.
 When it asks, answer **Yes**, **Yes to all** (for this session), or type what to do instead and press **No**.
 **Undo** takes back the last file change (press again for the one before). The square button stops it.
+A bar above the conversation says what the model is doing right now (reading, thinking, writing, running a
+command, waiting for you), for how long and how many tokens, and the header shows how full the model's memory
+is. If an answer is cut off while it writes a big file, Pumpkin Code asks it to write smaller pieces and goes on
+by itself.
 
 **In a terminal:** go to the project folder and run
 

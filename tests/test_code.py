@@ -173,6 +173,10 @@ class TestSession(unittest.TestCase):
         # it asks before changing the file, and shows the change
         v = self.wait_for(sid, lambda v: v["pending"] and v["pending"]["kind"] == "edit")
         self.assertIn('+print("Hi")', v["pending"]["diff"])
+        self.assertEqual(v["phase"]["kind"], "waiting")              # the indicator says it waits for the user
+        st, state = self.call("GET", "state")
+        mine = [a for a in state["activity"] if a["kind"] == "code"]
+        self.assertEqual([a["state"] for a in mine], ["waiting"])
         self.assertEqual(v["todo"], [{"text": "Find the greeting", "done": False}, {"text": "Change it", "done": False}])
         with open(os.path.join(self.proj, "hello.py")) as f:
             self.assertEqual(f.read(), 'print("Hello")\n')          # nothing changed yet
@@ -225,6 +229,27 @@ class TestSession(unittest.TestCase):
         self.assertIn("do not run it", ran["result"])
         s = self.core.code.get(sid)
         self.assertIn("do not run it", [m for m in s.messages if m["role"] == "tool"][-1]["content"])
+
+    def test_e_an_answer_cut_off_inside_a_file_is_retried_in_pieces(self):
+        p = self.start_model()
+        with open(os.path.join(self.proj, "hello.py"), "w") as f:
+            f.write('print("Hello")\n')
+        st, v = self.call("POST", "code", {"root": self.proj, "mode": "auto", "preset": p["id"], "text": "Say Hi TOOBIG"})
+        sid = v["id"]
+        v = self.wait_for(sid, lambda v: v["state"] == "idle" and any(e["kind"] == "done" for e in v["events"]), timeout=40)
+        self.assertIsNone(v["error"])                                 # it did not stop with an error
+        self.assertTrue(any("cut off" in str(e.get("text")) for e in v["events"] if e["kind"] == "info"))
+        with open(os.path.join(self.proj, "hello.py")) as f:
+            self.assertEqual(f.read(), 'print("Hi")\n')
+        s = self.core.code.get(sid)
+        self.assertTrue(any("cut off because" in str(m.get("content")) for m in s.messages))
+
+    def test_f_a_file_is_written_in_parts(self):
+        t = coder.Tools(self.proj, web=False)
+        full, old, new = t.plan_write("big.css", "a{}\n")
+        t.save(full, new)
+        full, old, new = t.plan_write("big.css", "b{}", append=True)
+        self.assertEqual(new, "a{}\nb{}")
 
     def test_d_the_terminal_version(self):
         import builtins

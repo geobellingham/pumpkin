@@ -578,6 +578,11 @@ class Web:
             return core.recommendations(refresh=arg("refresh") == "1", goal=arg("goal"))
         if head == "setup" and ident == "goal" and method == "POST":
             return core.apply_goal(body.get("goal"))
+        if head == "checklist":
+            if method == "GET" and not ident:
+                return core.checklist()
+            if ident == "skip" and method == "POST":
+                return core.skip_step(str(body.get("id") or ""), bool(body.get("skipped", True)))
         if head == "catalog":
             # ids can contain a slash and a colon (hf:org/repo), sent URL-encoded
             ident = unquote(name[len("catalog/"):]) if "/" in name else None
@@ -957,6 +962,8 @@ class Web:
                 if b'"image_url"' in body and self.core.settings["vision_relay"] and not self.core.text_model_sees() \
                         and self.core.server.state == "ready":
                     body = self.core.relay_images(body)     # a text-only model gets what the vision model saw
+                if self.core.server.state == "ready" and not peer and path in ("/v1/chat/completions", "/chat/completions"):
+                    body = self.core.prepare_chat(body)     # a chat that fills the model's memory is summarised
             fwd = {}
             for k, v in h.headers.items():
                 kl = k.lower()
