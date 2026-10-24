@@ -107,6 +107,8 @@ class Core:
         """A model loaded only with a shorter context: note that next to the preset, so next time it starts first try.
         The context you chose stays as it is; choosing another one makes Pumpkin try that instead."""
         pid = preset.get("id")
+        if pid and self.presets.get(pid) and preset.get("_no_mmproj"):
+            self.presets.update(pid, {"mmproj": ""})
         if pid and self.presets.get(pid) and preset.get("_asked"):
             self.presets.update(pid, {"ctx_worked": int(preset["ctx"]), "ctx_asked": int(preset["_asked"])})
 
@@ -891,7 +893,16 @@ class Core:
                 self.server.stop()
             self.vision.busy = True
             try:
-                self.vision.start(m)
+                for _ in range(3):
+                    try:
+                        self.vision.start(m)
+                        break
+                    except RuntimeError:
+                        if m["path"] not in self.vision.bad:
+                            raise
+                        m = self.vision.model()              # that one's vision file is broken: try the next
+                        if not m:
+                            raise
                 return fn(self.vision)
             finally:
                 self.vision.busy = False

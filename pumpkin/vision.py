@@ -67,6 +67,7 @@ class Helper:
         self.model_path = None
         self.last_used = 0.0
         self.busy = False
+        self.bad = set()                     # models whose vision file would not load with them
         self.lock = threading.Lock()
         threading.Thread(target=self._idle_watch, daemon=True).start()
 
@@ -80,9 +81,10 @@ class Helper:
         want = self.settings["vision_model"]
         if want:
             m = self.library.resolve(want)
-            if m and m.get("mmproj"):
+            if m and m.get("mmproj") and m["path"] not in self.bad:
                 return m
-        found = [m for m in models if m["kind"] == "model" and m.get("mmproj") and m.get("complete", True)]
+        found = [m for m in models if m["kind"] == "model" and m.get("mmproj") and m.get("complete", True)
+                 and m["path"] not in self.bad]
         return min(found, key=lambda m: m["size_gb"]) if found else None
 
     def size_gb(self, m):
@@ -173,6 +175,9 @@ class Helper:
     def _explain(self):
         tail = self.log_tail(30)
         low = tail.lower()
+        if "failed to load multimodal model" in low or "mtmd_init" in low:
+            self.bad.add(self.model_path)
+            return "The vision file next to this model does not work with it. Pumpkin will use another vision model."
         if "out of memory" in low or "failed to allocate" in low:
             return "The vision model ran out of memory. Pick a smaller vision model in Settings."
         lines = [x.strip() for x in tail.splitlines() if x.strip()]

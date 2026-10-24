@@ -748,6 +748,8 @@ class ServerManager:
         hints = [
             (r"out of memory|ErrorOutOfDeviceMemory|failed to allocate|cudaMalloc failed",
              "The model did not fit in memory. Use a smaller quant, a shorter context, or a smaller KV cache type."),
+            (r"failed to load multimodal model|mtmd_init", "The vision file (mmproj) does not work with this model. "
+             "Clear the Vision file in the preset, or download the one made for this model."),
             (r"failed to load model|error loading model", "llama-server could not load the model file. It may be "
              "incomplete (re-download it) or need a newer llama-server."),
             (r"unknown model architecture", "This llama-server is too old for this model. Update it in Settings."),
@@ -811,7 +813,16 @@ class ServerManager:
         preset = dict(self.preset or {})
         if not preset:
             return False
-        if was == "loading" and self._out_of_memory():
+        if was == "loading" and preset.get("mmproj") and re.search(
+                r"failed to load multimodal model|mtmd_init|clip_model_load|failed to load (the )?mmproj",
+                "".join(self.log_tail(120)), re.I) and not self._out_of_memory():
+            # the vision file does not belong to this model (a merge or finetune often ships its base's): the model
+            # still works for text, so start it without and stop pairing them
+            preset["mmproj"] = ""
+            preset["_no_mmproj"] = True
+            note = (f"The vision file next to {preset.get('name')} does not work with it, so Pumpkin started it "
+                    f"without pictures. It still answers text.")
+        elif was == "loading" and self._out_of_memory():
             ctx = int(preset.get("ctx") or 8192)
             if self._tries >= 2 or ctx <= 2048:
                 return False

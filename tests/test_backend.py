@@ -238,6 +238,27 @@ class TestServer(unittest.TestCase):
             self.core.presets.update(p["id"], {"ctx": p.get("ctx")})
             self.core.server.stop()
 
+    def test_4b2_a_vision_file_that_does_not_fit_the_model_is_dropped(self):
+        code, lib = self.call("GET", "/pumpkin/api/models")
+        qwen = next(m for m in lib["models"] if m["file"].startswith("Qwen3.6"))
+        self.assertTrue(qwen.get("mmproj"))
+        code, p = self.call("POST", "/pumpkin/api/presets/from-model", {"path": qwen["path"]})
+        self.assertTrue(p["mmproj"])
+        os.environ["FAKE_MMPROJ_FAIL"] = "1"
+        try:
+            self.call("POST", "/pumpkin/api/llama/start", {"preset": p["id"]})
+            ok = self.wait(lambda: self.call("GET", "/pumpkin/api/state")[1]["server"]["state"] == "ready", 30)
+            st = self.call("GET", "/pumpkin/api/state")[1]["server"]
+            self.assertTrue(ok, st)
+            self.assertIn("without pictures", st.get("notice") or "")
+            with open(os.path.join(config.STATE_DIR, "llama-server.log")) as f:
+                self.assertNotIn("--mmproj", f.read())
+            self.assertEqual(self.core.presets.get(p["id"])["mmproj"], "")   # next time it starts first try
+        finally:
+            os.environ.pop("FAKE_MMPROJ_FAIL", None)
+            self.call("POST", "/pumpkin/api/llama/stop")
+            self.core.presets.delete(p["id"])
+
     def test_4c_deleting_stops_the_model(self):
         """Deleting the running preset, or the model file under it, frees the memory at once."""
         p = self.core.presets.add({"name": "Throwaway", "model": self.core.presets.all()[0]["model"], "ctx": 2048})
