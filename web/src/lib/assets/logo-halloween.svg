@@ -1,0 +1,11 @@
+<svg width="512" height="512" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <path d="M16.4 8.4c.1-2.6 1.1-4.6 3.3-6" fill="none" stroke="#3f6212" stroke-linecap="round" stroke-width="2.6"/>
+  <path d="M19.4 3.6c1.6-.9 3.2-.6 3.8.6" fill="none" stroke="#4d7c0f" stroke-linecap="round" stroke-width="1.1"/>
+  <ellipse cx="10.2" cy="18.8" fill="#c2410c" rx="7.6" ry="9.4"/>
+  <ellipse cx="21.8" cy="18.8" fill="#c2410c" rx="7.6" ry="9.4"/>
+  <ellipse cx="16" cy="18.8" fill="#ea580c" rx="7.2" ry="10"/>
+  <path d="M16 9.2v2.2M10.6 10.8c-1 1.4-1.7 2.8-2.1 4.2M21.4 10.8c1 1.4 1.7 2.8 2.1 4.2" fill="none" stroke="#9a3412" stroke-linecap="round" stroke-opacity=".6" stroke-width="1"/>
+  <path d="M7.8 18.2h6.2l-3.1-5.6zM18 18.2h6.2l-3.1-5.6zM14.8 21h2.4L16 19.2z" fill="#fde047" stroke="#7c2d12" stroke-linejoin="round" stroke-width=".4"/>
+  <path d="M7.4 21.6c2.8 1.4 5.7 2.1 8.6 2.1s5.8-.7 8.6-2.1c-.8 4-4.4 6.6-8.6 6.6s-7.8-2.6-8.6-6.6z" fill="#fde047" stroke="#7c2d12" stroke-linejoin="round" stroke-width=".4"/>
+  <path d="M11.2 22.9h2.4v2.1h-2.4zM18.4 22.9h2.4v2.1h-2.4zM14.8 25.9h2.4v2.3h-2.4z" fill="#ea580c"/>
+</svg>

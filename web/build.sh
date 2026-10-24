@@ -43,6 +43,10 @@ sed -i "0,/^\timport XIcon/s##\timport PumpkinPreviewBar from '\$lib/pumpkin/com
 sed -i 's#^\(\t*\)<DialogPrimitive.Content class="code-preview-content">#&\n\1\t<PumpkinPreviewBar {code} {language} />#' "$PV"
 grep -q "<PumpkinPreviewBar {code} {language} />" "$PV"
 grep -q "import PumpkinPreviewBar" "$PV"
+# the chat's logo is a jack-o'-lantern in Halloween week, like Pumpkin's own
+LG=src/lib/components/app/misc/Logo.svelte
+sed -i "s#^\timport logoMark from '\$lib/assets/logo.svg?raw';#\timport plainMark from '\$lib/assets/logo.svg?raw';\n\timport jackMark from '\$lib/assets/logo-halloween.svg?raw';\n\timport { isHalloween } from '\$lib/pumpkin/season';\n\tconst logoMark = isHalloween() ? jackMark : plainMark;#" "$LG"
+grep -q "isHalloween() ? jackMark : plainMark" "$LG"
 npm ci --no-audit --no-fund
 npm install --no-save --no-audit --no-fund qrcode-generator@1.4.4
 npm run build
