@@ -5,6 +5,8 @@
 	import { Textarea } from '$lib/components/ui/textarea';
 	import Card from '../components/Card.svelte';
 	import Field from '../components/Field.svelte';
+	import Segmented from '../components/Segmented.svelte';
+	import { settingsStore } from '$lib/stores/settings/index.svelte';
 	import Toggle from '../components/Toggle.svelte';
 	import { api, pumpkin } from '../store.svelte';
 	import type { Settings } from '../types';
@@ -115,6 +117,18 @@
 					<Button class="rounded-full" onclick={() => save({ download_dir: s!.download_dir, models_dirs: dirsText.split('\n').map((x) => x.trim()).filter(Boolean), reports_dir: s!.reports_dir })} size="sm">Save folders</Button>
 				</div>
 			</div>
+		</Card>
+
+		<Card description="For the chat and Pumpkin's pages, on this device. The button at the top of Pumpkin's pages switches it too." title="Appearance">
+			<Segmented
+				onchange={(v) => settingsStore.updateTheme(v)}
+				options={[
+					{ label: 'Same as the system', value: 'system' },
+					{ label: 'Light', value: 'light' },
+					{ label: 'Dark', value: 'dark' }
+				]}
+				value={String(settingsStore.config.theme ?? 'system')}
+			/>
 		</Card>
 
 		<Card title="Behaviour">

@@ -48,6 +48,8 @@ DEFAULT_SETTINGS = {
     "setup_skipped": [],               # setup checklist steps the user skipped
     "checklist_hidden": False,         # the setup checklist is hidden from the Overview
     "compact_chat": True,              # a chat that fills the model's memory gets its older part summarised
+    "skills": True,                    # the model may use skills (Skills page)
+    "skills_off": [],                  # skills switched off by name
     "check_updates": True,             # ask GitHub twice a day if a new Pumpkin is out
     "share": False,                    # other Pumpkins may ask this one's model (Devices page)
     "share_opened_lan": False,         # sharing turned on home-network listening, so turning it off undoes that

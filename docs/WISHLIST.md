@@ -3,13 +3,13 @@
 Things wanted for Pumpkin, roughly in the order they are planned. Nothing here is started unless it says so.
 
 ## Next (0.7.x)
-- **Dark mode toggle.** Light, Dark, System in the top bar and in Settings, remembered, one setting for the chat and the Pumpkin pages.
 - **Real-hardware test pass.** Run Pumpkin on the Windows PC with the RX 9070 XT and on the Macs: vision relay with real models, Wan 2.2 downloads, Qwen Image Edit, Pumpkin Code with real local models, restoring a long conversation on a big context, Mac pairing.
 
-## 0.8.0
-- **Skills.** Folders with a `SKILL.md` (name, one-line description, instructions) in the same format Claude uses. The model sees only the names and descriptions and loads a skill with a `skill` tool when it fits. A Skills page to import (folder or GitHub link), turn on and off, plus a few built-in ones. Pumpkin Code also reads skills from the project folder.
-- **Connectors catalog.** Ready-made MCP servers (GitHub, Google Drive, Notion, Slack, Postgres, a browser and so on) installed with a pasted token, enabled per preset so small models do not see dozens of tools. Writes ask first. API tokens first, sign-in flows later.
-- **Artifact preview in chat.** HTML, SVG and charts the model writes show live in a sandboxed frame, with a button to save to Files.
+## 0.8.0 (built on the v0.8 branch, not released)
+- **Dark mode toggle.** Done: top bar and Settings, per device.
+- **Skills.** Done. Folders with a `SKILL.md` (name, one-line description, instructions) in the same format Claude uses. The model sees only the names and descriptions and loads a skill with a `skill` tool when it fits. A Skills page to import (folder or GitHub link), turn on and off, plus a few built-in ones. Pumpkin Code also reads skills from the project folder.
+- **Connectors catalog.** Done: GitHub, Notion, Jira and Confluence, a browser, Git, folders, time, Context7 library docs, PostgreSQL and SQLite, with a token form, a Test button and a per-preset choice. Still to come: Google Drive and Slack, which need sign-in flows.
+- **Artifact preview in chat.** The chat already previews HTML and SVG full screen in a sandboxed frame; 0.8.0 adds Save to Files and Download there.
 
 ## Later
 - **Scheduling from the chat, the way Claude does it.** Today the Tasks page is a form for repeating tasks. The wish is that the model itself schedules work when you ask in plain words ("tomorrow at 03:00 review the code with Qwen3 Coder and write a map"), in the chat and in Pumpkin Code. It works like this:

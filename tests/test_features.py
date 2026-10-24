@@ -505,3 +505,154 @@ class TestSetupChecklistAndLongChats(unittest.TestCase):
             self.assertIsNone(c.decode_progress())
         finally:
             llama.http, time.time = real, real_time
+
+
+class TestSkills(unittest.TestCase):
+    """Skills in the SKILL.md format: reading them, yours over Pumpkin's, switching off, importing."""
+
+    def setUp(self):
+        from pumpkin import skills
+        self.skills = skills
+        self.dir = tempfile.mkdtemp(prefix="pumpkin-skills-")
+        self._cfg = config.CONFIG_DIR
+        config.CONFIG_DIR = self.dir
+
+    def tearDown(self):
+        config.CONFIG_DIR = self._cfg
+
+    def test_the_front_matter_is_read(self):
+        meta, body = self.skills.parse('---\nname: "my-skill"\ndescription: >\n  Use it when\n  things happen.\n---\n\nDo this.\n')
+        self.assertEqual(meta["name"], "my-skill")
+        self.assertEqual(meta["description"], "Use it when things happen.")
+        self.assertEqual(body, "Do this.")
+        meta, body = self.skills.parse("No front matter here.")
+        self.assertEqual(meta, {})
+        self.assertEqual(body, "No front matter here.")
+
+    def test_pumpkin_ships_skills_and_yours_win(self):
+        names = [s["name"] for s in self.skills.all_skills({})]
+        self.assertIn("write-a-report", names)
+        self.assertIn("review-security-logs", names)
+        self.skills.save("write-a-report", "My own way of writing reports.", "Write it my way.")
+        mine = self.skills.find("write-a-report", {})
+        self.assertEqual(mine["source"], "yours")
+        self.assertIn("Write it my way.", self.skills.read_text(mine))
+        # switched off, it is not offered
+        self.assertIsNone(self.skills.find("write-a-report", {"skills_off": ["write-a-report"]}))
+        self.assertTrue(self.skills.delete("write-a-report"))
+        self.assertEqual(self.skills.find("write-a-report", {})["source"], "builtin")
+
+    def test_a_skills_files_stay_inside_it(self):
+        d = os.path.join(self.dir, "src", "templ")
+        os.makedirs(os.path.join(d, "refs"))
+        with open(os.path.join(d, "SKILL.md"), "w") as f:
+            f.write("---\nname: templ\ndescription: Uses a template.\n---\nRead refs/t.md.\n")
+        with open(os.path.join(d, "refs", "t.md"), "w") as f:
+            f.write("TEMPLATE")
+        self.assertEqual(self.skills.import_folder(os.path.join(self.dir, "src")), ["templ"])
+        s = self.skills.find("templ", {})
+        self.assertEqual(s["files"], ["refs/t.md"])
+        self.assertEqual(self.skills.read_file(s, "refs/t.md"), "TEMPLATE")
+        with self.assertRaises(ValueError):
+            self.skills.read_file(s, "../../../../etc/passwd")
+        self.assertIn("refs/t.md", self.skills.read_text(s))
+
+    def test_import_from_github(self):
+        import io
+        import zipfile
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w") as z:
+            z.writestr("repo-main/README.md", "hi")
+            z.writestr("repo-main/skills/pdf-tables/SKILL.md", "Find the tables in a PDF.\n")
+            z.writestr("repo-main/skills/other/SKILL.md", "---\nname: other\ndescription: x\n---\nother\n")
+        asked = []
+
+        def fetch(url):
+            asked.append(url)
+            return buf.getvalue()
+
+        names = self.skills.import_github("https://github.com/owner/repo/tree/main/skills/pdf-tables", fetch=fetch)
+        self.assertEqual(asked, ["https://codeload.github.com/owner/repo/zip/main"])
+        self.assertEqual(names, ["pdf-tables"])                      # no name in it: the folder's name
+        self.assertIn("Find the tables", self.skills.read_text(self.skills.find("pdf-tables", {})))
+        self.assertEqual(sorted(self.skills.import_github("https://github.com/owner/repo", fetch=fetch)),
+                         ["other", "pdf-tables"])
+        with self.assertRaises(ValueError):
+            self.skills.import_github("https://example.com/not-github")
+
+    def test_the_tool_server_reads_them(self):
+        from pumpkin import mcp_skills
+        self.assertIn("# Skill: write-a-report", mcp_skills.call("read", {"name": "Write-A-Report"}))
+        with self.assertRaises(LookupError):
+            mcp_skills.call("read", {"name": "nope"})
+        self.assertIn("- write-a-report:", self.skills.listing(self.skills.enabled({})))
+
+
+class TestConnectors(unittest.TestCase):
+    def setUp(self):
+        from pumpkin import connectors
+        self.c = connectors
+        self.dir = tempfile.mkdtemp(prefix="pumpkin-conn-")
+        self._cfg = config.CONFIG_DIR
+        config.CONFIG_DIR = self.dir
+
+    def tearDown(self):
+        config.CONFIG_DIR = self._cfg
+
+    def test_every_catalog_entry_is_complete(self):
+        ids = set()
+        for s in self.c.catalog():
+            self.assertNotIn(s["id"], ids)
+            ids.add(s["id"])
+            for k in ("name", "blurb", "needs", "command", "docs", "fields"):
+                self.assertIn(k, s, s["id"])
+            self.assertIn(s["needs"], self.c.NEEDS)
+            for f in s["fields"]:
+                self.assertIn(f["kind"], ("secret", "text", "path", "paths", "toggle"), s["id"])
+
+    def test_github_is_started_with_the_token_outside_its_arguments(self):
+        with self.assertRaises(ValueError):
+            self.c.save("github", {}, enabled=True)                  # no token yet
+        self.c.save("github", {"token": "ghp_secret"}, enabled=True)
+        e = self.c.entry("github")
+        self.assertEqual(e["env"]["GITHUB_PERSONAL_ACCESS_TOKEN"], "ghp_secret")
+        self.assertNotIn("ghp_secret", " ".join(e["args"]))
+        self.assertEqual(e["args"][-1], "ghcr.io/github/github-mcp-server")      # the image comes last
+        self.assertIn("GITHUB_READ_ONLY=1", e["args"])                         # read only unless you say so
+        self.assertIn("GITHUB_TOOLSETS=repos,issues,pull_requests,actions", e["args"])
+        # the token is never sent back to the page, and "set" keeps it
+        pub = next(x for x in self.c.public() if x["id"] == "github")
+        self.assertEqual(pub["values"]["token"], "set")
+        self.c.save("github", {"token": "set", "read_only": False})
+        e = self.c.entry("github")
+        self.assertEqual(e["env"]["GITHUB_PERSONAL_ACCESS_TOKEN"], "ghp_secret")
+        self.assertNotIn("GITHUB_READ_ONLY=1", e["args"])
+
+    def test_postgres_is_read_only_unless_changes_are_allowed(self):
+        self.c.save("postgres", {"uri": "postgresql://u:p@h/db"}, enabled=True)
+        self.assertIn("--access-mode=restricted", self.c.entry("postgres")["args"])
+        self.c.save("postgres", {"writes": True})
+        self.assertIn("--access-mode=unrestricted", self.c.entry("postgres")["args"])
+
+    def test_a_preset_can_pick_its_connectors(self):
+        self.c.save("time", {}, enabled=True)
+        self.c.save("folders", {"paths": "/tmp\n"}, enabled=True)
+        avail = self.c.available
+        self.c.available = lambda cid: True
+        try:
+            self.assertEqual(sorted(self.c.servers_for({})), ["folders", "time"])
+            self.assertEqual(list(self.c.servers_for({"connectors": ["time"]})), ["time"])
+            self.assertEqual(self.c.servers_for({"connectors": []}), {})
+            self.c.save("time", enabled=False)
+            self.assertEqual(list(self.c.servers_for({})), ["folders"])
+        finally:
+            self.c.available = avail
+
+    def test_the_test_talks_to_a_real_tool_server(self):
+        pkg = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        e = {"command": sys.executable, "args": ["-m", "pumpkin.mcp_skills"],
+             "env": {"PYTHONPATH": pkg, "PYTHONUTF8": "1"}}
+        self.assertEqual(self.c.handshake(e, timeout=60), ["read", "file"])
+        with self.assertRaises(RuntimeError) as err:
+            self.c.handshake({"command": sys.executable, "args": ["-c", "import sys; sys.stderr.write('bad token'); sys.exit(1)"]}, timeout=30)
+        self.assertIn("bad token", str(err.exception))

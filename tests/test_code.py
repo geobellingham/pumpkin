@@ -200,6 +200,8 @@ class TestSession(unittest.TestCase):
         system = sent["messages"][0]["content"]
         self.assertIn("Run tests with pytest", system)
         self.assertIn("hello.py", system)
+        self.assertIn("- write-a-report:", system)                       # the skills it may read
+        self.assertIn("skill", [t["function"]["name"] for t in sent["tools"]])
         # the change can be undone
         st, r = self.call("POST", f"code/{sid}/undo", {})
         self.assertEqual((st, r.get("path")), (200, "hello.py"))
@@ -259,6 +261,28 @@ class TestSession(unittest.TestCase):
         self.assertTrue(any("stopped answering" in str(e.get("text")) for e in v["events"] if e["kind"] == "info"))
         with open(os.path.join(self.proj, "hello.py")) as f:
             self.assertEqual(f.read(), 'print("Hi")\n')
+
+    def test_h_skills_connectors_and_saved_previews(self):
+        st, r = self.call("GET", "skills")
+        self.assertEqual(st, 200)
+        self.assertIn("review-security-logs", [x["name"] for x in r["items"]])
+        st, r = self.call("POST", "skills", {"name": "tidy-notes", "description": "Tidy meeting notes.",
+                                             "body": "Make bullet points."})
+        self.assertEqual((st, r.get("name")), (200, "tidy-notes"))
+        self.call("POST", "skills/toggle", {"name": "tidy-notes", "enabled": False})
+        st, r = self.call("GET", "skills")
+        self.assertFalse(next(x for x in r["items"] if x["name"] == "tidy-notes")["enabled"])
+        st, r = self.call("POST", "skills", {"name": "", "body": "x"})
+        self.assertEqual(st, 400)
+        st, r = self.call("GET", "connectors")
+        self.assertIn("github", [x["id"] for x in r["items"]])
+        st, r = self.call("POST", "connectors/time", {"values": {"tz": "Europe/Sofia"}, "enabled": True})
+        self.assertEqual(st, 200, r)
+        self.assertTrue(r["item"]["enabled"])
+        st, r = self.call("POST", "connectors/github", {"enabled": True})
+        self.assertEqual(st, 400)                                          # it needs a token first
+        st, r = self.call("POST", "files/artifact", {"content": "<html><title>My page</title></html>", "language": "html"})
+        self.assertEqual((st, r.get("path")), (200, "artifacts/My page.html"))
 
     def test_f_a_file_is_written_in_parts(self):
         t = coder.Tools(self.proj, web=False)

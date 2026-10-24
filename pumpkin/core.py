@@ -9,8 +9,8 @@ import sys
 import threading
 import time
 
-from . import (__version__, agent, coder, config, devices, docs, hardware, images, llama, mcp_local, memory, migrate, models,
-               recommend, remote, updates, vision, workspace)
+from . import (__version__, agent, coder, config, connectors, devices, docs, hardware, images, llama, mcp_local, memory, migrate, models,
+               recommend, remote, skills, updates, vision, workspace)
 
 
 def _python():
@@ -170,6 +170,12 @@ class Core:
             hint = self.devices_hint()
             if hint:
                 text += " " + hint
+            if self.skills_on():
+                block = skills.listing(skills.enabled(self.settings),
+                                       limit_chars=700 if ctx <= 8192 else 1800 if ctx <= 32768 else 4000)
+                if block:
+                    text += ("\n\nSkills: instructions for particular jobs. When a request matches one, call "
+                             "skills_read with its name first and follow it.\n" + block)
         if pre.get("tools") and pre.get("sandbox", True) and workspace.docker_usable():
             text += " Your sandbox's /workspace is the user's Files folder."
         if self.settings["memory"]:
@@ -291,12 +297,24 @@ class Core:
             self._app_tools(servers, preset)
         elif not hardware.ANDROID:
             self._computer_tools(servers, preset)
+            try:
+                for name, e in connectors.servers_for(preset).items():
+                    servers.setdefault(name, e)          # your connectors (Connectors page)
+            except Exception:  # noqa: BLE001 - a broken connector file must not stop the model
+                pass
         if not servers:
             return None
         path = os.path.join(config.STATE_DIR, "mcp-effective.json")
         with open(path, "w") as f:
             json.dump({"mcpServers": servers}, f, indent=2)
         return path
+
+    def skills_on(self):
+        """Skills are switched on and at least one is turned on."""
+        try:
+            return bool(self.settings["skills"]) and bool(skills.enabled(self.settings))
+        except Exception:  # noqa: BLE001 - a broken skill folder must not stop a model from starting
+            return False
 
     def tools_here(self):
         """Pumpkin's own tools work here: always on a computer, on Android when the app has its tool relay."""
@@ -312,6 +330,8 @@ class Core:
         servers.setdefault("files", h.command("files", 300_000))
         if self.settings["memory"]:
             servers.setdefault("memory", h.command("memory"))
+        if self.skills_on():
+            servers.setdefault("skills", h.command("skills"))
         if any(d.get("enabled", True) for d in devices.load()):
             servers.setdefault("devices", h.command("devices", 1_800_000))
 
@@ -328,6 +348,8 @@ class Core:
         servers.setdefault("files", self._builtin("pumpkin.mcp_files", 300_000))
         if self.settings["memory"]:
             servers.setdefault("memory", self._builtin("pumpkin.mcp_memory"))
+        if self.skills_on():
+            servers.setdefault("skills", self._builtin("pumpkin.mcp_skills"))
         if any(d.get("enabled", True) for d in devices.load()):
             # a phone can take minutes, so the call may wait up to 30 minutes
             servers.setdefault("devices", self._builtin("pumpkin.mcp_devices", 1_800_000))
@@ -658,6 +680,9 @@ class Core:
             ("documents", "Search your documents",
              "Point Pumpkin at folders and the model finds answers in your own files, scans included.",
              "#/pumpkin/files", bool(s["doc_folders"]), True),
+            ("connectors", "Connect your apps", "GitHub, Notion, Jira, a browser, a database: the model gets their "
+             "tools. Desktop only.", "#/pumpkin/connectors",
+             any(v.get("enabled") for v in connectors.load().values()), True) if not phone else None,
             ("code", "Try Pumpkin Code", "A coding agent that reads and edits a project folder. Desktop only.",
              "#/pumpkin/code", bool(s["code_recent"]), True) if not phone else None,
             ("tasks", "Schedule a task", "A morning briefing, or anything you want done at a set time.",

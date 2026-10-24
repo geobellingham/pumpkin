@@ -7,6 +7,7 @@ import ipaddress
 import json
 import mimetypes
 import os
+import re
 import secrets
 import shutil
 import sys
@@ -16,7 +17,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, quote, unquote, urlparse
 
 from . import (APP_NAME, __version__, agent, config, devices, discover, docs, doctor, hardware, llama, memory, models,
-               remote, sessions, updates, workspace)
+               remote, sessions, connectors, skills, updates, workspace)
 
 COOKIE = "pumpkin_key"
 KILL_SW = """self.addEventListener('install', () => self.skipWaiting());
@@ -578,6 +579,48 @@ class Web:
             return core.recommendations(refresh=arg("refresh") == "1", goal=arg("goal"))
         if head == "setup" and ident == "goal" and method == "POST":
             return core.apply_goal(body.get("goal"))
+        if head == "connectors":
+            if method == "GET" and not ident:
+                return {"items": connectors.public()}
+            what = parts[2] if len(parts) > 2 else None
+            running = core.server.state in ("ready", "loading") and bool((core.server.preset or {}).get("tools"))
+            try:
+                if ident and method == "POST" and what == "test":
+                    return connectors.test(ident)
+                if ident and method == "POST" and what == "remove":
+                    connectors.remove(ident)
+                    return {"ok": True, "restart_needed": running}
+                if ident and method == "POST" and not what:
+                    c = connectors.save(ident, body.get("values"), body.get("enabled"))
+                    return {"item": c, "restart_needed": running}
+            except (LookupError, ValueError) as e:
+                raise ApiError(str(e)) from e
+        if head == "skills":
+            if method == "GET" and not ident:
+                items = skills.all_skills(core.settings)
+                return {"on": bool(core.settings["skills"]), "folder": skills.user_dir(),
+                        "items": [{k: x[k] for k in ("name", "description", "source", "enabled", "files", "body")}
+                                  for x in items]}
+            if method == "POST" and not ident:
+                try:
+                    sk = skills.save(body.get("name"), body.get("description"), body.get("body"), body.get("old_name"))
+                except ValueError as e:
+                    raise ApiError(str(e)) from e
+                return {"name": sk["name"]}
+            if ident == "toggle" and method == "POST":
+                off = [n for n in (core.settings["skills_off"] or []) if n != body.get("name")]
+                if not body.get("enabled", True):
+                    off.append(str(body.get("name") or ""))
+                core.settings.update({"skills_off": off})
+                return {"ok": True}
+            if ident == "delete" and method == "POST":
+                return {"removed": skills.delete(body.get("name"))}
+            if ident == "import" and method == "POST":
+                try:
+                    names = skills.import_github(body["url"]) if body.get("url") else skills.import_folder(body.get("folder"))
+                except (ValueError, OSError) as e:
+                    raise ApiError(str(e)) from e
+                return {"imported": names}
         if head == "checklist":
             if method == "GET" and not ident:
                 return core.checklist()
@@ -715,6 +758,19 @@ class Web:
             if ident == "reveal" and method == "POST":
                 workspace.reveal(st, body.get("path", ""))
                 return {"ok": True}
+            if ident == "artifact" and method == "POST":
+                # a page or drawing previewed in the chat, saved as it is into Files/artifacts
+                kind = "svg" if str(body.get("language", "")).lower() == "svg" else "html"
+                content = str(body.get("content") or "")
+                if not content.strip():
+                    raise ApiError("There is nothing to save.")
+                if len(content) > 5_000_000:
+                    raise ApiError("That is too big to save (over 5 MB).")
+                name = body.get("name") or (re.search(r"<title[^>]*>([^<]{1,80})</title>", content, re.I) or [None, ""])[1]
+                stem = "".join(" " if c in '<>:"/\\|?*' or ord(c) < 32 else c for c in str(name or ""))
+                stem = stem.strip(" .")[:80]
+                stem = stem or time.strftime("page-%Y%m%d-%H%M%S" if kind == "html" else "drawing-%Y%m%d-%H%M%S")
+                return {"path": workspace.save_upload(st, "artifacts", f"{stem}.{kind}", content.encode("utf-8"))}
 
         # ---- health, remote access, app
         if head == "update":

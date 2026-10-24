@@ -32,4 +32,4 @@ packages = ["pumpkin"]
 version = {attr = "pumpkin.__version__"}
 
 [tool.setuptools.package-data]
-pumpkin = ["catalog.json", "image_catalog.json", "assets/*", "ui/**/*"]
+pumpkin = ["catalog.json", "image_catalog.json", "connectors.json", "assets/*", "skills/**/*", "ui/**/*"]

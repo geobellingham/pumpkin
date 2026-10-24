@@ -37,6 +37,12 @@ sed -i "0,/^\timport ChatMessageToolCallBlockDefault/s##\timport PumpkinToolImag
 sed -i "s#^{\#if isSearchCall}#{\#if section.toolName === 'image_generate' || section.toolName === 'image_edit'}\n\t<PumpkinToolImage {isStreaming} {section} />\n{:else if section.toolName === 'image_video'}\n\t<PumpkinToolVideo {isStreaming} {section} />\n{:else if isSearchCall}#" "$TB"
 grep -q "PumpkinToolImage {isStreaming}" "$TB"
 grep -q "PumpkinToolVideo {isStreaming}" "$TB"
+# the chat's full-screen preview of a page or drawing gets "Save to Files" and "Download"
+PV=src/lib/components/app/dialogs/DialogCodePreview.svelte
+sed -i "0,/^\timport XIcon/s##\timport PumpkinPreviewBar from '\$lib/pumpkin/components/PreviewBar.svelte';\n&#" "$PV"
+sed -i 's#^\(\t*\)<DialogPrimitive.Content class="code-preview-content">#&\n\1\t<PumpkinPreviewBar {code} {language} />#' "$PV"
+grep -q "<PumpkinPreviewBar {code} {language} />" "$PV"
+grep -q "import PumpkinPreviewBar" "$PV"
 npm ci --no-audit --no-fund
 npm install --no-save --no-audit --no-fund qrcode-generator@1.4.4
 npm run build

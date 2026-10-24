@@ -50,6 +50,9 @@ The [guide](docs/GUIDE.md) explains every feature and how to use it.
   sessions), and a setup list for the extras (vision, pictures, video, documents, phone) where every step can
   be skipped. Pumpkin Code shows the same live status. A chat that outgrows the model's memory is summarised
   instead of stopping.
+- **Skills and connectors.** Skills are instructions for a kind of job (a report, a log review), in the same
+  `SKILL.md` format Claude uses, so existing skills work as they are. Connectors give the model the tools of GitHub,
+  Notion, Jira and Confluence, a browser, Git, PostgreSQL and more, set up with a token and a test button.
 - **It remembers you.** Tell it your name, your work or how you like answers, and every new chat knows.
   The Memory page shows each fact so you can edit or delete it, or switch memory off. It stays on this
   device.

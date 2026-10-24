@@ -21,6 +21,8 @@ Reports, Voice, Devices, Phone, Doctor and Settings.
 - [Editing pictures](#editing-pictures)
 - [Short videos](#short-videos)
 - [Pumpkin Code](#pumpkin-code)
+- [Skills](#skills)
+- [Connectors](#connectors)
 - [Memory](#memory)
 - [Personas, agent limits and MCP servers](#personas-agent-limits-and-mcp-servers)
 - [Tasks on a schedule](#tasks-on-a-schedule)
@@ -127,6 +129,8 @@ The chat is the llama.cpp web UI. Some things Pumpkin adds:
 - **Long chats are summarised, not stopped.** When a chat no longer fits the model's memory, Pumpkin sends
   the model a summary of the older messages and the newest ones in full. The chat on screen keeps every
   message; the Overview shows when it happened. Settings > *Summarise long chats instead of stopping*.
+- **Preview pages and drawings.** When the model writes a web page or an SVG, the eye button on the code block shows
+  it full screen. **Save to Files** keeps it in Files > artifacts, the download button saves it anywhere.
 - **Attach files and pictures** with the paperclip. Pictures work with any model (see
   [Pictures a model can't see](#pictures-a-model-cant-see)).
 
@@ -268,6 +272,52 @@ Tips:
 - It can only touch files inside the project folder. Commands run on your computer as you (not in the
   Docker sandbox), which is why it asks first by default.
 
+## Skills
+
+A skill is a set of instructions for a particular kind of job, like writing a report, summarising a document or
+triaging security logs. Skills use the same format as Claude's: a folder with a `SKILL.md` that starts with a
+`name` and a one-line `description`, then the instructions, plus any files it needs (templates, references).
+
+The model only sees each skill's name and description, which costs almost nothing even on a small model. When a
+request fits one, it reads the instructions with the `skills_read` tool and follows them. Skills work in the chat
+(with a preset that has tools on), in scheduled tasks and in Pumpkin Code.
+
+**Skills page:**
+- Pumpkin comes with a few: *write-a-report*, *summarise-a-document* and *review-security-logs*.
+- **New** writes your own. Keep the description about *when* to use it, since that line is all the model sees until
+  it opens the skill.
+- **Import** takes a GitHub link (one skill folder, or a whole repository of skills) or a folder on your computer.
+  Skills written for Claude work as they are.
+- Switch any skill off, and switch skills off altogether with **Use skills** (restart the model after that one).
+- A built-in skill can't be changed, but **Save as my skill** under a new name makes your own version.
+
+Pumpkin Code also reads skills from the project itself: `.pumpkin/skills`, `.claude/skills` or `.agents/skills`.
+
+## Connectors
+
+Ready-made tool servers for apps and services. The model gets their tools the next time it starts.
+
+| Connector | What it does | Needs |
+|---|---|---|
+| GitHub | repositories, issues, pull requests, Actions (read only unless you switch that off) | Docker, a personal access token |
+| Notion | search, read and update pages and databases | Node.js, an integration token |
+| Browser | a real browser the model can click and type in | Node.js |
+| Library docs (Context7) | current documentation for programming libraries | Node.js |
+| Folders | read and write files in folders you pick | Node.js |
+| Git | status, log, diffs and commits of a repository | uv |
+| Time and time zones | today's date and time, time zone conversions | uv |
+| Jira and Confluence | issues and pages, Cloud or Server | uv, an API token |
+| PostgreSQL | tables and queries (read only unless you allow changes) | uv, the database address |
+| SQLite | query a database file | uv |
+
+**Connectors page:** **Set up**, fill in what it asks for, **Test** (it starts the server, asks for its tools and
+stops it again; the first test downloads it, which can take a minute), then switch it on. **Restart** the model to
+give it the new tools. Tokens stay on your computer in Pumpkin's settings folder.
+
+A preset uses every connector that is on, or only the ones you tick (Presets > edit > *Every connector that is on*).
+Small models get worse with dozens of tools, so give each preset only what it needs. The chat asks you before each
+tool call, as it does for every tool. Your own MCP servers can still be added by hand on the Agent page.
+
 ## Memory
 
 Tell the model things about you ("I'm a nurse", "keep answers short") and it saves them. Every new chat
@@ -351,6 +401,9 @@ access to your files, settings or chats. **Make a new code** cuts off every devi
 space, Tailscale and more, and gives the command that fixes each problem.
 
 ## Settings
+
+**Appearance**: light, dark or the same as your system, for the chat and Pumpkin's pages. The sun or moon
+button at the top of Pumpkin's pages switches it too. It's kept per device.
 
 - **Chat settings**: sampling, display and tools in the chat.
 - **Folders**: where models are found, where new ones download, where reports go.

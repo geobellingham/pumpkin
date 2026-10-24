@@ -1,6 +1,7 @@
 export type Status = 'offline' | 'off' | 'loading' | 'ready' | 'busy' | 'error';
 
 export interface Preset {
+	connectors?: string[] | null;
 	ctx: number;
 	desc?: string;
 	extra?: string;
@@ -236,6 +237,7 @@ export interface Settings {
 	sandbox_image: string;
 	setup_done: boolean;
 	setup_skipped: string[];
+	skills: boolean;
 	threads: number;
 	tool_chars: number;
 }
@@ -264,4 +266,40 @@ export interface Hardware {
 	main_gpu: { name: string; phone?: boolean; unified?: boolean; vendor: string; vram_total: number } | null;
 	ram_total: number;
 	vulkan: boolean;
+}
+
+export interface Skill {
+	body: string;
+	description: string;
+	enabled: boolean;
+	files: string[];
+	name: string;
+	source: 'builtin' | 'yours' | 'project';
+}
+
+export interface ConnectorField {
+	default?: unknown;
+	help?: string;
+	id: string;
+	kind: 'secret' | 'text' | 'path' | 'paths' | 'toggle';
+	label: string;
+	placeholder?: string;
+	required?: boolean;
+}
+
+export interface Connector {
+	added: boolean;
+	available: boolean;
+	blurb: string;
+	docs: string;
+	enabled: boolean;
+	fields: ConnectorField[];
+	id: string;
+	missing: string[];
+	name: string;
+	needs: string;
+	needs_name: string;
+	needs_url: string;
+	test: { at: number; error: string | null; ok: boolean; tools: string[] } | null;
+	values: Record<string, unknown>;
 }

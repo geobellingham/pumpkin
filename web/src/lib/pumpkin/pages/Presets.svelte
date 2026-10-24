@@ -10,7 +10,7 @@
 	import Select from '../components/Select.svelte';
 	import Toggle from '../components/Toggle.svelte';
 	import { api, pumpkin } from '../store.svelte';
-	import type { Fit, LocalModel, Preset } from '../types';
+	import type { Connector, Fit, LocalModel, Preset } from '../types';
 	import { onMount } from 'svelte';
 
 	let presets = $state<Preset[] | null>(null);
@@ -19,6 +19,7 @@
 	let open = $state(false);
 	let fit = $state<Fit | null>(null);
 	let saving = $state(false);
+	let conns = $state<Connector[]>([]);
 
 	async function load() {
 		const [p, m] = await Promise.all([
@@ -28,6 +29,7 @@
 
 		presets = p?.items ?? [];
 		models = m?.models ?? [];
+		conns = ((await api<{ items: Connector[] }>('connectors').catch(() => null))?.items ?? []).filter((c) => c.enabled);
 	}
 
 	onMount(load);
@@ -199,6 +201,34 @@
 				<div class="flex flex-col gap-1 rounded-xl border border-border/60 px-3 py-2">
 					<Toggle bind:checked={editing.tools as boolean} description="Your documents, memory, saving files and your other devices. With Docker, also commands and file edits in a sandbox." label="Tools" />
 					<Toggle bind:checked={editing.web as boolean} description="Built-in web search and page reading, no API key needed." disabled={!editing.tools} label="Web search" />
+					{#if editing.tools && conns.length}
+						<Toggle
+							checked={editing.connectors == null}
+							description="Off: pick which of your connectors this preset uses. Fewer tools help small models."
+							label="Every connector that is on"
+							onchange={(v) => editing && (editing.connectors = v ? null : conns.map((c) => c.id))}
+						/>
+						{#if editing.connectors != null}
+							<div class="flex flex-wrap gap-x-4 gap-y-1 pb-1 pl-1">
+								{#each conns as c (c.id)}
+									<label class="flex items-center gap-2 text-sm">
+										<input
+											checked={editing.connectors.includes(c.id)}
+											class="size-4 accent-foreground"
+											onchange={(e) => {
+												if (!editing) return;
+												const on = (e.currentTarget as HTMLInputElement).checked;
+												const cur = editing.connectors ?? [];
+												editing.connectors = on ? [...cur, c.id] : cur.filter((x) => x !== c.id);
+											}}
+											type="checkbox"
+										/>
+										{c.name}
+									</label>
+								{/each}
+							</div>
+						{/if}
+					{/if}
 				</div>
 
 				<details class="rounded-xl border border-border/60 px-3 py-2 text-sm">

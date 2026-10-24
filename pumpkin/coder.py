@@ -18,7 +18,7 @@ import sys
 import threading
 import time
 
-from . import config, hardware, llama
+from . import config, hardware, llama, skills
 
 WINDOWS = os.name == "nt"
 MODES = ("ask", "edits", "auto")        # ask before changes / change files freely, ask before commands / never ask
@@ -74,6 +74,7 @@ class Tools:
         self.root = os.path.realpath(root)
         self.shell, self.shell_name = find_shell()
         self.web = web
+        self.skills = lambda: []                 # the skills this session may use (set by the session)
 
     def definitions(self):
         s = {"type": "string"}
@@ -105,6 +106,9 @@ class Tools:
             defs += [_tool("web_search", "Search the web, for documentation or an error message.", {"query": s},
                            ["query"]),
                      _tool("read_webpage", "Get a web page's text.", {"url": s, "start": n}, ["url"])]
+        if self.skills():
+            defs.append(_tool("skill", "Read one of your skills (instructions for a kind of job) by name, or a file it "
+                                       "brings along with path.", {"name": s, "path": s}, ["name"]))
         return defs
 
     # ---- paths
@@ -373,6 +377,7 @@ class Session:
         self._answer = threading.Event()
         self._lock = threading.Lock()
         self.tools = Tools(self.root, web=not hardware.ANDROID)
+        self.tools.skills = lambda: self.m.skills_for(self.root)
 
     # ---- state for the UI
     def emit(self, kind, **data):
@@ -666,6 +671,14 @@ class Session:
         if name in ("web_search", "read_webpage"):
             from . import mcp_web
             return mcp_web.call(name, a), True, {}
+        if name == "skill":
+            want = str(a.get("name") or "").strip().lower()
+            sk = next((x for x in t.skills() if x["name"].lower() == want or skills.slug(x["name"]) == skills.slug(want)),
+                      None)
+            if not sk:
+                raise LookupError(f"There is no skill called {a.get('name')!r}. Skills: "
+                                  f"{', '.join(x['name'] for x in t.skills()) or 'none'}.")
+            return (skills.read_file(sk, a["path"]) if a.get("path") else skills.read_text(sk)), True, {}
         raise LookupError(f"There is no tool called {name}. Use ls, glob, grep, read, edit, write, bash or todo.")
 
     # ---- the model
@@ -998,6 +1011,15 @@ class Manager:
         except (TypeError, ValueError):
             return 0
 
+    def skills_for(self, root):
+        """The skills a session may use: yours and Pumpkin's, plus the project's own (.pumpkin/skills and so on)."""
+        try:
+            if not self.core.settings["skills"]:
+                return []
+            return skills.enabled(self.core.settings, project=root)
+        except Exception:  # noqa: BLE001 - skills are extra; a broken one must not stop the session
+            return []
+
     def answer_limit(self):
         """The longest single answer in tokens, or 0 for no limit (the default)."""
         try:
@@ -1046,6 +1068,10 @@ class Manager:
                 except OSError:
                     pass
                 break
+        sk = t.skills()
+        if sk:
+            parts.append("Skills (instructions for particular jobs; when the job matches one, read it with the skill "
+                         "tool first and follow it):\n" + skills.listing(sk))
         try:
             parts.append("The project folder contains:\n" + t.ls("."))
         except OSError:

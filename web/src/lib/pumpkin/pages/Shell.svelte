@@ -12,7 +12,9 @@
 		Image as ImageIcon,
 		MonitorSmartphone,
 		MessageSquareText,
+		Plug,
 		Settings,
+		Sparkles,
 		SlidersHorizontal,
 		Smartphone,
 		SquareTerminal,
@@ -20,9 +22,11 @@
 	} from '@lucide/svelte';
 	import PumpkinLogo from '../components/PumpkinLogo.svelte';
 	import StatusDot from '../components/StatusDot.svelte';
+	import ThemeToggle from '../components/ThemeToggle.svelte';
 	import { pumpkin } from '../store.svelte';
 	import Agent from './Agent.svelte';
 	import Code from './Code.svelte';
+	import Connectors from './Connectors.svelte';
 	import Devices from './Devices.svelte';
 	import Doctor from './Doctor.svelte';
 	import Files from './Files.svelte';
@@ -36,6 +40,7 @@
 	import Reports from './Reports.svelte';
 	import SettingsPage from './Settings.svelte';
 	import Setup from './Setup.svelte';
+	import Skills from './Skills.svelte';
 	import Tasks from './Tasks.svelte';
 	import Voice from './Voice.svelte';
 	import type { Component } from 'svelte';
@@ -50,6 +55,8 @@
 		{ icon: SlidersHorizontal, id: 'presets', label: 'Presets', page: Presets },
 		{ icon: Bot, id: 'agent', label: 'Agent', page: Agent },
 		{ icon: SquareTerminal, id: 'code', label: 'Code', page: Code },
+		{ icon: Sparkles, id: 'skills', label: 'Skills', page: Skills },
+		{ icon: Plug, id: 'connectors', label: 'Connectors', page: Connectors },
 		{ icon: Clock, id: 'tasks', label: 'Tasks', page: Tasks },
 		{ icon: FolderOpen, id: 'files', label: 'Files', page: Files },
 		{ icon: ImageIcon, id: 'images', label: 'Images', page: Images },
@@ -140,7 +147,8 @@
 
 			<h1 class="text-lg font-semibold">Pumpkin</h1>
 
-			<span class="ml-auto flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
+			<span class="ml-auto"><ThemeToggle /></span>
+			<span class="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
 				<StatusDot />
 				<span class="truncate">{pumpkin.modelName ?? (pumpkin.status === 'offline' ? 'Offline' : 'No model running')}</span>
 			</span>
@@ -158,7 +166,7 @@
 						class={['pointer-events-none absolute top-2 h-9 rounded-full bg-foreground md:hidden', pill.ready && 'transition-[left,width] duration-300 ease-out']}
 						style="left: {pill.left}px; width: {pill.width}px; opacity: {pill.width ? 1 : 0}"
 					></span>
-					{#each NAV.filter((n) => !(pumpkin.state?.platform === 'android' && (n.id === 'phone' || n.id === 'images'))) as n (n.id)}
+					{#each NAV.filter((n) => !(pumpkin.state?.platform === 'android' && (n.id === 'phone' || n.id === 'images' || n.id === 'connectors'))) as n (n.id)}
 						{@const Icon = n.icon}
 						<a
 							aria-current={current.id === n.id ? 'page' : undefined}

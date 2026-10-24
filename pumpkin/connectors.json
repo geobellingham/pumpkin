@@ -1,0 +1,146 @@
+[
+  {
+    "id": "github",
+    "name": "GitHub",
+    "blurb": "Read and search your repositories, issues, pull requests and Actions runs. GitHub's own server.",
+    "needs": "docker",
+    "command": "docker",
+    "args": ["run", "-i", "--rm", "-e", "GITHUB_PERSONAL_ACCESS_TOKEN"],
+    "args_after": ["ghcr.io/github/github-mcp-server"],
+    "docs": "https://github.com/github/github-mcp-server",
+    "fields": [
+      {"id": "token", "label": "Personal access token", "kind": "secret", "env": "GITHUB_PERSONAL_ACCESS_TOKEN", "required": true,
+       "help": "github.com > Settings > Developer settings > Personal access tokens. Give it only the repositories and rights you want the model to have."},
+      {"id": "toolsets", "label": "What it can use", "kind": "text", "default": "repos,issues,pull_requests,actions",
+       "args": ["-e", "GITHUB_TOOLSETS={}"], "help": "Comma-separated GitHub toolsets: repos, issues, pull_requests, actions, code_security and more."},
+      {"id": "read_only", "label": "Read only", "kind": "toggle", "default": true, "on_args": ["-e", "GITHUB_READ_ONLY=1"],
+       "help": "On: it can look but never change anything on GitHub."}
+    ]
+  },
+  {
+    "id": "notion",
+    "name": "Notion",
+    "blurb": "Search, read and update pages and databases in your Notion workspace. Notion's own server.",
+    "needs": "npx",
+    "command": "npx",
+    "args": ["-y", "@notionhq/notion-mcp-server"],
+    "docs": "https://github.com/makenotion/notion-mcp-server",
+    "fields": [
+      {"id": "token", "label": "Integration token", "kind": "secret", "env": "NOTION_TOKEN", "required": true,
+       "help": "notion.so/profile/integrations: make an internal integration, copy its token (ntn_...), then share the pages it may use with it."}
+    ]
+  },
+  {
+    "id": "browser",
+    "name": "Browser",
+    "blurb": "Opens web pages in a real browser, clicks, types and fills in forms. For sites the plain web search cannot read. Playwright's server.",
+    "needs": "npx",
+    "command": "npx",
+    "args": ["-y", "@playwright/mcp@latest"],
+    "docs": "https://github.com/microsoft/playwright-mcp",
+    "fields": [
+      {"id": "headless", "label": "Hide the browser window", "kind": "toggle", "default": false, "on_args": ["--headless"],
+       "help": "Off: you see the browser while the model uses it."},
+      {"id": "isolated", "label": "Fresh browser each time", "kind": "toggle", "default": true, "on_args": ["--isolated"],
+       "help": "On: no saved logins or cookies are kept between uses."}
+    ]
+  },
+  {
+    "id": "context7",
+    "name": "Library docs (Context7)",
+    "blurb": "Up-to-date documentation and code examples for thousands of libraries. Helps local models write code against current APIs.",
+    "needs": "npx",
+    "command": "npx",
+    "args": ["-y", "@upstash/context7-mcp"],
+    "docs": "https://github.com/upstash/context7",
+    "fields": [
+      {"id": "api_key", "label": "API key (optional)", "kind": "secret", "args": ["--api-key", "{}"],
+       "help": "Works without one. A free key from context7.com gives higher limits."}
+    ]
+  },
+  {
+    "id": "folders",
+    "name": "Folders",
+    "blurb": "Read, search and write files in folders you choose on this computer, beyond Pumpkin's own Files folder.",
+    "needs": "npx",
+    "command": "npx",
+    "args": ["-y", "@modelcontextprotocol/server-filesystem"],
+    "docs": "https://github.com/modelcontextprotocol/servers/tree/main/src/filesystem",
+    "fields": [
+      {"id": "paths", "label": "Folders", "kind": "paths", "required": true,
+       "help": "One folder per line. The model can read and change everything inside them, so keep the list short."}
+    ]
+  },
+  {
+    "id": "git",
+    "name": "Git",
+    "blurb": "Status, log, diffs, branches and commits of a Git repository on this computer.",
+    "needs": "uvx",
+    "command": "uvx",
+    "args": ["mcp-server-git"],
+    "docs": "https://github.com/modelcontextprotocol/servers/tree/main/src/git",
+    "fields": [
+      {"id": "repo", "label": "Repository folder", "kind": "path", "required": true, "args": ["--repository", "{}"]}
+    ]
+  },
+  {
+    "id": "time",
+    "name": "Time and time zones",
+    "blurb": "The current date and time anywhere, and time zone conversions. Local models do not know what day it is.",
+    "needs": "uvx",
+    "command": "uvx",
+    "args": ["mcp-server-time"],
+    "docs": "https://github.com/modelcontextprotocol/servers/tree/main/src/time",
+    "fields": [
+      {"id": "tz", "label": "Your time zone (optional)", "kind": "text", "placeholder": "Europe/Sofia", "args": ["--local-timezone", "{}"],
+       "help": "An exact IANA name like Europe/Sofia. Empty: the computer's own."}
+    ]
+  },
+  {
+    "id": "atlassian",
+    "name": "Jira and Confluence",
+    "blurb": "Search and read Jira issues and Confluence pages, and create or update them. Atlassian Cloud or Server.",
+    "needs": "uvx",
+    "command": "uvx",
+    "args": ["mcp-atlassian"],
+    "docs": "https://github.com/sooperset/mcp-atlassian",
+    "fields": [
+      {"id": "jira_url", "label": "Jira address", "kind": "text", "env": "JIRA_URL", "placeholder": "https://your-company.atlassian.net"},
+      {"id": "jira_user", "label": "Jira email", "kind": "text", "env": "JIRA_USERNAME"},
+      {"id": "jira_token", "label": "Jira API token", "kind": "secret", "env": "JIRA_API_TOKEN",
+       "help": "id.atlassian.com > Security > API tokens. Use an account with only the rights you want the model to have."},
+      {"id": "confluence_url", "label": "Confluence address", "kind": "text", "env": "CONFLUENCE_URL", "placeholder": "https://your-company.atlassian.net/wiki"},
+      {"id": "confluence_user", "label": "Confluence email", "kind": "text", "env": "CONFLUENCE_USERNAME"},
+      {"id": "confluence_token", "label": "Confluence API token", "kind": "secret", "env": "CONFLUENCE_API_TOKEN"}
+    ],
+    "one_of": ["jira_url", "confluence_url"]
+  },
+  {
+    "id": "postgres",
+    "name": "PostgreSQL",
+    "blurb": "Look at the tables of a PostgreSQL database, run queries and check their speed.",
+    "needs": "uvx",
+    "command": "uvx",
+    "args": ["postgres-mcp"],
+    "docs": "https://github.com/crystaldba/postgres-mcp",
+    "fields": [
+      {"id": "uri", "label": "Database address", "kind": "secret", "env": "DATABASE_URI", "required": true,
+       "placeholder": "postgresql://user:password@localhost:5432/dbname"},
+      {"id": "writes", "label": "Allow changes", "kind": "toggle", "default": false,
+       "on_args": ["--access-mode=unrestricted"], "off_args": ["--access-mode=restricted"],
+       "help": "Off: read-only queries only."}
+    ]
+  },
+  {
+    "id": "sqlite",
+    "name": "SQLite",
+    "blurb": "Query and change an SQLite database file on this computer.",
+    "needs": "uvx",
+    "command": "uvx",
+    "args": ["mcp-server-sqlite"],
+    "docs": "https://github.com/modelcontextprotocol/servers-archived/tree/main/src/sqlite",
+    "fields": [
+      {"id": "db", "label": "Database file", "kind": "path", "required": true, "args": ["--db-path", "{}"]}
+    ]
+  }
+]
