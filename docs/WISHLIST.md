@@ -12,7 +12,14 @@ Things wanted for Pumpkin, roughly in the order they are planned. Nothing here i
 - **Artifact preview in chat.** HTML, SVG and charts the model writes show live in a sandboxed frame, with a button to save to Files.
 
 ## Later
-- **Scheduled Pumpkin Code jobs.** Pick a project folder, a model, an approval mode and a time, and Pumpkin Code runs the job by itself, once ("tomorrow at 03:00") or on a repeat. It works unattended (no questions, risky commands still blocked), writes a report to Reports and sends a notification when it finishes. Builds on the Tasks page and Code sessions. Safety ideas: work on a new git branch, never push, show a summary of every change.
+- **Scheduling from the chat, the way Claude does it.** Today the Tasks page is a form for repeating tasks. The wish is that the model itself schedules work when you ask in plain words ("tomorrow at 03:00 review the code with Qwen3 Coder and write a map"), in the chat and in Pumpkin Code. It works like this:
+  - Tools the model can call: `schedule_task`, `list_tasks`, `update_task`, `delete_task` and `remind_me_later`.
+  - A task is a one-off time or a repeat, with a complete standalone prompt (the run starts fresh and remembers nothing of the chat), a preset chosen by name, an optional project folder, and an approval mode (ask, edits, auto).
+  - Each run is a full session with the same tools as the chat or Pumpkin Code, started on time even when the model has to be loaded first. Pumpkin works out a sensible time when you say "tomorrow" or "tonight", handles the clock change, and tells you the exact time it picked.
+  - The result goes to Reports, and a notification (ntfy and desktop) says it finished or failed. In Pumpkin Code the run can work on its own git branch and never push.
+  - `remind_me_later` sends a message back into the same conversation at the time you set, so a long job can say "check on this in 20 minutes".
+  - The Tasks page shows and edits everything the model scheduled, including one-off tasks and their past runs.
+  - Safety: the model asks you to confirm before creating an unattended task that edits files or runs commands, and says clearly which approval mode it will run in.
 - **Workspaces.** Pumpkin Code for any folder and any kind of work (files, reports, spreadsheets). A workspace is a folder plus its instructions, skills, connectors and memory, with the same approvals and undo.
 - **Helper agents.** A `delegate` tool that hands a research job to a fresh session with its own context and gets a summary back. Needs two sessions at once in llama-server, so measure the speed cost first.
 - **Plugins.** A bundle of skills, connectors, a persona and prompts, installed from a GitHub link.
