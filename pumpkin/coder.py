@@ -398,6 +398,7 @@ class Session:
                 "pending": self.pending, "todo": self.todo, "error": self.error, "undo": len(self.undo),
                 "tokens": self.tokens, "ctx": self.m.ctx(), "shell": self.tools.shell_name,
                 "streamed": self.streamed, "now": time.time(),
+                "decoded": self.m.core.decode_progress() if self.state == "running" else None,
                 "last": self.events[-1]["n"] if self.events else 0}
 
     # ---- saving
@@ -751,7 +752,10 @@ class Session:
                         live["tools"] = [c["function"]["name"] for c in calls.values()]
                         self.streamed += 1
                         if messages is None:
-                            self.set_phase("calling", "Choosing what to do next")
+                            nm = next((c["function"]["name"] for c in calls.values() if c["function"]["name"]), "")
+                            self.set_phase("calling", {"write": "Writing a file", "edit": "Editing a file",
+                                                       "bash": "Writing a command"}.get(nm) or
+                                           (f"Preparing {nm}" if nm else "Choosing what to do next"))
                     finish = ch.get("finish_reason") or finish
         finally:
             conn.close()

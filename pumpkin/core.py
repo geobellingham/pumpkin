@@ -37,6 +37,7 @@ class Core:
     chat_at = 0.0
     chat_note = None                     # (when, text) the chat's older part was summarised
     chat_summary = None                  # {"n", "hash", "text"} the summary the chat is using
+    _decode = None                       # (tokens written, when it last grew, when read) for decode_progress
 
     def __init__(self):
         config.ensure_dirs()
@@ -517,6 +518,38 @@ class Core:
         }
 
     # ---- what is happening right now
+    def decode_progress(self):
+        """How many tokens the model has written for the answer in progress, read from llama-server itself. It moves
+        while a long tool call is being written, even when the text reaches the screen in one piece at the end.
+        Returns None when nothing is being answered, else {"tokens", "stalled"}: stalled is the seconds the count has
+        not grown since the model began writing (0 while it still reads the prompt)."""
+        if self.server.state not in ("ready", "external"):
+            self._decode = None
+            return None
+        now = time.time()
+        last = self._decode
+        if last and now - last[2] < 0.8:                 # polled twice at once: one question to the server
+            return last[3]
+        r = llama.http(int(self.settings["llama_port"]), "/slots", timeout=1)
+        n, busy = 0, False
+        for sl in r if isinstance(r, list) else []:
+            if isinstance(sl, dict) and sl.get("is_processing"):
+                busy = True
+                nt = sl.get("next_token")
+                nt = nt[0] if isinstance(nt, list) and nt else nt
+                if isinstance(nt, dict):
+                    try:
+                        n += int(nt.get("n_decoded") or 0)
+                    except (TypeError, ValueError):
+                        pass
+        if not busy:
+            self._decode = None
+            return None
+        moved = last[1] if last and last[0] == n else now
+        out = {"tokens": n, "stalled": round(now - moved) if n > 0 else 0}
+        self._decode = (n, moved, now, out)
+        return out
+
     def activity(self, met=None, srv=None):
         """Everything Pumpkin is busy with, one entry each, for the Overview and Pumpkin Code. An entry:
         id, kind, title, state (working | loading | paused | idle), label, detail, progress (0..1 or None), since."""
@@ -535,7 +568,14 @@ class Core:
             used = int(self.chat_tokens) if self.chat_tokens and now - self.chat_at < 6 * 3600 else 0
             item = {"id": "text", "kind": "model", "title": pre.get("name") or "Model",
                     "state": "working" if busy else "idle", "label": "Answering" if busy else "Ready"}
-            if busy and met.get("predicted_tokens_seconds"):
+            prog = self.decode_progress() if busy else None
+            if busy and prog and prog["tokens"]:
+                item["detail"] = f"{prog['tokens']} tokens so far" + (
+                    f", {met['predicted_tokens_seconds']:.1f} a second" if met.get("predicted_tokens_seconds") else "")
+                if prog["stalled"] >= 90:
+                    item["label"] = "Answering, but no new tokens for " + (
+                        f"{prog['stalled'] // 60} min" if prog["stalled"] >= 120 else f"{prog['stalled']} s")
+            elif busy and met.get("predicted_tokens_seconds"):
                 item["detail"] = f"{met['predicted_tokens_seconds']:.1f} tokens a second"
             if ctx and used:
                 item["context"] = {"used": min(used, ctx), "total": ctx}

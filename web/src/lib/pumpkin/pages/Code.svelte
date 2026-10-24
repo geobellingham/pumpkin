@@ -63,6 +63,7 @@
 		pending: Pending | null;
 		phase?: { kind: string; label: string; since: number } | null;
 		streamed?: number;
+		decoded?: { stalled: number; tokens: number } | null;
 		shell: string;
 		todo: { done: boolean; text: string }[];
 		tokens: number;
@@ -125,6 +126,7 @@
 
 	const seconds = $derived(view?.phase ? Math.max(0, Math.round(clock / 1000 + pumpkin.skew - view.phase.since)) : 0);
 	const clockText = $derived(seconds < 60 ? `${seconds}s` : `${Math.floor(seconds / 60)}m ${String(seconds % 60).padStart(2, '0')}s`);
+	const tokensNow = $derived(Math.max(view?.decoded?.tokens ?? 0, view?.streamed ?? 0));
 	const speedNow = $derived(pumpkin.state?.metrics.predicted_tokens_seconds ?? null);
 
 	async function openSession(id: string) {
@@ -460,8 +462,11 @@
 				<span class="size-2 shrink-0 animate-pulse rounded-full bg-orange-500"></span>
 				<span class="min-w-0 truncate"><span class="font-medium">{view.phase.label}</span></span>
 				<span class="shrink-0 text-muted-foreground tabular-nums">{clockText}</span>
-				{#if view.streamed && ['thinking', 'writing', 'calling', 'summarising'].includes(view.phase.kind)}
-					<span class="shrink-0 text-muted-foreground tabular-nums">· {view.streamed} tokens{speedNow ? `, ${speedNow.toFixed(1)} a second` : ''}</span>
+				{#if tokensNow && ['thinking', 'writing', 'calling', 'summarising'].includes(view.phase.kind)}
+					<span class="shrink-0 text-muted-foreground tabular-nums">· {tokensNow} tokens{speedNow ? `, ${speedNow.toFixed(1)} a second` : ''}</span>
+				{/if}
+				{#if (view.decoded?.stalled ?? 0) >= 90}
+					<span class="min-w-0 truncate text-amber-600 dark:text-amber-400">No new tokens for {Math.floor(view.decoded!.stalled / 60)}m {String(view.decoded!.stalled % 60).padStart(2, '0')}s. The model may be stuck. You can stop it.</span>
 				{/if}
 			{:else if busy}
 				<span class="size-2 shrink-0 animate-pulse rounded-full bg-orange-500"></span><span class="font-medium">Working</span>

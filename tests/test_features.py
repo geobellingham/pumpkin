@@ -482,3 +482,26 @@ class TestSetupChecklistAndLongChats(unittest.TestCase):
             self.assertEqual(c.prepare_chat(raw), raw)
         finally:
             llama.http = real
+
+
+    def test_the_token_count_comes_from_the_server_and_shows_when_it_stops_moving(self):
+        from pumpkin import llama
+        c = self.make(llama_port=1)
+        c.server = type("Sv", (), {"state": "ready"})()
+        slots = [{"is_processing": True, "next_token": [{"n_decoded": 120}]}]
+        real, llama.http = llama.http, lambda *a, **k: slots
+        real_time = time.time
+        now = [1000.0]
+        time.time = lambda: now[0]
+        try:
+            self.assertEqual(c.decode_progress(), {"tokens": 120, "stalled": 0})
+            now[0] += 100                                   # a minute and a half later nothing was written
+            self.assertEqual(c.decode_progress(), {"tokens": 120, "stalled": 100})
+            slots[0]["next_token"][0]["n_decoded"] = 150    # it moves again
+            now[0] += 5
+            self.assertEqual(c.decode_progress(), {"tokens": 150, "stalled": 0})
+            slots[0]["is_processing"] = False
+            now[0] += 5
+            self.assertIsNone(c.decode_progress())
+        finally:
+            llama.http, time.time = real, real_time
