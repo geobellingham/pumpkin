@@ -157,6 +157,8 @@ class Core:
                 text += " image_generate draws a picture when the user asks for one."
             if self.edit_ready():
                 text += " image_edit changes the picture the user attached or you drew last."
+            if self.video_ready():
+                text += " image_video makes a short video clip (slow: minutes)."
             hint = self.devices_hint()
             if hint:
                 text += " " + hint
@@ -321,7 +323,7 @@ class Core:
         if any(d.get("enabled", True) for d in devices.load()):
             # a phone can take minutes, so the call may wait up to 30 minutes
             servers.setdefault("devices", self._builtin("pumpkin.mcp_devices", 1_800_000))
-        if self.images_ready() or self.edit_ready():
+        if self.images_ready() or self.edit_ready() or self.video_ready():
             # the chat's calls are answered by Pumpkin itself (server.py); this one serves the listing and agents
             servers.setdefault("image", self._builtin("pumpkin.mcp_images", 1_800_000))
         self.mcp_image = "image" in servers
@@ -509,7 +511,7 @@ class Core:
         """The installed image model the chat draws (kind "draw") or edits pictures (kind "edit") with."""
         inst = {k: v for k, v in images.installed(self.settings).items()
                 if v["ready"] and (v.get("kind") or "draw") == kind}
-        want = self.settings["image_model" if kind == "draw" else "edit_model"]
+        want = self.settings[{"draw": "image_model", "edit": "edit_model"}.get(kind, "video_model")]
         if want in inst:
             return inst[want]
         for b in images.catalog():                   # the catalog's order: the recommended one first
@@ -522,6 +524,12 @@ class Core:
         if hardware.ANDROID or not self.settings["images"] or not self.image_server:
             return False
         return bool(images.find_engine(self.settings)) and self.image_default("edit") is not None
+
+    def video_ready(self):
+        """The chat's model can make video clips: pictures are on, the engine and a video model are in."""
+        if hardware.ANDROID or not self.settings["images"] or not self.image_server:
+            return False
+        return bool(images.find_engine(self.settings)) and self.image_default("video") is not None
 
     def note_picture(self, body):
         """A chat request went by: remember the newest picture in it, so image_edit knows what to change."""
@@ -583,7 +591,7 @@ class Core:
         backend = engine.get("backend") or recommended          # the labels follow the engine that is in
         inst = images.installed(self.settings)
         dls = [j for j in self.downloads.list() if j.get("kind") == "image"]
-        defaults = {k: self.image_default(k) for k in ("draw", "edit")}
+        defaults = {k: self.image_default(k) for k in ("draw", "edit", "video")}
         out = []
         for b in images.catalog():
             m = inst.get(b["id"])
@@ -609,7 +617,7 @@ class Core:
             threading.Thread(target=self._estimate_images, daemon=True).start()
         return {"supported": not hardware.ANDROID and recommended is not None, "enabled": bool(self.settings["images"]),
                 "engine": engine, "bundles": out, "server": self.image_server.status() if self.image_server else None,
-                "ready": self.images_ready(), "edit_ready": self.edit_ready(), "swap": self.settings["image_swap"],
+                "ready": self.images_ready(), "edit_ready": self.edit_ready(), "video_ready": self.video_ready(), "swap": self.settings["image_swap"],
                 "keep_min": self.settings["image_keep_min"], "folder": images.models_dir(self.settings),
                 "text": self._text_draw_state()}
 
@@ -718,6 +726,49 @@ class Core:
             return text + pic > vram
         return text + pic > ram * 0.8
 
+    def _engine_run(self, m, swap_ok, work, stage="drawing"):
+        """Loads image model m in sd-server and returns (work(server), whether the text model paused). If the two
+        do not fit together the text model pauses meanwhile and comes back by itself; if the card turns out to be
+        full anyway the job is tried once more with the text model out of the way."""
+        with self.image_lock:
+            was = None
+            if swap_ok and self.image_needs_swap(m):
+                was = dict(self.server.preset)
+                self.server.stop()
+            srv = self.image_server
+            srv.busy = True
+            try:
+                g = self.hardware().get("main_gpu") or {}
+                cap = images.budget(self.hardware()) if not g.get("unified") and not g.get("too_old") else 0
+                for attempt in (1, 2):
+                    srv.progress = {"stage": "loading" if srv.state != "ready" else stage, "since": time.time(),
+                                    "swapped": bool(was)}
+                    srv.start(m, max_vram=cap)
+                    srv.progress.update(stage=stage)
+                    try:
+                        return work(srv), bool(was)
+                    except RuntimeError as e:
+                        if attempt == 2 or not srv.out_of_memory():
+                            raise
+                        # the card is full: start over with the text model out of the way (if it may be)
+                        srv.stop()
+                        if was or not swap_ok or self.settings["image_swap"] == "never" \
+                                or self.server.state not in ("loading", "ready"):
+                            raise RuntimeError("There is not enough free memory on the graphics card for this "
+                                               "model. Stop the text model, or set Images > the text model "
+                                               "pauses to Always.") from e
+                        was = dict(self.server.preset)
+                        self.server.stop()
+            finally:
+                srv.busy, srv.progress = False, None
+                if was:
+                    srv.stop()                                  # its memory goes back to the text model
+                    try:
+                        self.server.start(was)
+                        self.server.wait_ready(timeout=900)
+                    except Exception:  # noqa: BLE001 - the result is still worth returning
+                        pass
+
     def make_image(self, prompt, shape="square", seed=None, swap_ok=True, edit=False, source=None):
         """Draws one picture with the default image model (or, with edit, changes a picture with the editing model)
         and saves it into the user's Files (images/). Returns {path, jpeg, seconds, model, swapped}."""
@@ -740,45 +791,8 @@ class Core:
         ratio = (images.dims(ref) if ref else None) or images.SIZES.get(shape or "square", (1, 1))
         w, h = images.size_for(*ratio, base=int(d.get("width") or 1024))
         t0 = time.time()
-        with self.image_lock:
-            was = None
-            if swap_ok and self.image_needs_swap(m):
-                was = dict(self.server.preset)
-                self.server.stop()
-            srv = self.image_server
-            srv.busy = True
-            try:
-                g = self.hardware().get("main_gpu") or {}
-                cap = images.budget(self.hardware()) if not g.get("unified") and not g.get("too_old") else 0
-                for attempt in (1, 2):
-                    srv.progress = {"stage": "loading" if srv.state != "ready" else "drawing", "since": time.time(),
-                                    "swapped": bool(was)}
-                    srv.start(m, max_vram=cap)
-                    srv.progress.update(stage="drawing")
-                    try:
-                        data = srv.generate(prompt, w, h, -1 if seed is None else seed, ref=ref)
-                        break
-                    except RuntimeError as e:
-                        if attempt == 2 or not srv.out_of_memory():
-                            raise
-                        # the card is full: start over with the text model out of the way (if it may be)
-                        srv.stop()
-                        if was or not swap_ok or self.settings["image_swap"] == "never" \
-                                or self.server.state not in ("loading", "ready"):
-                            raise RuntimeError("There is not enough free memory on the graphics card for this "
-                                               "picture model. Stop the text model, or set Images > the text model "
-                                               "pauses to Always.") from e
-                        was = dict(self.server.preset)
-                        self.server.stop()
-            finally:
-                srv.busy, srv.progress = False, None
-                if was:
-                    srv.stop()                                  # its memory goes back to the text model
-                    try:
-                        self.server.start(was)
-                        self.server.wait_ready(timeout=900)
-                    except Exception:  # noqa: BLE001 - the picture is still worth returning
-                        pass
+        data, was = self._engine_run(m, swap_ok, lambda srv: srv.generate(prompt, w, h, -1 if seed is None else seed,
+                                                                          ref=ref))
         folder = os.path.join(os.path.expanduser(self.settings["files_dir"]), "images")
         os.makedirs(folder, exist_ok=True)
         name = ("edit-" if edit else "") + (config.slug(prompt[:48]) or "picture") + time.strftime("-%Y%m%d-%H%M%S") + ".jpg"
@@ -788,6 +802,55 @@ class Core:
             self.indexer.poke()
         return {"path": f"images/{name}", "jpeg": data, "seconds": round(time.time() - t0, 1), "model": m["name"],
                 "swapped": bool(was), "width": w, "height": h}
+
+    def make_video(self, prompt, shape="landscape", seconds=None, seed=None, swap_ok=True, from_picture=False,
+                   source=None, progress=None):
+        """Makes a short clip with the video model and saves it into the user's Files (videos/). With from_picture
+        the clip starts from the picture the user attached or the newest one drawn (or source, a file in Files)."""
+        prompt = re.sub(r"\s+", " ", str(prompt or "")).strip()[:4000]
+        if not prompt:
+            raise ValueError("Say what the video should show.")
+        if not self.settings["images"]:
+            raise RuntimeError("Pictures and video are switched off in Pumpkin (Images page).")
+        m = self.image_default("video")
+        if not m:
+            raise RuntimeError("No video model is installed. The user can add Wan 2.2 on Pumpkin's Images page.")
+        if not images.find_engine(self.settings):
+            raise RuntimeError("The image engine is not installed. The user can add it on Pumpkin's Images page.")
+        d = m.get("defaults") or {}
+        init = self.picture_to_edit(source) if (from_picture or source) else None
+        ratio = (images.dims(init) if init else None) or images.SIZES.get(shape or "landscape", (16, 9))
+        w, h = images.size_for(*ratio, base=int(d.get("width") or 640))
+        fps = int(d.get("fps") or 24)
+        try:
+            secs = float(seconds) if seconds not in (None, "") else float(d.get("seconds") or 2)
+        except (TypeError, ValueError):
+            secs = float(d.get("seconds") or 2)
+        secs = max(1.0, min(secs, float(d.get("max_seconds") or 5)))
+        frames = int(secs * fps) // 4 * 4 + 1               # the engine uses 4n+1 frames
+        t0 = time.time()
+        (data, ext), was = self._engine_run(m, swap_ok, lambda srv: srv.generate_video(
+            prompt, w, h, frames, fps, -1 if seed is None else seed, d.get("negative") or "", init,
+            progress=progress), stage="filming")
+        folder = os.path.join(os.path.expanduser(self.settings["files_dir"]), "videos")
+        os.makedirs(folder, exist_ok=True)
+        name = (config.slug(prompt[:48]) or "video") + time.strftime("-%Y%m%d-%H%M%S") + "." + ext
+        with open(os.path.join(folder, name), "wb") as f:
+            f.write(data)
+        return {"path": f"videos/{name}", "seconds": round(time.time() - t0, 1), "model": m["name"],
+                "swapped": bool(was), "width": w, "height": h, "length": round(frames / fps, 1), "frames": frames}
+
+    def video_tool(self, params):
+        """The chat called image_video. The chat shows the clip from the file; the model only gets a short note."""
+        try:
+            r = self.make_video(params.get("prompt"), params.get("shape") or "landscape", params.get("seconds"),
+                                params.get("seed"), from_picture=bool(params.get("from_picture")),
+                                source=params.get("source"))
+        except (RuntimeError, ValueError, OSError) as e:
+            return {"error": str(e)}
+        return {"plain_text_response": (
+            f"The video is shown to the user and saved as {r['path']} in their Files ({r['model']}, "
+            f"{r['length']} s of video, made in {r['seconds']} s). Do not describe it or paste a link unless asked.")}
 
     def image_tool(self, params, edit=False):
         """The chat called image_generate (or image_edit). The picture goes back as an image line the chat shows (and

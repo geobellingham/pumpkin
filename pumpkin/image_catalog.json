@@ -114,5 +114,55 @@
         "--offload-to-cpu"
       ]
     }
+  },
+  {
+    "id": "wan2.2-ti2v-5b",
+    "kind": "video",
+    "name": "Wan 2.2 (5B)",
+    "desc": "Short video clips from words, or brings a picture to life. Slow: a few seconds of video take several minutes even on a good graphics card.",
+    "files": [
+      {
+        "role": "diffusion_model",
+        "repo": "QuantStack/Wan2.2-TI2V-5B-GGUF",
+        "match": "\\.gguf$",
+        "quants": [
+          "Q8_0",
+          "Q6_K",
+          "Q5_K_M",
+          "Q5_K_S",
+          "Q4_K_M",
+          "Q4_K_S",
+          "Q3_K_M",
+          "Q3_K_S"
+        ],
+        "fallback": "Q4_K_M"
+      },
+      {
+        "role": "t5xxl",
+        "repo": "city96/umt5-xxl-encoder-gguf",
+        "match": "umt5-xxl-encoder-Q8_0\\.gguf$"
+      },
+      {
+        "role": "vae",
+        "repo": "Comfy-Org/Wan_2.2_ComfyUI_Repackaged",
+        "match": "^split_files/vae/wan2\\.2_vae\\.safetensors$"
+      }
+    ],
+    "defaults": {
+      "steps": 20,
+      "cfg": 6.0,
+      "sampler": "euler",
+      "width": 640,
+      "height": 640,
+      "fps": 24,
+      "seconds": 2,
+      "max_seconds": 5,
+      "negative": "blurry, static, still frame, overexposed, low quality, jpeg artifacts, deformed, extra fingers, subtitles, watermark",
+      "args": [
+        "--flow-shift",
+        "3",
+        "--offload-to-cpu"
+      ]
+    }
   }
 ]

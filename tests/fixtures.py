@@ -210,6 +210,10 @@ class H(BaseHTTPRequestHandler):
             job = JOBS.get(jid)
             if not job: return s.j({"error": "nf"}, 404)
             if time.time() - job["at"] < 0.3: return s.j({"id": jid, "status": "generating"})
+            if job.get("video"):
+                clip = base64.b64encode(b"\x1aE\xdf\xa3fake webm " + job["prompt"].encode()).decode()
+                return s.j({"id": jid, "status": "completed", "result": {"output_format": "webm", "mime_type": "video/webm",
+                            "b64_json": clip, "fps": job["fps"], "frame_count": job["frames"]}})
             img = base64.b64encode(png(job["prompt"])).decode()
             return s.j({"id": jid, "status": "completed", "result": {"output_format": "jpeg",
                         "images": [{"index": 0, "b64_json": img}]}})
@@ -220,6 +224,12 @@ class H(BaseHTTPRequestHandler):
             jid = "job_%d" % (len(JOBS) + 1)
             JOBS[jid] = {"at": time.time(), "prompt": body.get("prompt", "")}
             note({"img_gen": body})
+            return s.j({"id": jid, "status": "queued"}, 202)
+        if s.path == "/sdcpp/v1/vid_gen":
+            jid = "job_%d" % (len(JOBS) + 1)
+            JOBS[jid] = {"at": time.time(), "prompt": body.get("prompt", ""), "video": True,
+                         "fps": body.get("fps"), "frames": body.get("video_frames")}
+            note({"vid_gen": {k: v for k, v in body.items() if k != "init_image"}, "init": bool(body.get("init_image"))})
             return s.j({"id": jid, "status": "queued"}, 202)
         s.j({"error": "nf"}, 404)
 ThreadingHTTPServer(("127.0.0.1", port), H).serve_forever()

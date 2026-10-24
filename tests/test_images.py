@@ -3,6 +3,7 @@ making room while drawing. Uses a fake sd-server and the fake llama-server."""
 import base64
 import json
 import os
+import re
 import shutil
 import sys
 import tempfile
@@ -357,6 +358,53 @@ class TestDrawingInChat(unittest.TestCase):
         st, r = self.call("POST", "/pumpkin/api/images/edit", {"prompt": "add snow", "source": "../../etc/passwd"})
         self.assertEqual(st, 409)
         self.assertIn("not in the user's Files", r.get("error", ""))
+        self.core.image_server.stop()
+
+    def test_chat_makes_a_video(self):
+        w = images.bundle_info("wan2.2-ti2v-5b")
+        folder = os.path.join(self.tmp, "image-models", w["id"])
+        names = {"diffusion_model": "Wan2.2-TI2V-5B-Q4_K_M.gguf", "t5xxl": "umt5-xxl-encoder-Q8_0.gguf",
+                 "vae": "wan2.2_vae.safetensors"}
+        images.write_manifest(folder, w, [{"role": r, "repo": "x/y", "path": n, "size": 3} for r, n in names.items()])
+        for n in names.values():
+            with open(os.path.join(folder, n), "wb") as f:
+                f.write(b"abc")
+        self.core.settings.update({"image_swap": "never"})
+        st, state = self.call("GET", "/pumpkin/api/images")
+        wan = next(b for b in state["bundles"] if b["id"] == w["id"])
+        self.assertEqual((wan["kind"], wan["installed"], wan["default"]), ("video", True, True))
+        self.assertTrue(state["video_ready"])
+        self.assertTrue(next(b for b in state["bundles"] if b["id"] == "sdxs")["default"])   # still draws with SDXS
+        st, r = self.call("POST", "/tools", {"tool": "image_video", "params": {"prompt": "a pumpkin rolling down a hill",
+                                                                                 "seconds": 3}}, 120)
+        self.assertEqual(st, 200, r)
+        path = re.search(r"saved as (\S+) in their Files", r["plain_text_response"]).group(1)
+        self.assertTrue(path.startswith("videos/") and path.endswith(".webm"), path)
+        self.assertNotIn("base64", r["plain_text_response"])             # the clip never goes into the model's context
+        with open(os.path.join(self.files, path), "rb") as f:
+            self.assertTrue(f.read().startswith(b"\x1aE\xdf\xa3"))
+        calls = self.sd_calls()
+        start = [c["start"] for c in calls if "start" in c][-1]
+        for flag in ("--diffusion-model", "--t5xxl", "--vae", "--flow-shift"):
+            self.assertIn(flag, start)
+        gen = [c for c in calls if "vid_gen" in c][-1]
+        self.assertEqual(gen["vid_gen"]["video_frames"], 73)                  # 3 s at 24 fps, as 4n+1 frames
+        self.assertFalse(gen["init"])
+        self.assertEqual(gen["vid_gen"]["width"] % 64, 0)
+        self.assertGreater(gen["vid_gen"]["width"], gen["vid_gen"]["height"])  # landscape by default
+        # bring a picture to life: the clip starts from it and keeps its shape
+        self.core.last_picture = (time.time() + 10, fixtures_png(64, 128))
+        st, r = self.call("POST", "/pumpkin/api/images/video", {"prompt": "it waves", "from_picture": True, "seconds": 99})
+        self.assertEqual(st, 200, r)
+        gen = [c for c in self.sd_calls() if "vid_gen" in c][-1]
+        self.assertTrue(gen["init"])
+        self.assertEqual(gen["vid_gen"]["video_frames"], 121)                 # capped at 5 s
+        self.assertLess(gen["vid_gen"]["width"], gen["vid_gen"]["height"])
+        req = urllib.request.Request(self.base + "/pumpkin/api/files/download?path=" + r["path"] + "&inline=1",
+                                     headers={"Authorization": f"Bearer {self.tok}", "X-Pumpkin": "1"})
+        with urllib.request.build_opener(urllib.request.ProxyHandler({})).open(req, timeout=10) as resp:
+            self.assertEqual(resp.headers["Content-Type"], "video/webm")     # the chat plays it
+            self.assertTrue(resp.headers["Content-Disposition"].startswith("inline"))
         self.core.image_server.stop()
 
     def test_errors_reach_the_model(self):

@@ -26,6 +26,7 @@ self.addEventListener('activate', (e) => e.waitUntil((async () => {
 })()));
 """
 API = "/pumpkin/api/"
+mimetypes.add_type("video/webm", ".webm")           # Windows may not know it, and the chat must play clips
 UPLOAD_LIMIT = 512 * 2 ** 20
 HOP = {"connection", "keep-alive", "proxy-authenticate", "proxy-authorization", "te", "trailers",
        "transfer-encoding", "upgrade"}
@@ -511,6 +512,15 @@ class Web:
                 r.pop("jpeg", None)
                 r["url"] = f"{API}files/download?path={quote(r['path'])}&inline=1"
                 return r
+            if ident == "video" and method == "POST":
+                try:
+                    r = core.make_video(body.get("prompt"), body.get("shape") or "landscape", body.get("seconds"),
+                                        body.get("seed"), swap_ok=body.get("swap", True) is not False,
+                                        from_picture=bool(body.get("from_picture")), source=body.get("source"))
+                except (RuntimeError, ValueError) as e:
+                    raise ApiError(str(e), 409)
+                r["url"] = f"{API}files/download?path={quote(r['path'])}&inline=1"
+                return r
             if ident == "stop" and method == "POST":
                 core.image_server.stop()
                 return core.images_state()
@@ -857,6 +867,9 @@ class Web:
                     call = json.loads(body.decode() or "{}")
                 except (ValueError, UnicodeDecodeError):
                     call = {}
+                if isinstance(call, dict) and call.get("tool") == "image_video":
+                    params = call.get("params") if isinstance(call.get("params"), dict) else {}
+                    return self.json(h, self.core.video_tool(params))
                 if isinstance(call, dict) and call.get("tool") in ("image_generate", "image_edit"):
                     # Pumpkin draws the picture itself: it may stop llama-server to make room, which would cut off
                     # a call that went through it. The chat carries on once the text model is back.

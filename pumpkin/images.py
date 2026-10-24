@@ -349,7 +349,7 @@ def dims(data):
 
 
 def kind(bundle):
-    """"draw" (makes pictures from words) or "edit" (changes a picture)."""
+    """"draw" (makes pictures from words), "edit" (changes a picture) or "video" (makes short clips)."""
     return (bundle or {}).get("kind") or "draw"
 
 
@@ -526,6 +526,60 @@ class ImageServer:
                 raise RuntimeError(msg)
             time.sleep(0.5)
         raise RuntimeError("Making the picture took too long.")
+
+    def generate_video(self, prompt, width, height, frames, fps, seed=-1, negative="", init=None, timeout=7200,
+                       cancelled=lambda: False, progress=None):
+        """Makes one short clip. Returns (bytes, extension). init: a picture (bytes) the clip starts from."""
+        body = {"prompt": prompt, "negative_prompt": negative or "", "width": int(width), "height": int(height),
+                "seed": int(seed if seed is not None else -1), "video_frames": int(frames), "fps": int(fps),
+                "output_format": "webm", "embed_image_metadata": False}
+        if init:
+            body["init_image"] = base64.b64encode(init).decode()
+        try:
+            job = self.http("/sdcpp/v1/vid_gen", body, timeout=60)
+        except urllib.error.HTTPError as e:
+            if e.code != 400 or "webm" not in _err_text(e).lower():
+                raise RuntimeError(f"The video engine refused the request: {_err_text(e)}")
+            body["output_format"] = "webp"            # an engine built without WebM: an animated WebP plays too
+            try:
+                job = self.http("/sdcpp/v1/vid_gen", body, timeout=60)
+            except urllib.error.HTTPError as e2:
+                raise RuntimeError(f"The video engine refused the request: {_err_text(e2)}")
+        jid = job.get("id")
+        if not jid:
+            raise RuntimeError(f"The video engine gave no job: {job}")
+        end = time.time() + timeout
+        while time.time() < end:
+            if cancelled():
+                try:
+                    self.http(f"/sdcpp/v1/jobs/{urllib.parse.quote(jid)}/cancel", {}, timeout=10)
+                except (OSError, ValueError, HTTPException):
+                    pass
+                raise RuntimeError("Cancelled.")
+            if not self._alive():
+                self.state, self.error = "error", self._explain()
+                self.proc = None
+                raise RuntimeError(self.error)
+            st = self.http(f"/sdcpp/v1/jobs/{urllib.parse.quote(jid)}", timeout=30)
+            s = st.get("status")
+            if progress and isinstance(st.get("progress"), dict):
+                progress(st["progress"])
+            if s == "completed":
+                res = st.get("result") or {}
+                if not res.get("b64_json"):
+                    raise RuntimeError("The video engine finished without a video.")
+                self.last_used = time.time()
+                fmt = res.get("output_format") or body["output_format"]
+                return base64.b64decode(res["b64_json"]), {"webm": "webm", "webp": "webp", "avi": "avi"}.get(fmt, "webm")
+            if s in ("failed", "cancelled"):
+                msg = ((st.get("error") or {}).get("message")) or f"The video {s}."
+                if s == "failed":
+                    why = self._why()
+                    if why:
+                        msg += f" The engine log says: {why}"
+                raise RuntimeError(msg)
+            time.sleep(1)
+        raise RuntimeError("Making the video took too long.")
 
     def log_tail(self, n=40):
         try:

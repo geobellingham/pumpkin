@@ -17,7 +17,7 @@
 
 	interface Bundle {
 		default: boolean;
-		kind: 'draw' | 'edit';
+		kind: 'draw' | 'edit' | 'video';
 		desc: string;
 		done: number;
 		downloading: boolean;
@@ -121,7 +121,7 @@
 	}
 
 	async function useIt(b: Bundle) {
-		if (await pumpkin.run(() => api('settings', { body: { [b.kind === 'edit' ? 'edit_model' : 'image_model']: b.id }, method: 'PUT' }), `Using ${b.name}`)) void load();
+		if (await pumpkin.run(() => api('settings', { body: { [b.kind === 'edit' ? 'edit_model' : b.kind === 'video' ? 'video_model' : 'image_model']: b.id }, method: 'PUT' }), `Using ${b.name}`)) void load();
 	}
 
 	async function restartText() {
@@ -222,7 +222,7 @@
 							<div class="flex flex-wrap items-center gap-2">
 								<p class="text-sm font-medium">{b.name}</p>
 								{#if b.recommended}<span class="rounded-full bg-foreground/10 px-2 py-0.5 text-[11px]">Recommended</span>{/if}
-								{#if b.default && b.installed}<span class="rounded-full bg-foreground px-2 py-0.5 text-[11px] text-background">{b.kind === 'edit' ? 'Edits in chat' : 'Draws in chat'}</span>{/if}
+								{#if b.default && b.installed}<span class="rounded-full bg-foreground px-2 py-0.5 text-[11px] text-background">{b.kind === 'edit' ? 'Edits in chat' : b.kind === 'video' ? 'Makes videos in chat' : 'Draws in chat'}</span>{/if}
 								{#if b.fit}<span class={['rounded-full px-2 py-0.5 text-[11px] font-medium', FIT_CLASS[b.fit.level]]}>{b.fit.text}</span>{/if}
 							</div>
 							<p class="mt-0.5 text-xs text-muted-foreground">{b.desc}{b.size_gb ? ` About ${b.size_gb} GB.` : ''}</p>

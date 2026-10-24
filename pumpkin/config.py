@@ -61,6 +61,7 @@ DEFAULT_SETTINGS = {
     "keep_context": True,              # save the conversation a model has read when it stops and load it at the next start
     "images": True,                    # the chat's model may draw pictures (Images page) once an image model is in
     "image_dir": os.path.join(USER_DIR, "image-models"),
+    "video_model": "",                 # the video model the chat makes clips with; empty = the first one installed
     "edit_model": "",                  # the picture-changing model the chat uses; empty = the first one installed
     "image_model": "",                 # the image model the chat draws with; empty = the first one installed
     "image_port": 8092,                # sd-server, only ever on 127.0.0.1

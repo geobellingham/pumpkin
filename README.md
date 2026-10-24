@@ -37,6 +37,9 @@ chat with tools, web search, scheduled agent tasks, voice and phone access, all 
   do not fit in memory together, the text model pauses while the picture is drawn and comes back by itself.
   Add Qwen Image Edit and the chat can also change a picture you attach or one it drew ("make it night",
   "remove the car"). It is a big model, so it is slower and part of it runs from RAM on most graphics cards.
+- **It makes short videos.** Add Wan 2.2 (5B) on the Images page and ask the chat for a clip, or to bring a
+  picture to life. The clip plays in the chat and is saved in your Files. Be patient: a few seconds of
+  video take several minutes even on a good graphics card, and up to 5 seconds per clip.
 - **It keeps your place.** When a model stops or is swapped out (to draw a picture, say), Pumpkin saves the
   conversation it has read and loads it back at the next start, so a long chat with a big context does not
   have to be read again. Switch it off in Settings.

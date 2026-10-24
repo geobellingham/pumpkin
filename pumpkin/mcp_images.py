@@ -1,4 +1,4 @@
-"""Built-in MCP server for pictures: the tools reach the model as image_generate and image_edit.
+"""Built-in MCP server for pictures and clips: the tools reach the model as image_generate, image_edit, image_video.
 
 llama-server starts it as `python -m pumpkin.mcp_images`, so the chat's model sees the tool. The chat's own calls
 never get here: Pumpkin answers them itself (server.py), because it may have to stop llama-server to make room
@@ -22,15 +22,23 @@ TOOLS = [
      "inputSchema": {"type": "object", "properties": {"prompt": {"type": "string"}, "source": {
          "type": "string", "description": "Optional: a picture in the user's Files, like images/cat.jpg"}},
                      "required": ["prompt"]}},
+    {"name": "video", "description": "Make a short video clip the user asks for (a few seconds; it takes minutes). "
+                                     "Write a detailed English prompt: subject, motion, camera, setting, light. Set "
+                                     "from_picture to bring the picture the user attached (or you drew) to life.",
+     "inputSchema": {"type": "object", "properties": {
+         "prompt": {"type": "string"}, "shape": {"type": "string", "enum": SHAPES},
+         "seconds": {"type": "number", "description": "Length, 1 to 5 seconds (default 2)"},
+         "from_picture": {"type": "boolean"}}, "required": ["prompt"]}},
 ]
 
 
 def call(name, args):
-    if name not in ("generate", "edit"):
+    if name not in ("generate", "edit", "video"):
         raise LookupError(f"Unknown tool {name}")
     s = config.Settings()
-    body = json.dumps({"prompt": args.get("prompt", ""), "shape": args.get("shape") or "square",
-                       "source": args.get("source"), "swap": False}).encode()
+    body = json.dumps({"prompt": args.get("prompt", ""), "shape": args.get("shape") or ("landscape" if name == "video" else "square"),
+                       "source": args.get("source"), "seconds": args.get("seconds"),
+                       "from_picture": bool(args.get("from_picture")), "swap": False}).encode()
     req = urllib.request.Request(f"http://127.0.0.1:{int(s['port'])}/pumpkin/api/images/{name}", data=body,
                                  method="POST", headers={"Content-Type": "application/json", "X-Pumpkin": "1",
                                                          "Authorization": f"Bearer {config.token()}"})
@@ -46,6 +54,8 @@ def call(name, args):
         raise RuntimeError(msg if isinstance(msg, str) else f"Pumpkin answered {e.code}")
     except (urllib.error.URLError, OSError) as e:
         raise RuntimeError(f"Could not reach Pumpkin: {e}")
+    if name == "video":
+        return f"The video is saved as {res.get('path')} in the user's Files ({res.get('model')}, {res.get('seconds')} s)."
     return f"The picture is saved as {res.get('path')} in the user's Files ({res.get('model')}, {res.get('seconds')} s)."
 
 
