@@ -102,6 +102,7 @@ class H(BaseHTTPRequestHandler):
         if p == "/metrics":
             b = b"llamacpp:predicted_tokens_seconds 37.5\nllamacpp:prompt_tokens_seconds 900\n"
             s.send_response(200); s.send_header("Content-Length", str(len(b))); s.end_headers(); s.wfile.write(b); return
+        if p == "/slots": return s.j([{"id": 0, "is_processing": False, "next_token": [{"n_decoded": 0}]}])
         if p == "/tools": return s.j(TOOLS)
         if p == "/props": return s.j({"model_path": args[args.index("-m") + 1], "default_generation_settings": {"n_ctx": 8192, "params": {}}, "modalities": {}, "build_info": "b11796", "ui_settings": {"systemMessage": "STALE SERVER PERSONA"}})
         s.j({"error": {"code": 404, "message": "nf"}}, 404)
@@ -130,6 +131,10 @@ class H(BaseHTTPRequestHandler):
             if names and "edit" in names and "bash" in names:          # Pumpkin Code
                 if "TOOBIG" in json.dumps(msgs[:3]) and "cut off because" not in json.dumps(msgs):
                     return s.j({"error": {"code": 500, "message": "Failed to parse tool call arguments as JSON: parse error at line 1, column 24500: syntax error while parsing value - invalid string: missing closing quote"}}, 500)
+                if "HANGS" in json.dumps(msgs[:3]) and "HUNG-ONCE" not in os.environ.get("X", "") and not os.path.exists(os.path.join(os.path.dirname(os.path.abspath(args[args.index("-m") + 1])), "hung-once")):
+                    open(os.path.join(os.path.dirname(os.path.abspath(args[args.index("-m") + 1])), "hung-once"), "w").write("x")
+                    s.send_response(200); s.send_header("Content-Type", "text/event-stream"); s.end_headers(); s.wfile.flush()
+                    time.sleep(60); return
                 done = sum(1 for m in msgs if m.get("role") == "tool")
                 plan = [("todo", {"items": [{"text": "Find the greeting"}, {"text": "Change it"}]}),
                         ("read", {"path": "hello.py"}),

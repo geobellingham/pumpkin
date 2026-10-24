@@ -521,7 +521,8 @@ class Core:
     def decode_progress(self):
         """How many tokens the model has written for the answer in progress, read from llama-server itself. It moves
         while a long tool call is being written, even when the text reaches the screen in one piece at the end.
-        Returns None when nothing is being answered, else {"tokens", "stalled"}: stalled is the seconds the count has
+        Returns None when the server says it is idle (a "unknown": True answer when it does not say), else
+        {"tokens", "stalled"}: stalled is the seconds the count has
         not grown since the model began writing (0 while it still reads the prompt)."""
         if self.server.state not in ("ready", "external"):
             self._decode = None
@@ -531,6 +532,8 @@ class Core:
         if last and now - last[2] < 0.8:                 # polled twice at once: one question to the server
             return last[3]
         r = llama.http(int(self.settings["llama_port"]), "/slots", timeout=1)
+        if not isinstance(r, list):
+            return {"tokens": 0, "stalled": 0, "unknown": True}      # this server does not say what it is doing
         n, busy = 0, False
         for sl in r if isinstance(r, list) else []:
             if isinstance(sl, dict) and sl.get("is_processing"):

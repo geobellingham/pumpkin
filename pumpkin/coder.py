@@ -12,6 +12,7 @@ import os
 import re
 import shutil
 import signal
+import socket
 import subprocess
 import sys
 import threading
@@ -345,6 +346,9 @@ def _closest(text, old):
 
 # ---------------------------------------------------------------- a session
 class Session:
+    WATCH_EVERY = 10          # seconds between looks at the model server while waiting for it
+    HUNG_AFTER = 30           # seconds with nothing received before the server's own word is asked
+
     def __init__(self, manager, root, mode="ask", preset=None, sid=None):
         self.m = manager
         self.id = sid or config.new_id()
@@ -491,7 +495,7 @@ class Session:
     def _run(self):
         try:
             steps = int(self.m.settings_get("code_max_steps", 80))
-            cut = 0
+            cut = hang = 0
             for _ in range(steps):
                 if self.cancel:
                     self.emit("info", text="Stopped.")
@@ -500,6 +504,13 @@ class Session:
                 try:
                     msg = self._complete(tools=True)
                     cut = 0
+                except _Hung:
+                    hang += 1
+                    if hang > 2:
+                        raise RuntimeError("The model keeps going quiet in the middle of an answer. Stop it and start "
+                                           "it again from Presets, or check the model's log on Settings.")
+                    self.emit("info", text="The model stopped answering, so Pumpkin asked it again.")
+                    continue
                 except _CutOff as e:
                     cut += 1
                     if cut > 3:
@@ -680,6 +691,7 @@ class Session:
         conn = http.client.HTTPConnection("127.0.0.1", port, timeout=3600)
         conn.request("POST", "/v1/chat/completions", body=body,
                      headers={"Content-Type": "application/json", **llama.auth_header()})
+        sock = conn.sock                          # the response takes the connection over: keep the socket to cut it
         self.set_phase("summarising" if messages is not None else "reading",
                        "Summarising the earlier work" if messages is not None else "Reading the conversation")
         r = conn.getresponse()
@@ -698,9 +710,33 @@ class Session:
             raise RuntimeError(f"The model answered with an error: {str(err)[:600]}")
         text, thinking, calls = [], [], {}
         live = self.live = {"text": "", "thinking": ""}
+        got = [time.time()]
+        hung = [False]
+        done = threading.Event()
+
+        def watch():
+            """Nothing arrives and llama-server says it is idle, twice in a row: the answer will never come (the
+            request was dropped). Close the connection so the wait ends."""
+            quiet = 0
+            while not done.wait(self.WATCH_EVERY):
+                if time.time() - got[0] < self.HUNG_AFTER:
+                    quiet = 0
+                    continue
+                p = self.m.core.decode_progress()
+                quiet = quiet + 1 if p is None else 0
+                if quiet >= 2:
+                    hung[0] = True
+                    try:
+                        sock.shutdown(socket.SHUT_RDWR)
+                    except (OSError, AttributeError):
+                        pass
+                    return
+
+        threading.Thread(target=watch, daemon=True).start()
         finish = None
         try:
             for line in r:
+                got[0] = time.time()
                 if self.cancel:
                     break
                 line = line.strip()
@@ -757,9 +793,15 @@ class Session:
                                                        "bash": "Writing a command"}.get(nm) or
                                            (f"Preparing {nm}" if nm else "Choosing what to do next"))
                     finish = ch.get("finish_reason") or finish
+        except (OSError, http.client.HTTPException):
+            if not hung[0]:
+                raise
         finally:
+            done.set()
             conn.close()
             self.live = None
+        if hung[0] and not self.cancel:
+            raise _Hung("The model stopped answering.")
         out = [calls[k] for k in sorted(calls)]
         for n, c in enumerate(out):
             c["id"] = c["id"] or f"call_{int(time.time() * 1000)}_{n}"
@@ -819,6 +861,10 @@ class Session:
 
 class _CutOff(Exception):
     """The model's answer ended in the middle of a tool call (too long for one answer)."""
+
+
+class _Hung(Exception):
+    """The model server went quiet and idle while Pumpkin Code was waiting for its answer."""
 
 
 def _tool_label(name, a):

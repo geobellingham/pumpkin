@@ -244,6 +244,22 @@ class TestSession(unittest.TestCase):
         s = self.core.code.get(sid)
         self.assertTrue(any("cut off because" in str(m.get("content")) for m in s.messages))
 
+    def test_g_a_request_the_server_dropped_is_asked_again(self):
+        p = self.start_model()
+        with open(os.path.join(self.proj, "hello.py"), "w") as f:
+            f.write('print("Hello")\n')
+        coder.Session.WATCH_EVERY, coder.Session.HUNG_AFTER = 0.4, 0.8
+        try:
+            st, v = self.call("POST", "code", {"root": self.proj, "mode": "auto", "preset": p["id"], "text": "Say Hi HANGS"})
+            sid = v["id"]
+            v = self.wait_for(sid, lambda v: v["state"] == "idle" and any(e["kind"] == "done" for e in v["events"]), timeout=40)
+        finally:
+            coder.Session.WATCH_EVERY, coder.Session.HUNG_AFTER = 10, 30
+        self.assertIsNone(v["error"])
+        self.assertTrue(any("stopped answering" in str(e.get("text")) for e in v["events"] if e["kind"] == "info"))
+        with open(os.path.join(self.proj, "hello.py")) as f:
+            self.assertEqual(f.read(), 'print("Hi")\n')
+
     def test_f_a_file_is_written_in_parts(self):
         t = coder.Tools(self.proj, web=False)
         full, old, new = t.plan_write("big.css", "a{}\n")
