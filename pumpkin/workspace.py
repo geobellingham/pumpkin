@@ -155,20 +155,38 @@ def save_upload(settings, rel_dir, name, data):
     target = os.path.join(d, name)
     stem, ext = os.path.splitext(name)
     n = 2
-    while os.path.exists(target):                       # never overwrite: report.md -> report (2).md
-        target = os.path.join(d, f"{stem} ({n}){ext}")
-        n += 1
-    with open(target, "wb") as f:
+    while True:
+        try:
+            # never open what is there, also not a link pointing out of the folder (even a broken one). "x" covers
+            # that on Linux and macOS; Windows follows a broken link even with "x", so any name that exists as a
+            # link or file is skipped first
+            if os.path.lexists(target):
+                raise FileExistsError(target)
+            f = open(target, "xb")
+            break
+        except FileExistsError:                         # never overwrite: report.md -> report (2).md
+            target = os.path.join(d, f"{stem} ({n}){ext}")
+            n += 1
+    with f:
         f.write(data)
     return _rel(target, files_dir(settings))
 
 
 def delete(settings, rel):
     fix_owner(settings)
+    rel = (rel or "").replace("\\", "/").strip("/")
+    name = os.path.basename(rel)
+    if not rel or name in (".", ".."):
+        raise PermissionError("The work folder itself stays.")
+    # the folder it is in must be inside; the item itself may be a link, which goes without what it points to
+    p = os.path.join(safe_path(settings, os.path.dirname(rel)), name)
+    if os.path.islink(p):
+        os.remove(p)
+        return
     p = safe_path(settings, rel)
     if p == files_dir(settings):
         raise PermissionError("The work folder itself stays.")
-    if os.path.isdir(p) and not os.path.islink(p):
+    if os.path.isdir(p):
         shutil.rmtree(p)
     else:
         os.remove(p)

@@ -15,7 +15,7 @@ import urllib.request
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 HOME = tempfile.mkdtemp(prefix="pumpkin-e2e-")
 PORT, LLAMA_PORT = 18490, 18491
-ENV = dict(os.environ, HOME=HOME, XDG_CONFIG_HOME=f"{HOME}/.config", XDG_DATA_HOME=f"{HOME}/.local/share",
+ENV = dict(os.environ, HOME=HOME, USERPROFILE=HOME, XDG_CONFIG_HOME=f"{HOME}/.config", XDG_DATA_HOME=f"{HOME}/.local/share",
            XDG_STATE_HOME=f"{HOME}/.local/state", PYTHONPATH=ROOT)
 os.makedirs(f"{HOME}/.config/pumpkin")
 with open(f"{HOME}/.config/pumpkin/settings.json", "w") as f:

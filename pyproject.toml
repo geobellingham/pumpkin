@@ -25,11 +25,12 @@ pumpkin = "pumpkin.__main__:main"
 [project.urls]
 Homepage = "https://github.com/geobellingham/pumpkin"
 
-[tool.setuptools]
-packages = ["pumpkin"]
+[tool.setuptools.packages.find]
+include = ["pumpkin*"]          # also pumpkin.vendor.pypdf, which reads PDFs
 
 [tool.setuptools.dynamic]
 version = {attr = "pumpkin.__version__"}
 
 [tool.setuptools.package-data]
-pumpkin = ["catalog.json", "image_catalog.json", "connectors.json", "assets/*", "skills/**/*", "ui/**/*"]
+pumpkin = ["catalog.json", "image_catalog.json", "connectors.json", "assets/*", "skills/**/*", "ui/**/*",
+           "vendor/*.txt", "vendor/*.md", "mac/*"]

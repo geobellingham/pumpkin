@@ -119,7 +119,9 @@
 	let clock = $state(Date.now());
 	const clockTimer = setInterval(() => (clock = Date.now()), 1000);
 
+	let destroyed = false;
 	onDestroy(() => {
+		destroyed = true; // a request still on its way must not start the polling again
 		clearTimeout(timer);
 		clearInterval(clockTimer);
 	});
@@ -134,7 +136,7 @@
 		events = [];
 		view = null;
 		const v = await pumpkin.run(() => api<View>(`code/${id}`));
-		if (!v) return;
+		if (!v || destroyed) return;
 		events = v.events;
 		view = v;
 		mode = v.mode;
@@ -156,13 +158,17 @@
 		if (!view) return;
 		const id = view.id;
 		const v = await api<View>(`code/${id}?after=${view.last}`).catch(() => null);
-		if (!view || view.id !== id) return;
+		if (destroyed || !view || view.id !== id) return;
 		if (v) {
-			if (v.events.length) events = [...events, ...v.events].slice(-600);
+			// two polls can overlap (a button press while one is on its way): add each event once
+			const top = events.length ? events[events.length - 1].n : 0;
+			const fresh = v.events.filter((e) => e.n > top);
+			if (fresh.length) events = [...events, ...fresh].slice(-600);
 			view = { ...v, last: Math.max(view.last, v.last) };
 			if (v.events.length || v.live) void scroll();
 		}
 		const busy = v && (v.state === 'running' || v.state === 'waiting');
+		clearTimeout(timer); // the other poll may have set one meanwhile: keep a single chain
 		timer = setTimeout(poll, busy ? 500 : 3000);
 	}
 

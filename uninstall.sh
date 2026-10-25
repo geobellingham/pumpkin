@@ -2,8 +2,12 @@
 # Removes Pumpkin. Your models, reports and settings stay unless you add --purge.
 set -u
 DATA="${XDG_DATA_HOME:-$HOME/.local/share}"
-command -v pumpkin >/dev/null && pumpkin service uninstall >/dev/null 2>&1
-command -v pumpkin >/dev/null && pumpkin stop >/dev/null 2>&1
+# the installed command first: a desktop session often has no ~/.local/bin on its PATH
+P="$HOME/.local/bin/pumpkin"; [ -x "$P" ] || P="$(command -v pumpkin 2>/dev/null || true)"
+if [ -n "$P" ]; then
+  "$P" service uninstall >/dev/null 2>&1
+  "$P" stop >/dev/null 2>&1
+fi
 rm -rf "$DATA/pumpkin/app" "$HOME/.local/bin/pumpkin" "$DATA/applications/pumpkin.desktop" \
        "$DATA/icons/hicolor/scalable/apps/pumpkin.svg" "$HOME/Applications/Pumpkin.app"
 if [ "${1:-}" = "--purge" ]; then

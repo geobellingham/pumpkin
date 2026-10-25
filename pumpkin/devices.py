@@ -15,6 +15,7 @@ import socket
 import threading
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 import uuid
 from http.client import HTTPException
@@ -51,6 +52,16 @@ def new_peer_key():
     except OSError:
         pass
     return peer_key()
+
+
+def header_name(name):
+    """A device name for the X-Pumpkin-From header. Headers only carry Latin-1, so anything else (Cyrillic,
+    Chinese, a curly apostrophe) is percent-encoded; plain names go through as they are."""
+    return urllib.parse.quote(str(name or "")[:60], safe=" !#$&'()*+,-./:;=?@[]^_`{|}~")
+
+
+def name_from_header(value):
+    return urllib.parse.unquote(value or "")[:60]
 
 
 def device_name(settings):
@@ -283,7 +294,7 @@ def call(dev, path, payload=None, timeout=10):
         req = urllib.request.Request(base.rstrip("/") + "/pumpkin/peer/" + path, data=data, method=
                                      "POST" if data else "GET",
                                      headers={"Authorization": "Bearer " + dev["key"], "Content-Type":
-                                              "application/json", "X-Pumpkin-From": dev.get("from", "")[:60]})
+                                              "application/json", "X-Pumpkin-From": header_name(dev.get("from", ""))})
         try:
             with _open(req, timeout=timeout) as r:
                 j = json.loads(r.read().decode("utf-8", "replace") or "{}")
@@ -319,7 +330,7 @@ def open_chat(dev, body, timeout=3600):
     for base in urls:
         req = urllib.request.Request(base.rstrip("/") + "/pumpkin/peer/chat", data=data, method="POST",
                                      headers={"Authorization": "Bearer " + dev["key"], "Content-Type": "application/json",
-                                              "X-Pumpkin-From": dev.get("from", "")[:60]})
+                                              "X-Pumpkin-From": header_name(dev.get("from", ""))})
         try:
             r = _open(req, timeout=timeout)
             dev["url"] = base

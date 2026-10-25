@@ -331,6 +331,13 @@ class StudioVoice {
 			if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
 				this.problem = "The microphone is blocked. Allow it for this site in your browser's settings.";
 				this.end();
+			} else if (e.error === 'audio-capture') {
+				this.problem = 'No microphone was found. Plug one in or pick it in your system settings.';
+				this.end();
+			} else if (e.error === 'network') {
+				// Chrome sends the sound to its own servers to turn it into words
+				this.problem = 'Speech recognition needs the internet in this browser, and it could not reach it.';
+				this.end();
 			}
 		};
 		rec.onend = () => {

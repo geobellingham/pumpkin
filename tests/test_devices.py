@@ -246,5 +246,16 @@ class TestDevices(unittest.TestCase):
         self.assertEqual(self.boss.api("devices")["devices"], [])
 
 
+class TestNames(unittest.TestCase):
+    def test_any_device_name_fits_in_the_header(self):
+        sys.path.insert(0, ROOT)
+        from pumpkin import devices
+        for name in ("Лаптоп на Георги", "王的电脑", "Georgi’s laptop", "Georgi's laptop", "100% pumpkin"):
+            v = devices.header_name(name)
+            v.encode("latin-1")                                       # what http.client does with a header
+            self.assertEqual(devices.name_from_header(v), name)
+        self.assertEqual(devices.header_name("Georgi's laptop"), "Georgi's laptop")   # plain names stay readable
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -39,8 +39,15 @@
 		st = await api<Status>('docs').catch(() => st);
 		vision = await api<typeof vision>('vision').catch(() => vision);
 		const id = vision?.reading;
-		if (id) job = await api<typeof job>(`jobs/${id}`).catch(() => job);
-		else if (job?.state === 'running') job = { ...job, state: 'done' };
+		if (id) {
+			lastJob = id;
+			job = await api<typeof job>(`jobs/${id}`).catch(() => job);
+		} else if (job?.state === 'running') {
+			// it finished: ask once how it ended, so an error is shown instead of looking done
+			const end = lastJob ? await api<typeof job>(`jobs/${lastJob}`).catch(() => null) : null;
+			job = end && end.state !== 'running' ? end : { ...job, state: 'done' };
+			lastJob = null;
+		}
 	}
 
 	async function readScans() {
@@ -52,10 +59,15 @@
 		}
 	}
 
-	onMount(async () => {
-		settings = await api<Settings>('settings').catch(() => null);
-		void load();
+	let lastJob: string | null = null;
+
+	onMount(() => {
+		// the interval starts at once, so leaving before the first answer still clears it
 		timer = setInterval(load, 5000);
+		void api<Settings>('settings')
+			.catch(() => null)
+			.then((s) => (settings = s));
+		void load();
 	});
 
 	onDestroy(() => clearInterval(timer));

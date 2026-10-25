@@ -31,6 +31,26 @@ INSTRUCTION_FILES = ("AGENTS.md", "PUMPKIN.md", "CLAUDE.md", ".github/copilot-in
 DANGER = re.compile(r"\bsudo\b|\bsu\s+-|\brm\s+(-\w*\s+)*-\w*[rR]\w*\s+(/|~|\$HOME|\*)(\s|$)|\bgit\s+push\b|"
                     r"\bgit\s+reset\s+--hard\b|\bgit\s+clean\s+-\w*f|\bmkfs|\bdd\s+if=|\bshutdown\b|\breboot\b|"
                     r":\(\)\s*\{|\bformat\s+[a-z]:|Remove-Item\b.*-Recurse|\bdel\s+/[sq]|\bcurl\b[^|]*\|\s*(sudo\s+)?(ba|z)?sh\b")
+_RM = re.compile(r"\brm\s+([^;&|\n]*)")
+_RM_TARGET = re.compile(r"(/|~|\$HOME|\$\{HOME\})/?\*?|\*|/[\w.-]+/?")
+# a command after one that was always allowed (npm test && rm -rf src) is asked about again
+_CHAINED = re.compile(r"[;&|`<>\n]|\$\(")
+
+
+def dangerous(command):
+    """Hard to take back: DANGER, or rm with a recursive flag anywhere aimed at /, a top folder, ~ or $HOME
+    (DANGER alone misses rm -r -f /, rm -rf ~/ and rm --recursive --force /home)."""
+    command = str(command or "")
+    if DANGER.search(command):
+        return True
+    for m in _RM.finditer(command):
+        args = m.group(1).split()
+        recursive = any(a == "--recursive" or re.fullmatch(r"-[a-zA-Z]*[rR][a-zA-Z]*", a) for a in args)
+        if recursive and any(_RM_TARGET.fullmatch(a.strip("'\"")) for a in args if not a.startswith("-")):
+            return True
+    return False
+
+
 MAX_READ_LINES = 2000
 MAX_EVENTS = 600
 
@@ -142,11 +162,14 @@ class Tools:
             if os.path.isdir(fp):
                 out.append(n + "/" + ("  (skipped in searches)" if n in SKIP_DIRS else ""))
             else:
-                out.append(f"{n}  {os.path.getsize(fp)} B")
+                try:
+                    out.append(f"{n}  {os.path.getsize(fp)} B")
+                except OSError:
+                    out.append(f"{n}  (broken link)")
         return "\n".join(out[:500]) + (f"\n... {len(out) - 500} more" if len(out) > 500 else "") if out else "(empty)"
 
     def glob(self, pattern):
-        pattern = str(pattern or "").strip().lstrip("./")
+        pattern = re.sub(r"^(\./)+", "", str(pattern or "").strip())     # ./src/*.py, but keep .github/*
         if not pattern:
             raise ValueError("Give a pattern, like **/*.py")
         rx = _glob_rx(pattern)
@@ -277,7 +300,18 @@ class Tools:
         p = subprocess.Popen(self.shell + [str(command)], cwd=self.root, stdout=subprocess.PIPE,
                              stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL, env=env, **kw)
         chunks = []
-        reader = threading.Thread(target=lambda: chunks.append(p.stdout.read()), daemon=True)
+
+        def read():
+            # piece by piece, so what came is kept even when a background child holds the pipe open
+            try:
+                while True:
+                    b = p.stdout.read1(65536)
+                    if not b:
+                        break
+                    chunks.append(b)
+            except (OSError, ValueError):
+                pass
+        reader = threading.Thread(target=read, daemon=True)
         reader.start()
         why = None
         while p.poll() is None:
@@ -287,10 +321,16 @@ class Tools:
                 why = f"timed out after {timeout} s"
             if why:
                 _kill_tree(p)
+                try:
+                    p.wait(5)
+                except subprocess.TimeoutExpired:
+                    pass
                 break
             time.sleep(0.1)
         reader.join(5)
-        out = (chunks[0] if chunks else b"").decode("utf-8", "replace").replace("\r\n", "\n")
+        if not reader.is_alive():
+            p.stdout.close()                     # else the reader still uses it; it closes with the process
+        out = b"".join(list(chunks)).decode("utf-8", "replace").replace("\r\n", "\n")
         out = re.sub(r"\x1b\[[0-9;?]*[A-Za-z]", "", out)
         if len(out) > 30000:
             out = out[:12000] + f"\n\n... {len(out) - 24000} characters cut ...\n\n" + out[-12000:]
@@ -377,6 +417,9 @@ class Session:
         self.streamed = 0                    # pieces of the answer written in the current step
         self._answer = threading.Event()
         self._lock = threading.Lock()
+        self._save_lock = threading.Lock()   # the session thread and the page both save
+        self._send_lock = threading.Lock()   # two quick sends start one run, not two
+        self.deleted = False
         self.tools = Tools(self.root, web=not hardware.ANDROID)
         self.tools.skills = lambda: self.m.skills_for(self.root)
 
@@ -420,12 +463,15 @@ class Session:
                 "updated": self.updated, "tokens": self.tokens}
 
     def save(self):
-        os.makedirs(_sessions_dir(), exist_ok=True)
-        path = os.path.join(_sessions_dir(), self.id + ".json")
-        tmp = path + ".tmp"
-        with open(tmp, "w", encoding="utf-8") as f:
-            json.dump(self.to_json(), f)
-        os.replace(tmp, path)
+        with self._save_lock:
+            if self.deleted:
+                return                           # deleted while it ran: its last save must not bring it back
+            os.makedirs(_sessions_dir(), exist_ok=True)
+            path = os.path.join(_sessions_dir(), self.id + ".json")
+            tmp = path + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump(self.to_json(), f)
+            os.replace(tmp, path)
 
     @classmethod
     def load(cls, manager, data):
@@ -441,17 +487,18 @@ class Session:
         text = str(text or "").strip()
         if not text:
             raise ValueError("Say what to do.")
-        if self.state in ("running", "waiting"):
-            raise RuntimeError("It is still working. Wait, or stop it first.")
-        if not os.path.isdir(self.root):
-            raise FileNotFoundError(f"The project folder {self.root} is not there any more.")
-        if not self.title:
-            self.title = re.sub(r"\s+", " ", text)[:70]
-        if not self.messages:
-            self.messages.append({"role": "system", "content": self.m.system_prompt(self)})
-        self.messages.append({"role": "user", "content": text})
-        self.emit("user", text=text)
-        self.state, self.error, self.cancel = "running", None, False
+        with self._send_lock:
+            if self.state in ("running", "waiting"):
+                raise RuntimeError("It is still working. Wait, or stop it first.")
+            if not os.path.isdir(self.root):
+                raise FileNotFoundError(f"The project folder {self.root} is not there any more.")
+            if not self.title:
+                self.title = re.sub(r"\s+", " ", text)[:70]
+            if not self.messages:
+                self.messages.append({"role": "system", "content": self.m.system_prompt(self)})
+            self.messages.append({"role": "user", "content": text})
+            self.emit("user", text=text)
+            self.state, self.error, self.cancel = "running", None, False
         threading.Thread(target=self._run, daemon=True).start()
 
     def stop(self):
@@ -516,7 +563,7 @@ class Session:
                 self._compact_if_needed()
                 try:
                     msg = self._complete(tools=True)
-                    cut = 0
+                    cut = hang = 0
                     if self.cancel:
                         self.emit("info", text="Stopped.")
                         break
@@ -586,7 +633,7 @@ class Session:
         try:
             text, ok, extra = self._do(name, args)
         except (ValueError, PermissionError, FileNotFoundError, IsADirectoryError, NotADirectoryError,
-                UnicodeDecodeError, OSError, LookupError) as e:
+                UnicodeDecodeError, OSError, LookupError, http.client.HTTPException) as e:
             text, ok, extra = f"Error: {e}", False, {}
         limit = self.m.tool_limit()
         shown = text if len(text) <= 6000 else text[:6000] + f"\n... ({len(text) - 6000} more characters)"
@@ -621,11 +668,14 @@ class Session:
 
     def _needs_ask(self, kind, command=""):
         if kind == "command":
-            if DANGER.search(command):
+            if dangerous(command):
                 return True
             if self.mode == "auto":
                 return False
-            return not any(command.strip() == a or command.strip().startswith(a + " ") for a in self.allowed)
+            c = command.strip()
+            if _CHAINED.search(re.sub(r"\s[12]?>&[12]\b", " ", c)):
+                return True                      # "always" covers one command, not what is chained after it
+            return not any(c == a or c.startswith(a + " ") for a in self.allowed)
         return self.mode == "ask" and not self.allow_edits
 
     def _do(self, name, a):
@@ -672,7 +722,7 @@ class Session:
             if hardware.ANDROID:
                 raise PermissionError("Commands cannot run on the phone. Use Pumpkin Code on a computer.")
             if self._needs_ask("command", cmd):
-                ok, note = self._ask("command", command=cmd, danger=bool(DANGER.search(cmd)))
+                ok, note = self._ask("command", command=cmd, danger=dangerous(cmd))
                 if not ok:
                     return "The user said no to running this." + (f" They said: {note}" if note else ""), False, \
                         {"declined": True}
@@ -737,8 +787,17 @@ class Session:
             except ValueError:
                 err = raw[:400]
             if r.status == 400 and "context" in str(err).lower() and messages is None:
-                self._compact(force=True)
-                return self._complete(tools)
+                self._sock = None
+                conn.close()
+                if not getattr(self, "_ctx_retry", False):
+                    if self._compact(force=True):            # it got shorter: ask once more
+                        self._ctx_retry = True
+                        try:
+                            return self._complete(tools)
+                        finally:
+                            self._ctx_retry = False
+                raise RuntimeError("The conversation does not fit in the model's context even after summarising it. "
+                                   "Pick a bigger context for this model in Presets, or start a new session.")
             if re.search(r"parse tool call|tool call arguments|invalid string|unexpected end of", str(err), re.I):
                 raise _CutOff(str(err)[:300])
             raise RuntimeError(f"The model answered with an error: {str(err)[:600]}")
@@ -869,7 +928,7 @@ class Session:
             keep_from += 1
         old = msgs[1:keep_from]
         if not old:
-            return
+            return False
         self.emit("info", text="The session is getting long for the model's context, so it is summarising the "
                                "earlier part.")
         transcript = []
@@ -892,6 +951,7 @@ class Session:
                          {"role": "assistant", "content": "Understood. I will continue from here."}] + msgs[keep_from:]
         self.tokens = self._size()
         self.emit("compact", text=summary)
+        return True
 
 
 class _CutOff(Exception):
@@ -977,7 +1037,8 @@ class Manager:
         return s
 
     def create(self, root, mode="ask", preset=None):
-        root = os.path.realpath(os.path.expanduser(str(root or "").strip()))
+        raw = str(root or "").strip()
+        root = os.path.realpath(os.path.expanduser(raw)) if raw else ""   # "" would mean Pumpkin's own folder
         if not root or not os.path.isdir(root):
             raise ValueError(f"{root or 'That'} is not a folder on this computer.")
         if os.path.dirname(root) == root or root == os.path.realpath(os.path.expanduser("~")):
@@ -997,6 +1058,7 @@ class Manager:
 
     def delete(self, sid):
         s = self.get(sid)
+        s.deleted = True
         s.stop()
         with self.lock:
             self.sessions.pop(sid, None)

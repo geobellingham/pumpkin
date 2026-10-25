@@ -4,6 +4,7 @@ import os
 import re
 import subprocess
 import sys
+import shlex
 import shutil
 import time
 import urllib.request
@@ -75,6 +76,8 @@ def apply():
     tag = check().get("tag") or ""
     if not re.fullmatch(r"v?\d+(\.\d+){1,3}", tag):
         raise RuntimeError("No new release to update to.")
+    if _ver(tag) <= _ver(__version__):
+        raise RuntimeError("Pumpkin is already up to date.")
     if os.name == "nt":
         return _apply_windows(tag)
     script = os.environ.get("PUMPKIN_INSTALL_CMD") or (
@@ -82,7 +85,7 @@ def apply():
     bin_pumpkin = os.path.join(config.HOME, ".local", "bin", "pumpkin")
     cmd = f"sleep 1; {script}"
     if not os.environ.get("PUMPKIN_INSTALL_CMD"):          # a custom command (tests) is left to do its own thing
-        cmd += f" && {bin_pumpkin} up"                     # the login service if there is one, else in the background
+        cmd += f" && {shlex.quote(bin_pumpkin)} up"        # the login service if there is one, else in the background
     log = open(_log(), "w")
     log.write(f"Updating to {tag}\n")
     log.flush()
@@ -90,7 +93,7 @@ def apply():
     if sys.platform != "darwin" and shutil.which("systemd-run") and os.environ.get("INVOCATION_ID"):
         # inside the login service: run the update as its own unit, so stopping the service cannot stop it
         argv = ["systemd-run", "--user", "--collect", "--quiet", f"--unit=pumpkin-update-{int(time.time())}",
-                f"--setenv=HOME={config.HOME}", "bash", "-c", f"{cmd} >> {_log()} 2>&1"]
+                f"--setenv=HOME={config.HOME}", "bash", "-c", f"{{ {cmd}; }} >> {shlex.quote(_log())} 2>&1"]
     subprocess.Popen(argv, stdout=log, stderr=subprocess.STDOUT, start_new_session=True, cwd=config.HOME)
     log.close()
 
@@ -104,7 +107,7 @@ def _apply_windows(tag):
     with open(_log(), "w", encoding="utf-8") as log:
         log.write(f"Updating to {tag}\n")
     ps = ["powershell", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command",
-          f"Start-Sleep 1; & {{ {script} }} *>> '{_log()}'"]
+          f"Start-Sleep 1; & {{ {script} }} *>> '{_log().replace(chr(39), chr(39) * 2)}'"]
     subprocess.Popen(ps, cwd=config.HOME, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
                      stderr=subprocess.DEVNULL,
                      creationflags=subprocess.CREATE_NO_WINDOW | subprocess.CREATE_NEW_PROCESS_GROUP)

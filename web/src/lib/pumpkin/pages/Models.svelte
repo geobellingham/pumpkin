@@ -25,6 +25,7 @@
 	let repo = $state<string | null>(null);
 	let files = $state<HfFile[] | null>(null);
 	let timer: ReturnType<typeof setInterval> | undefined;
+	let doneSeen = 0;
 
 	async function loadLocal(rescan = false) {
 		const r = await pumpkin.run(() =>
@@ -50,10 +51,13 @@
 			.then((r) => (suggestions = r.suggestions))
 			.catch(() => {});
 		pumpkin.fast++;
-		timer = setInterval(() => {
-			void loadJobs();
+		timer = setInterval(async () => {
+			await loadJobs();
+			// look for new models only when another download has just finished, not every 1.5 s after one did
+			const done = jobs.filter((j) => j.state === 'done').length;
 
-			if (tab === 'local' && jobs.some((j) => j.state === 'done')) void loadLocal();
+			if (tab === 'local' && done > doneSeen) void loadLocal();
+			doneSeen = done;
 		}, 1500);
 	});
 
@@ -245,7 +249,7 @@
 		<Card title="Downloads">
 			{#snippet actions()}
 				{#if jobs.some((j) => !['queued', 'downloading'].includes(j.state))}
-					<Button class="rounded-full" onclick={() => api('downloads/clear', { body: {} }).then(loadJobs)} size="sm" variant="ghost">Clear finished</Button>
+					<Button class="rounded-full" onclick={() => pumpkin.run(() => api('downloads/clear', { body: {} })).then(loadJobs)} size="sm" variant="ghost">Clear finished</Button>
 				{/if}
 			{/snippet}
 
@@ -268,7 +272,7 @@
 								{/if}
 							</div>
 							{#if j.state === 'queued' || j.state === 'downloading'}
-								<Button class="rounded-full" onclick={() => api('downloads/cancel', { body: { id: j.id } }).then(loadJobs)} size="sm" variant="ghost">Cancel</Button>
+								<Button class="rounded-full" onclick={() => pumpkin.run(() => api('downloads/cancel', { body: { id: j.id } })).then(loadJobs)} size="sm" variant="ghost">Cancel</Button>
 							{/if}
 						</div>
 					{/each}

@@ -47,9 +47,12 @@
 		});
 	}
 
+	let gone = false;
+
 	onMount(async () => {
 		remote = await pumpkin.run(() => api<Remote>('remote'));
 		settings = await pumpkin.run(() => api<Settings>('settings'));
+		if (gone) return; // left the page while it loaded: start nothing
 		void newCode();
 		// a code works once and for ten minutes: keep a fresh one on screen
 		timer = setInterval(() => {
@@ -57,7 +60,10 @@
 		}, 20_000);
 	});
 
-	onDestroy(() => clearInterval(timer));
+	onDestroy(() => {
+		gone = true;
+		clearInterval(timer);
+	});
 
 	async function setMode(mode: string) {
 		busy = true;

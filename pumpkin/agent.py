@@ -141,13 +141,18 @@ def notify(settings, title, body=""):
 
 
 def _ntfy(server, topic, title, body):
+    import urllib.parse
     import urllib.request
-    req = urllib.request.Request(f"{server.rstrip('/')}/{topic}", data=(body or title).encode(),
-                                 headers={"Title": title.encode("ascii", "replace").decode(), "Tags": "jack_o_lantern"},
-                                 method="POST")
+    server = server.strip().rstrip("/")
+    if "://" not in server:
+        server = "https://" + server                     # ntfy.example.com means https://ntfy.example.com
     try:
-        urllib.request.urlopen(req, timeout=15).read()
-    except OSError:
+        req = urllib.request.Request(f"{server}/{urllib.parse.quote(topic)}", data=(body or title).encode(),
+                                     headers={"Title": title.encode("ascii", "replace").decode(),
+                                              "Tags": "jack_o_lantern"}, method="POST")
+        with urllib.request.urlopen(req, timeout=15) as r:
+            r.read()
+    except (OSError, ValueError):                        # a phone notification is never worth a crash
         pass
 
 
@@ -246,9 +251,12 @@ class Runner:
                 continue
             due = now.replace(hour=hh, minute=mm, second=0, microsecond=0)
             if due <= now < due + dt.timedelta(minutes=30):
+                try:
+                    self.start({"name": t["name"], "prompt": t["prompt"], "preset": t.get("preset"),
+                                "stop_after": t.get("stop_after"), "task_id": t["id"]})
+                except RuntimeError:
+                    return                               # a run started just now: try again at the next tick
                 self.core.tasks.update(t["id"], {"last_sched": today})
-                self.start({"name": t["name"], "prompt": t["prompt"], "preset": t.get("preset"),
-                            "stop_after": t.get("stop_after"), "task_id": t["id"]})
                 return
 
 
@@ -263,7 +271,10 @@ class Reports:
     def save(self, name, prompt, result):
         os.makedirs(self.dir, exist_ok=True)
         now = dt.datetime.now()
-        path = os.path.join(self.dir, f"{now:%Y-%m-%d_%H%M}_{config.slug(name)}.md")
+        stem = os.path.join(self.dir, f"{now:%Y-%m-%d_%H%M}_{config.slug(name)}")
+        path, n = stem + ".md", 2
+        while os.path.exists(path):                      # the same task twice in a minute keeps both reports
+            path, n = f"{stem}-{n}.md", n + 1
         with open(path, "w", encoding="utf-8") as f:
             f.write(f"# {name}\n\n_{now:%Y-%m-%d %H:%M}_\n\n## Prompt\n\n{prompt}\n\n## Result\n\n{result}\n")
         return path

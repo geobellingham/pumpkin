@@ -130,7 +130,7 @@
 		<Card title={busy ? `Running: ${job ?? 'task'}` : 'Last run'}>
 			{#snippet actions()}
 				{#if busy}
-					<Button class="rounded-full" onclick={() => api('agent/cancel', { body: {} })} size="sm" variant="outline">Cancel</Button>
+					<Button class="rounded-full" onclick={() => pumpkin.run(() => api('agent/cancel', { body: {} }))} size="sm" variant="outline">Cancel</Button>
 				{:else}
 					<Button class="rounded-full" href="#/pumpkin/reports" size="sm" variant="ghost">Reports</Button>
 				{/if}

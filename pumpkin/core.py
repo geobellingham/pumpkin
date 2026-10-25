@@ -12,6 +12,9 @@ import time
 from . import (__version__, agent, coder, config, connectors, devices, docs, hardware, images, llama, mcp_local, memory, migrate, models,
                recommend, remote, skills, updates, vision, workspace)
 
+# which setting holds the chosen model for each kind of image model
+IMAGE_KEYS = {"draw": "image_model", "edit": "edit_model", "video": "video_model"}
+
 
 def _python():
     """The Python for tool servers. On Windows that is python.exe even when Pumpkin itself runs windowless with
@@ -305,7 +308,13 @@ class Core:
         if not servers:
             return None
         path = os.path.join(config.STATE_DIR, "mcp-effective.json")
-        with open(path, "w") as f:
+        # it holds your connector tokens, so only you can read it (like connectors.json)
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        try:
+            os.chmod(path, 0o600)
+        except OSError:
+            pass
+        with os.fdopen(fd, "w") as f:
             json.dump({"mcpServers": servers}, f, indent=2)
         return path
 
@@ -339,7 +348,7 @@ class Core:
         """Pumpkin's tool servers as Python programs that llama-server starts."""
         if preset.get("web", True):
             pkg_parent = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-            env = {"PYTHONPATH": pkg_parent}
+            env = {"PYTHONPATH": pkg_parent, "PYTHONUTF8": "1"}
             for k in ("PUMPKIN_SEARXNG", "BRAVE_API_KEY"):
                 if os.environ.get(k):
                     env[k] = os.environ[k]
@@ -355,7 +364,8 @@ class Core:
             servers.setdefault("devices", self._builtin("pumpkin.mcp_devices", 1_800_000))
         if self.images_ready() or self.edit_ready() or self.video_ready():
             # the chat's calls are answered by Pumpkin itself (server.py); this one serves the listing and agents
-            servers.setdefault("image", self._builtin("pumpkin.mcp_images", 1_800_000))
+            # a clip can take up to two hours (images.generate_video), so the call may wait that long
+            servers.setdefault("image", self._builtin("pumpkin.mcp_images", 7_200_000))
         self.mcp_image = "image" in servers
         self.mcp_devices = "devices" in servers
 
@@ -430,11 +440,11 @@ class Core:
         local = [re.sub(r"[-_.]", "", os.path.basename(m["path"]).lower()) for m in self.library.scan()]
         recs = recommend.recommend(items, hw, local, curated)
         if goal:
-            for k in ("gpu", "moe"):
-                recs[k] = sorted(recs[k], key=lambda m: self._goal_rank(goal, m))   # stable: keeps the ranking
+            for k in ("gpu", "moe", "slow"):
+                recs[k] = sorted(recs.get(k, []), key=lambda m: self._goal_rank(goal, m))   # stable: keeps the ranking
         self._recs = {d["id"]: d for r in recs.values() for d in r}
-        return {"gpu": recs["gpu"], "moe": recs["moe"], "hardware": hw, "source": source, "updated": at,
-                "stale": stale, "error": error}
+        return {"gpu": recs["gpu"], "moe": recs["moe"], "slow": recs.get("slow", []), "hardware": hw,
+                "source": source, "updated": at, "stale": stale, "error": error}
 
     def _spec(self, ident):
         if self._recs is None:
@@ -586,7 +596,7 @@ class Core:
         picture = self.image_server.progress if self.image_server else None
         if srv["state"] == "loading":
             out.append({"id": "text", "kind": "model", "title": pre.get("name") or "Model", "state": "loading",
-                        "label": "Loading into memory", "since": now - (srv.get("uptime") or 0)})
+                        "label": "Loading into memory", "since": self.server.started_at or now})
         elif srv["state"] in ("ready", "external"):
             busy = bool(met.get("requests_processing"))
             ctx = int(pre.get("ctx") or 0)
@@ -801,7 +811,7 @@ class Core:
         """The installed image model the chat draws (kind "draw") or edits pictures (kind "edit") with."""
         inst = {k: v for k, v in images.installed(self.settings).items()
                 if v["ready"] and (v.get("kind") or "draw") == kind}
-        want = self.settings[{"draw": "image_model", "edit": "edit_model"}.get(kind, "video_model")]
+        want = self.settings[IMAGE_KEYS.get(kind, "video_model")]
         if want in inst:
             return inst[want]
         for b in images.catalog():                   # the catalog's order: the recommended one first
@@ -960,7 +970,7 @@ class Core:
             by_repo.setdefault(f["repo"], []).append(f["path"])
         for repo, paths in by_repo.items():
             self.downloads.add(repo, paths, dest=folder, kind="image")
-        key = "image_model" if images.kind(b) == "draw" else "edit_model"
+        key = IMAGE_KEYS.get(images.kind(b), "video_model")
         if not self.settings[key]:
             self.settings.update({key: b["id"]})
         return m
@@ -978,7 +988,7 @@ class Core:
         if os.path.dirname(os.path.realpath(m["folder"])) != root:
             raise PermissionError("That folder is not one of Pumpkin's image models.")
         shutil.rmtree(m["folder"], ignore_errors=True)
-        for key in ("image_model", "edit_model"):
+        for key in IMAGE_KEYS.values():
             if self.settings[key] == bundle_id:
                 self.settings.update({key: ""})
 
@@ -1190,6 +1200,8 @@ class Core:
                         m = self.vision.model()              # that one's vision file is broken: try the next
                         if not m:
                             raise
+                else:
+                    raise RuntimeError(self.vision.error or "None of the vision models here would start.")
                 return fn(self.vision)
             finally:
                 self.vision.busy = False
@@ -1391,8 +1403,6 @@ class Core:
             self.vision.stop()
         except Exception:  # noqa: BLE001
             pass
-        if getattr(self, "vision", None):
-            self.vision.stop()
         try:
             workspace.fix_owner(self.settings)
             workspace.stop()

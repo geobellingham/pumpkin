@@ -54,6 +54,20 @@ class TestWorkFolder(unittest.TestCase):
         with self.assertRaises(PermissionError):
             workspace.delete(self.s, "")
 
+    def test_links_are_never_followed_out_of_the_folder(self):
+        # a broken link planted in the folder (say by the sandbox) must not make an upload write outside
+        outside = os.path.join(self.root, "planted.txt")
+        os.symlink(outside, os.path.join(self.base, "report.txt"))
+        self.assertEqual(workspace.save_upload(self.s, "", "report.txt", b"x"), "report (2).txt")
+        self.assertFalse(os.path.exists(outside))
+        # deleting a link removes the link, never what it points to
+        workspace.delete(self.s, "escape.txt")
+        self.assertFalse(os.path.lexists(os.path.join(self.base, "escape.txt")))
+        self.assertTrue(os.path.exists(os.path.join(self.root, "secret.txt")))
+        os.symlink(os.path.join(self.base, "notes"), os.path.join(self.base, "shortcut"))
+        workspace.delete(self.s, "shortcut")
+        self.assertTrue(os.path.exists(os.path.join(self.base, "notes", "a.md")))
+
 
 if __name__ == "__main__":
     unittest.main()

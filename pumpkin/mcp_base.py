@@ -20,11 +20,16 @@ def reply(msg, name, tools, call, errors=ERRORS):
         result = {"tools": tools}
     elif method == "tools/call":
         p = msg.get("params") or {}
+        args = p.get("arguments") or {}
         try:
-            text = call(p.get("name"), p.get("arguments") or {})
+            if not isinstance(args, dict):
+                raise ValueError("The arguments must be one JSON object.")
+            text = call(p.get("name"), args)
             result = {"content": [{"type": "text", "text": text}], "isError": False}
         except errors as e:
             result = {"content": [{"type": "text", "text": f"Error: {e}"}], "isError": True}
+        except Exception as e:  # noqa: BLE001 - one odd call must not end the whole tool server
+            result = {"content": [{"type": "text", "text": f"Error: {e.__class__.__name__}: {e}"}], "isError": True}
     elif method == "ping":
         result = {}
     else:

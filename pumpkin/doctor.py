@@ -155,11 +155,15 @@ def check(core):
                 "winget install Tailscale.Tailscale" if WIN else
                 "" if MAC else "curl -fsSL https://tailscale.com/install.sh | sh && sudo tailscale up")
         else:
-            code, txt = _run([remote.ts(), "status", "--json"])
-            if code != 0:
+            # status --json answers 0 also when signed out, so read the state the way the Phone page does
+            t = remote.tailscale_state()
+            if not t["signed_in"]:
                 add("Phone access", "Tailscale", "fail", "Tailscale is not running or not signed in.",
                     "Open the Tailscale app and sign in." if MAC or WIN else "Sign in.",
                     "" if MAC or WIN else "sudo tailscale up")
+            elif not (t["magic_dns"] and t["https"]):
+                add("Phone access", "Tailscale", "warn", "Signed in, but MagicDNS or HTTPS certificates are off.",
+                    "Turn both on in the Tailscale admin page (DNS settings); the phone link needs them.")
             else:
                 add("Phone access", "Tailscale", "ok", "Signed in")
     elif mode == "lan":
