@@ -259,8 +259,19 @@ def handshake(e, timeout=240):
             del err[:-40]
 
     threading.Thread(target=pump_out, daemon=True).start()
-    threading.Thread(target=pump_err, daemon=True).start()
+    err_reader = threading.Thread(target=pump_err, daemon=True)
+    err_reader.start()
     end = time.time() + timeout
+
+    def last_words():
+        """What it wrote on stderr before it stopped. Its stdout can end before the stderr reader has caught
+        up, so wait for the process and that reader first."""
+        try:
+            p.wait(2)
+        except subprocess.TimeoutExpired:
+            pass
+        err_reader.join(2)
+        return "".join(err[-8:]).strip()
 
     def send(msg):
         p.stdin.write((json.dumps(msg) + "\n").encode())
@@ -277,7 +288,7 @@ def handshake(e, timeout=240):
             except queue.Empty:
                 continue
             if line is None:
-                tail = "".join(err[-8:]).strip()
+                tail = last_words()
                 raise RuntimeError("It stopped." + (f" It said: {tail[-500:]}" if tail else ""))
             try:
                 msg = json.loads(line)
@@ -285,7 +296,8 @@ def handshake(e, timeout=240):
                 continue                                    # some servers print notes on stdout
             if isinstance(msg, dict) and msg.get("id") == mid:
                 if msg.get("error"):
-                    raise RuntimeError(f"It answered with an error: {msg['error'].get('message', msg['error'])}")
+                    e = msg["error"]
+                    raise RuntimeError(f"It answered with an error: {e.get('message', e) if isinstance(e, dict) else e}")
                 return msg.get("result") or {}
 
     try:
@@ -298,7 +310,7 @@ def handshake(e, timeout=240):
         r = wait(2)
         return [t.get("name") for t in r.get("tools") or [] if isinstance(t, dict)]
     except (BrokenPipeError, OSError) as ex:
-        tail = "".join(err[-8:]).strip()
+        tail = last_words()
         raise RuntimeError("It stopped." + (f" It said: {tail[-500:]}" if tail else f" ({ex})")) from ex
     finally:
         try:
@@ -306,6 +318,9 @@ def handshake(e, timeout=240):
         except OSError:
             pass
         try:
+            if WINDOWS:                                     # cmd /c npx ...: end node too, not only cmd.exe
+                subprocess.run(["taskkill", "/PID", str(p.pid), "/T", "/F"], capture_output=True,
+                               creationflags=hardware.NO_WINDOW)
             p.terminate()
             p.wait(5)
         except (OSError, subprocess.TimeoutExpired):

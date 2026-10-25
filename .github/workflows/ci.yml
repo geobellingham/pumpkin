@@ -283,7 +283,8 @@ jobs:
       - name: Install, start, stop, uninstall
         run: |
           set +e
-          {
+          # a subshell, so set -e ends only it and the log below is still shown when something fails
+          (
             set -ex
             [ "$(uname -s)" = Darwin ] || { export HOME="$RUNNER_TEMP/home" && mkdir -p "$HOME"; }
             bash install.sh --no-open
@@ -311,7 +312,7 @@ jobs:
             "$HOME/.local/bin/pumpkin" stop
             bash "$HOME/.local/share/pumpkin/app/uninstall.sh"
             test ! -e "$HOME/.local/bin/pumpkin"
-          } > install.txt 2>&1
+          ) > install.txt 2>&1
           code=$?
           cat install.txt
           if [ "$code" -eq 0 ]; then

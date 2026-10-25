@@ -102,6 +102,7 @@ class Web:
         self.gz_cache = {}
         self.stopped = threading.Event()
         self.once = {}                      # single-use sign-in codes for the phone's QR: code -> expiry
+        self.bind_lock = threading.Lock()   # one rebind at a time
 
     # ------------------------------------------------------------ lifecycle
     def ui_dir(self):
@@ -130,6 +131,10 @@ class Web:
                 self.send_header("Referrer-Policy", "no-referrer")
                 super().end_headers()
 
+            def send_response(self, *a, **kw):
+                self.responded = True           # from here on an error can only close the connection
+                super().send_response(*a, **kw)
+
             def do_GET(self):
                 web.handle(self)
 
@@ -143,12 +148,18 @@ class Web:
 
     def rebind(self, host):
         """Switch between this-computer-only and home-network listening without restarting."""
-        if host == self.host:
-            return
-        old = self.httpd
-        old.shutdown()
-        old.server_close()
-        self.serve(host)
+        with self.bind_lock:
+            if host == self.host:
+                return
+            old, old_host = self.httpd, self.host
+            old.shutdown()
+            old.server_close()
+            try:
+                self.serve(host)
+            except OSError as e:
+                # never end up listening nowhere: go back to the address that worked
+                print(f"Pumpkin could not listen on {host} ({e}); staying on {old_host}.", file=sys.stderr)
+                self.serve(old_host)
 
     def shutdown(self):
         if self.httpd:
@@ -258,7 +269,7 @@ class Web:
 
     def static(self, h, full):
         d = self.ui_dir()
-        rel = os.path.relpath(full, d)
+        rel = os.path.relpath(full, d).replace(os.sep, "/")
         ctype = mimetypes.guess_type(full)[0] or "application/octet-stream"
         if full.endswith(".webmanifest"):
             ctype = "application/manifest+json"
@@ -364,6 +375,14 @@ class Web:
             return self.proxy(h)
         except ConnectionError:                 # the browser left (Windows also says "aborted")
             pass
+        except Exception as e:  # noqa: BLE001 - answer instead of dropping the connection without a word
+            import traceback
+            traceback.print_exc()
+            if not getattr(h, "responded", False):
+                try:
+                    self.json(h, {"error": f"Something went wrong in Pumpkin: {e}"}, 500)
+                except OSError:
+                    pass
 
     # ------------------------------------------------------------ other Pumpkins asking this one
     def peer(self, h, name):
@@ -389,7 +408,7 @@ class Web:
                 if not isinstance(msgs, list) or not msgs:
                     return self.json(h, {"error": "The chat has no messages."}, 400)
                 last = next((m.get("content") for m in reversed(msgs) if isinstance(m, dict) and m.get("role") == "user"), "")
-                entry = core.helper.begin(h.headers.get("X-Pumpkin-From") or "", f"Chat: {str(last)[:180]}")
+                entry = core.helper.begin(devices.name_from_header(h.headers.get("X-Pumpkin-From")), f"Chat: {str(last)[:180]}")
                 try:
                     body["model"] = core.helper.ready_model(body.get("model"))
                     self.to_llama(h, json.dumps(body).encode())
@@ -405,7 +424,7 @@ class Web:
                 if n > 1_000_000:
                     return self.json(h, {"error": "The task is too long."}, 413)
                 body = json.loads(h.rfile.read(n).decode() or "{}") if n else {}
-                return self.json(h, core.helper.ask(body, who=h.headers.get("X-Pumpkin-From") or ""))
+                return self.json(h, core.helper.ask(body, who=devices.name_from_header(h.headers.get("X-Pumpkin-From"))))
             return self.json(h, {"error": "Not found."}, 404)
         except devices.Busy as e:
             return self.json(h, {"error": str(e)}, 429)
@@ -434,6 +453,8 @@ class Web:
                     core.indexer.poke()                  # searchable within seconds
                 return self.json(h, {"path": rel})
             body = {}
+            if method not in ("GET", "POST", "PUT", "PATCH", "DELETE"):
+                raise ApiError("Use GET, POST, PUT, PATCH or DELETE here.", 405)
             if method in ("POST", "PUT", "PATCH", "DELETE"):
                 if h.headers.get("X-Pumpkin") != "1":
                     raise ApiError("Missing X-Pumpkin header.", 403)
@@ -718,7 +739,7 @@ class Web:
                 if arg("name"):
                     return {"name": arg("name"), "text": core.reports.read(arg("name"), folder)}
                 return {"items": core.reports.list(folder), "dir": folder or core.reports.dir}
-            if method == "DELETE" or ident == "delete":
+            if method == "DELETE" or (ident == "delete" and method == "POST"):
                 core.reports.delete(body.get("name") or arg("name"), folder)
                 return {"ok": True}
         if head == "bench":
@@ -826,7 +847,8 @@ class Web:
                 if not st["base"]:
                     raise ApiError("Turn on phone access first: home network or Tailscale.")
                 now = time.time()
-                self.once = {c: e for c, e in self.once.items() if e > now}
+                for c in [c for c, e in list(self.once.items()) if e <= now]:
+                    self.once.pop(c, None)              # in place: a sign-in may be using a code right now
                 code = secrets.token_urlsafe(18)
                 self.once[code] = now + 600
                 return {"link": f"{st['base']}/login?once={code}", "expires": int(now + 600)}

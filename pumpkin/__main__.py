@@ -45,6 +45,10 @@ def login_url():
 def cmd_serve(args):
     from .core import Core
     from .server import Web
+    if running():
+        # checked before Core() exists: starting it would stop the running Pumpkin's model as a leftover
+        print(f"{APP_NAME} is already running at {base_url()}. Open it with: pumpkin open", file=sys.stderr)
+        sys.exit(1)
     core = Core()
     web = Web(core)
     try:
@@ -130,7 +134,8 @@ def clean_window_profile(profile):
         return
     marker = os.path.join(profile, "pumpkin-version")
     try:
-        seen = open(marker).read().strip()
+        with open(marker) as f:
+            seen = f.read().strip()
     except OSError:
         seen = ""
     gone = ["Service Worker"]
@@ -301,7 +306,7 @@ def cmd_stop(args):
     if service_installed():
         from . import service
         service.stop()
-    elif running():
+    if running():                                # also one started by hand next to the service
         urllib_post("quit")
     print(f"{APP_NAME} stopped.")
 

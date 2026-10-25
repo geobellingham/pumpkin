@@ -159,6 +159,20 @@ def _env_for(binary):
 _probe_cache = {}
 
 
+def split_args(text, windows=None):
+    """A preset's extra options as a list. On Windows backslashes are path separators, so they are kept
+    (POSIX splitting would turn C:\\Models\\x.gguf into C:Modelsx.gguf); quotes still group words."""
+    import shlex
+    if not (WINDOWS if windows is None else windows):
+        return shlex.split(text)
+    out = []
+    for word in shlex.split(text, posix=False):
+        if len(word) >= 2 and word[0] == word[-1] and word[0] in "\"'":
+            word = word[1:-1]
+        out.append(word)
+    return out
+
+
 def probe(binary):
     """Version, backends and supported options of a llama-server binary."""
     if not binary:
@@ -293,6 +307,13 @@ def machine_arch():
     return "arm64" if m in ("aarch64", "arm64") else "x64"
 
 
+def _remove(path):
+    try:
+        os.remove(path)
+    except OSError:
+        pass
+
+
 def _fetch(url, dest, progress=None, cancelled=lambda: False):
     req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
     with urllib.request.urlopen(req, timeout=60) as r, open(dest, "wb") as f:
@@ -345,8 +366,16 @@ def download_release(backend, tag=None, progress=None, cancelled=lambda: False):
             _fetch(url, tmp, progress, cancelled)
         except urllib.error.HTTPError as e:
             last_err = f"{name}: HTTP {e.code}"
+            _remove(tmp)
             continue
-        verify(tmp, digests.get(name))
+        except BaseException:
+            _remove(tmp)                       # a cancelled or broken download leaves no half file behind
+            raise
+        try:
+            verify(tmp, digests.get(name))
+        except BaseException:
+            _remove(tmp)
+            raise
         shutil.rmtree(target, ignore_errors=True)
         _extract(tmp, target, name)
         os.remove(tmp)
@@ -550,8 +579,7 @@ class ServerManager:
             cmd += ["--sleep-idle-seconds", str(idle * 60)]
         extra = preset.get("extra") or ""
         if isinstance(extra, str):
-            import shlex
-            extra = shlex.split(extra)
+            extra = split_args(extra)
         cmd += list(extra)
         cmd += ["--host", "127.0.0.1", "--port", str(self.port)]
         return cmd
@@ -583,15 +611,22 @@ class ServerManager:
             log = open(LOG_PATH, "w")
             log.write("$ " + " ".join(cmd) + "\n\n")
             log.flush()
-            env = _env_for(binary)
-            env["LLAMA_API_KEY"] = api_key()          # through the environment, so it never shows up in `ps`
-            if WINDOWS:
-                self.proc = subprocess.Popen(cmd, stdout=log, stderr=subprocess.STDOUT, env=env, cwd=config.STATE_DIR,
-                                             creationflags=hardware.NO_WINDOW)
-            else:
-                self.proc = subprocess.Popen(cmd, stdout=log, stderr=subprocess.STDOUT, start_new_session=True,
-                                             env=env, cwd=config.STATE_DIR)
-            log.close()
+            try:
+                env = _env_for(binary)
+                env["LLAMA_API_KEY"] = api_key()          # through the environment, so it never shows up in `ps`
+                if WINDOWS:
+                    self.proc = subprocess.Popen(cmd, stdout=log, stderr=subprocess.STDOUT, env=env,
+                                                 cwd=config.STATE_DIR, creationflags=hardware.NO_WINDOW)
+                else:
+                    self.proc = subprocess.Popen(cmd, stdout=log, stderr=subprocess.STDOUT, start_new_session=True,
+                                                 env=env, cwd=config.STATE_DIR)
+            except OSError as e:
+                # the old model is already stopped, so say this one failed instead of still showing the old one
+                self.proc = None
+                self.preset, self.state, self.error = dict(preset), "error", f"llama-server could not be started: {e}"
+                raise RuntimeError(self.error) from e
+            finally:
+                log.close()
             try:
                 with open(PID_PATH, "w") as f:
                     f.write(str(self.proc.pid))
@@ -777,7 +812,7 @@ class ServerManager:
                         was = self.state
                         if was in ("loading", "ready"):
                             err = self._explain_failure()
-                            if not self._recover(was):        # retrying shows as loading, never as an error
+                            if not self._recover(was, err):   # retrying shows as loading, never as an error
                                 self.state, self.error = "error", err
                             changed = True
                         self._inhibit(False)
@@ -807,7 +842,7 @@ class ServerManager:
         return bool(re.search(r"out of memory|ErrorOutOfDeviceMemory|failed to allocate|cudaMalloc failed|"
                               r"unable to allocate|not enough memory", tail, re.I))
 
-    def _recover(self, was):
+    def _recover(self, was, err=None):
         """Fixes the common failures without asking: a model that runs out of memory while loading starts again
         with half the context (twice at most), and a model that stops by itself while running starts again once."""
         preset = dict(self.preset or {})
@@ -848,8 +883,11 @@ class ServerManager:
                 self.start(preset, _retry=True)
                 self.notice = note
                 self._worked = preset if was == "loading" else None     # saved once it is ready
-            except Exception:  # noqa: BLE001 - the first error stays on screen
-                pass
+            except Exception as e:  # noqa: BLE001 - the first error goes back on screen
+                with self.lock:
+                    if self.proc is None:
+                        self.state = "error"
+                        self.error = f"{err or 'llama-server stopped.'} Starting it again did not work either: {e}"
             self._changed()
         self.state, self.error, self.notice = "loading", None, note
         threading.Thread(target=again, daemon=True).start()

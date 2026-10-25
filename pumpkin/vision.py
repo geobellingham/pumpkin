@@ -116,8 +116,14 @@ class Helper:
             env = llama._env_for(binary)
             env["LLAMA_API_KEY"] = llama.api_key()
             kw = {"creationflags": hardware.NO_WINDOW} if WINDOWS else {"start_new_session": True}
-            self.proc = subprocess.Popen(cmd, stdout=log, stderr=subprocess.STDOUT, env=env, cwd=config.STATE_DIR, **kw)
-            log.close()
+            try:
+                self.proc = subprocess.Popen(cmd, stdout=log, stderr=subprocess.STDOUT, env=env, cwd=config.STATE_DIR,
+                                             **kw)
+            except OSError as e:
+                self.proc, self.state, self.error = None, "error", f"The vision helper could not be started: {e}"
+                raise RuntimeError(self.error) from e
+            finally:
+                log.close()
             try:
                 with open(PID_PATH, "w") as f:
                     f.write(str(self.proc.pid))

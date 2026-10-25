@@ -215,8 +215,10 @@ class Library:
                 return m
         if os.path.isabs(ref) and os.path.isfile(ref):
             st = os.stat(ref)
+            with self.lock:                                    # scan() may be saving the cache right now
+                info = self._info(ref, st.st_size, st.st_mtime)
             return {"path": ref, "file": os.path.basename(ref), "size_gb": st.st_size / GiB,
-                    "info": self._info(ref, st.st_size, st.st_mtime), "kind": "model"}
+                    "info": info, "kind": "model"}
         base = os.path.basename(ref)
         for m in models:
             if m["file"] == base or os.path.basename(m["path"]) == base:
@@ -394,6 +396,12 @@ class Downloads:
     def _file(self, job, f, target, size, token, done_before):
         part = target + ".part"
         have = os.path.getsize(part) if os.path.exists(part) else 0
+        if size and have == size:
+            os.replace(part, target)                           # finished last time, only the rename was missed
+            return
+        if size and have > size:
+            os.remove(part)                                    # the file on Hugging Face changed: start over
+            have = 0
         url = f"{HF}/{job['repo']}/resolve/main/{urllib.parse.quote(f)}"
         headers = {"User-Agent": "pumpkin"}
         if token:

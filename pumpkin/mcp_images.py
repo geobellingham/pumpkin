@@ -44,7 +44,7 @@ def call(name, args):
                                                          "Authorization": f"Bearer {config.token()}"})
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
     try:
-        with opener.open(req, timeout=1800) as r:
+        with opener.open(req, timeout=7200 if name == "video" else 1800) as r:   # as long as Pumpkin waits
             res = json.loads(r.read().decode() or "{}")
     except urllib.error.HTTPError as e:
         try:

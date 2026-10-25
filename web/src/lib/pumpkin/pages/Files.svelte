@@ -60,24 +60,36 @@
 		if (!files?.length) return;
 
 		uploading = true;
+		let added = 0;
+		let problem = '';
 
-		for (const f of Array.from(files)) {
-			const r = await fetch(`./pumpkin/api/files/upload?dir=${encodeURIComponent(dir)}&name=${encodeURIComponent(f.name)}`, {
-				body: f,
-				credentials: 'same-origin',
-				headers: { 'Content-Type': 'application/octet-stream', 'X-Pumpkin': '1' },
-				method: 'POST'
-			});
+		try {
+			for (const f of Array.from(files)) {
+				try {
+					const r = await fetch(`./pumpkin/api/files/upload?dir=${encodeURIComponent(dir)}&name=${encodeURIComponent(f.name)}`, {
+						body: f,
+						credentials: 'same-origin',
+						headers: { 'Content-Type': 'application/octet-stream', 'X-Pumpkin': '1' },
+						method: 'POST'
+					});
 
-			if (!r.ok) {
-				const j = await r.json().catch(() => ({}));
+					if (r.ok) added++;
+					else {
+						const j = await r.json().catch(() => ({}));
 
-				pumpkin.say((j as { error?: string }).error ?? `Could not add ${f.name}`, 'error');
+						problem = (j as { error?: string }).error ?? `Could not add ${f.name}`;
+					}
+				} catch {
+					problem = `Could not add ${f.name}: Pumpkin did not answer.`;
+				}
 			}
+		} finally {
+			uploading = false; // never a spinner that stays
 		}
 
-		uploading = false;
-		pumpkin.say(files.length === 1 ? `Added ${files[0].name}` : `Added ${files.length} files`);
+		// a failure stays on screen instead of being replaced by "Added"
+		if (problem) pumpkin.say(added ? `Added ${added} of ${files.length}. ${problem}` : problem, 'error');
+		else pumpkin.say(files.length === 1 ? `Added ${files[0].name}` : `Added ${files.length} files`);
 		if (picker) picker.value = '';
 		void load();
 	}
@@ -98,9 +110,17 @@
 		previewOpen = true;
 
 		if (isText(it) && it.type !== 'application/pdf') {
-			const r = await fetch(href(it.path, true), { credentials: 'same-origin' });
-			const text = await r.text();
+			let text: string;
 
+			try {
+				const r = await fetch(href(it.path, true), { credentials: 'same-origin' });
+
+				text = r.ok ? await r.text() : `Could not open this file (${r.status}).`;
+			} catch {
+				text = 'Could not open this file: Pumpkin did not answer.';
+			}
+
+			if (preview?.item.path !== it.path) return; // another file was opened meanwhile
 			preview = { item: it, text: text.length > 200_000 ? text.slice(0, 200_000) + '\n…' : text };
 		}
 	}

@@ -285,9 +285,12 @@ def import_github(url, fetch=None):
                 if not info.filename.startswith(want) or info.is_dir() or info.file_size > MAX_FILE:
                     continue
                 rel = info.filename[len(want):]
-                if ".." in rel.split("/"):
+                # a backslash or drive letter would leave the folder on Windows, so such names are skipped
+                if ".." in rel.split("/") or "\\" in rel or ":" in rel or rel.startswith("/"):
                     continue
                 target = os.path.join(tmp, rel)
+                if os.path.commonpath([os.path.realpath(tmp), os.path.realpath(target)]) != os.path.realpath(tmp):
+                    continue
                 os.makedirs(os.path.dirname(target), exist_ok=True)
                 with z.open(info) as src, open(target, "wb") as dst:
                     dst.write(src.read())

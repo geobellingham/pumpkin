@@ -646,10 +646,13 @@ def kill_leftover():
                 subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"], capture_output=True,
                                creationflags=hardware.NO_WINDOW)
         else:
-            with open(f"/proc/{pid}/cmdline", "rb") as f:
-                if b"sd-server" in f.read():
-                    os.kill(pid, 15)
-    except (OSError, ProcessLookupError):
+            os.kill(pid, 0)
+            # ps works on Linux and macOS alike (macOS has no /proc)
+            out = subprocess.run(["ps", "-p", str(pid), "-o", "command="], capture_output=True, text=True,
+                                 timeout=5).stdout
+            if "sd-server" in out:
+                os.kill(pid, 15)
+    except (OSError, ProcessLookupError, subprocess.SubprocessError):
         pass
     try:
         os.remove(PID_PATH)

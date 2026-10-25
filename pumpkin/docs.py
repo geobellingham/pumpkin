@@ -540,7 +540,9 @@ def resolve(settings, name, c=None):
     if exact:
         return exact[0]
     low = name.lower()
-    near = [p for p in paths if display_name(p, roots).lower().endswith(low) or os.path.basename(p).lower() == low]
+    # a whole name or the end of a path: a.pdf finds notes/a.pdf, never data.pdf
+    near = [p for p in paths if display_name(p, roots).lower() == low
+            or display_name(p, roots).lower().endswith("/" + low) or os.path.basename(p).lower() == low]
     if len(near) == 1:
         return near[0]
     if len(near) > 1:

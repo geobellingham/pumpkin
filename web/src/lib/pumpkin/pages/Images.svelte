@@ -58,6 +58,7 @@
 	let enabled = $state(true);
 	let swap = $state('auto');
 	let engineJob = $state<{ done: number; error: string | null; state: string; total: number } | null>(null);
+	let engineJobId: string | null = null;
 	let prompt = $state('');
 	let shape = $state('square');
 	let drawing = $state(false);
@@ -76,9 +77,13 @@
 		}
 
 		if (st?.engine.job) {
+			engineJobId = st.engine.job;
 			engineJob = await api<typeof engineJob>(`jobs/${st.engine.job}`).catch(() => null);
 		} else if (engineJob?.state === 'running') {
-			engineJob = null;
+			// it finished: ask once how, so a failed download shows its reason instead of the Install button alone
+			const last = engineJobId ? await api<typeof engineJob>(`jobs/${engineJobId}`).catch(() => null) : null;
+			engineJob = last?.state === 'error' ? last : null;
+			engineJobId = null;
 		}
 	}
 

@@ -36,7 +36,11 @@ def _get(url, headers=None, data=None, timeout=20):
         ctype = r.headers.get("Content-Type", "")
         m = re.search(r"charset=([\w-]+)", ctype)
         enc = m.group(1) if m else "utf-8"
-        return raw.decode(enc, "replace"), ctype, r.geturl()
+        try:
+            text = raw.decode(enc, "replace")
+        except LookupError:                              # a charset Python does not know (charset=none)
+            text = raw.decode("utf-8", "replace")
+        return text, ctype, r.geturl()
 
 
 def search(query, n=6):

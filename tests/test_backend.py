@@ -95,6 +95,13 @@ class TestLibrary(unittest.TestCase):
         self.assertEqual(lib.resolve("*35B-A3B*")["file"], "Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf")
 
 
+class TestExtraArgs(unittest.TestCase):
+    def test_windows_paths_keep_their_backslashes(self):
+        self.assertEqual(llama.split_args(r'--lora C:\loras\style.gguf --alias "my model"', windows=True),
+                         ["--lora", r"C:\loras\style.gguf", "--alias", "my model"])
+        self.assertEqual(llama.split_args('--alias "my model" -b 512', windows=False), ["--alias", "my model", "-b", "512"])
+
+
 class TestServer(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -479,6 +486,23 @@ class TestServer(unittest.TestCase):
             self.assertIn("javascript", r.headers["Content-Type"])
         self.assertIn("registration.unregister()", body)
         self.assertNotIn("navigate", body)                       # never reloads the page, so it cannot loop
+
+    def test_6c_only_real_methods_change_things(self):
+        import http.client
+        report = os.path.join(self.core.reports.dir, "keep.md")
+        os.makedirs(self.core.reports.dir, exist_ok=True)
+        with open(report, "w") as f:
+            f.write("# keep")
+        # a GET (a link on any web page) must not delete a report; only POST or DELETE with the header can
+        code, _ = self.call("GET", "/pumpkin/api/reports/delete?name=keep.md")
+        self.assertTrue(os.path.exists(report))
+        before = self.core.settings["remote"]
+        c = http.client.HTTPConnection("127.0.0.1", 18190, timeout=5)
+        c.request("HEAD", "/pumpkin/api/remote", headers={"Authorization": f"Bearer {self.tok}"})
+        self.assertEqual(c.getresponse().status, 405)                # used to fall into "turn phone access off"
+        self.assertEqual(self.core.settings["remote"], before)
+        code, _ = self.call("POST", "/pumpkin/api/reports/delete", {"name": "keep.md"})
+        self.assertFalse(os.path.exists(report))
 
     def test_6b_dns_rebinding_is_refused(self):
         import http.client

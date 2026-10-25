@@ -6,6 +6,21 @@ from . import APP_NAME, __version__
 ICON = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "pumpkin.svg")
 
 
+def own_page(uri):
+    """Pumpkin's own pages (this computer only). A prefix check would also keep look-alikes such as
+    http://127.0.0.1.example.com in the window."""
+    from urllib.parse import urlparse
+    if not uri:
+        return False
+    if uri.startswith("about:"):
+        return True
+    try:
+        u = urlparse(uri)
+        return u.scheme == "http" and u.hostname in ("127.0.0.1", "localhost")
+    except ValueError:
+        return False
+
+
 def _load():
     os.environ.setdefault("WEBKIT_DISABLE_DMABUF_RENDERER", "1")
     import gi
@@ -58,9 +73,12 @@ def run(url):
     except AttributeError:
         pass
 
-    def on_permission(_view, req):
+    def on_permission(view, req):
         # the microphone for voice chat, only for our own page
-        req.allow()
+        if own_page(view.get_uri()):
+            req.allow()
+        else:
+            req.deny()
         return True
     web.connect("permission-request", on_permission)
 
@@ -77,7 +95,7 @@ def run(url):
         # links to other sites open in the normal browser
         if kind == WebKit2.PolicyDecisionType.NEW_WINDOW_ACTION or kind == WebKit2.PolicyDecisionType.NAVIGATION_ACTION:
             uri = decision.get_navigation_action().get_request().get_uri()
-            if uri and not uri.startswith(("http://127.0.0.1", "http://localhost", "about:")):
+            if uri and not own_page(uri):
                 Gio.AppInfo.launch_default_for_uri(uri, None)
                 decision.ignore()
                 return True

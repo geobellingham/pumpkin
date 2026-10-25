@@ -106,7 +106,7 @@ def find(settings):
 def add(settings, ids):
     """Add the chosen sources. Folders are scanned in place; Ollama models are linked, never copied."""
     found = {d["id"]: d for d in find(settings)}
-    added = []
+    added, failed = [], []
     dirs = list(settings["models_dirs"] or [])
     for ident in ids:
         d = found.get(ident)
@@ -122,9 +122,17 @@ def add(settings, ids):
                         os.symlink(blob, link)
                     except OSError:
                         # Windows allows symlinks only in Developer Mode; a hard link also takes no extra space
-                        os.link(blob, link)
+                        try:
+                            os.link(blob, link)
+                        except OSError:          # a hard link cannot cross drives: skip this one, keep going
+                            failed.append(name)
+                            continue
         elif d["path"] not in dirs:
             dirs.append(d["path"])
         added.append(d["source"])
     settings.update({"models_dirs": dirs})
+    if failed:
+        raise RuntimeError(f"Could not link {', '.join(failed[:5])} from Ollama: the download folder is on another "
+                           f"drive than Ollama's models. Turn on Developer Mode in Windows (it allows links), or "
+                           f"pick a download folder on the same drive in Settings.")
     return added

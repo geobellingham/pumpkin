@@ -139,6 +139,20 @@ class TestDocuments(Base):
         with self.assertRaises(FileNotFoundError):
             docs.read(self.s, "../../config/token")
         self.assertIn("could not be read", docs.read(self.s, "broken.pdf"))
+        with self.assertRaises(FileNotFoundError):                              # never data.pdf for a.pdf
+            docs.read(self.s, "se.pdf")
+
+    def test_an_odd_tool_call_does_not_end_the_server(self):
+        from pumpkin import mcp_base
+
+        def boom(name, args):
+            raise ZeroDivisionError("odd")
+        msg = {"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {"name": "x", "arguments": ["not", "a", "dict"]}}
+        r = mcp_base.reply(msg, "t", [], boom)
+        self.assertTrue(r["result"]["isError"])
+        msg["params"]["arguments"] = {}
+        r = mcp_base.reply(msg, "t", [], boom)
+        self.assertIn("ZeroDivisionError", r["result"]["content"][0]["text"])
 
     def test_changes_are_picked_up(self):
         self.fill()
