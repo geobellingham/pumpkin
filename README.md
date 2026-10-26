@@ -91,6 +91,9 @@ The [guide](docs/GUIDE.md) explains every feature and how to use it.
 - **Updates and privacy.** Pumpkin tells you when a new version is out and updates in one click. The
   Settings page lists exactly what it sends over the network and when. There are no accounts, no
   analytics and no crash reports.
+- **You pick where it lives.** The first start asks which drive or folder Pumpkin keeps its models, files and
+  reports in, so they can go on a big second drive instead of the system one. Change it later in Settings.
+- **Light and dark.** A toggle in the top bar, remembered per device.
 - **It stays out of the way.** Your computer won't suspend while a model is loaded (the screen still locks),
   and models can unload themselves when idle to free the GPU.
 
@@ -299,17 +302,17 @@ public issue. Releases are built by GitHub Actions pinned to exact commits, and 
 - Pumpkin pins the llama.cpp release its UI is built from and downloads the same release of
   llama-server, so the two always match. You can point it at your own build in Settings.
 
-## Coming from "LLM Studio"
-
-If you used the earlier LLM Studio script, Pumpkin imports its presets, personas, tasks, prompts,
-MCP config, reports folder and speed history on first start, and finds models in `/data/models`.
-
 ## Roadmap
 
-- Reading scanned documents and photos of paper with a vision model
+Planned, roughly in this order. The longer list is in [docs/WISHLIST.md](docs/WISHLIST.md).
+
+- A test pass on more real hardware, mostly Windows, Mac and Android
+- Scheduling from the chat: ask in plain words ("tomorrow at 3, review my code") and the model sets up the task
+- Google Drive and Slack connectors
+- Workspaces: Pumpkin Code for any folder and any kind of work, with its own instructions and memory
+- Helper agents that take a research job and report back
 - More natural voices generated on your computer (Kokoro, Orpheus)
 - "Look at my screen" for vision models
-- Quality benchmarks in the app
 - Signed Windows builds ([code signing policy](docs/CODE_SIGNING.md)) and Mac builds
 
 ## Contributing

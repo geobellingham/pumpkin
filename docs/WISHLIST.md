@@ -2,10 +2,10 @@
 
 Things wanted for Pumpkin, roughly in the order they are planned. Nothing here is started unless it says so.
 
-## Next (0.7.x)
+## Next
 - **Real-hardware test pass.** Run Pumpkin on the Windows PC with the RX 9070 XT and on the Macs: vision relay with real models, Wan 2.2 downloads, Qwen Image Edit, Pumpkin Code with real local models, restoring a long conversation on a big context, Mac pairing.
 
-## 0.8.0 (built on the v0.8 branch, not released)
+## Shipped in 0.8
 - **Dark mode toggle.** Done: top bar and Settings, per device.
 - **Skills.** Done. Folders with a `SKILL.md` (name, one-line description, instructions) in the same format Claude uses. The model sees only the names and descriptions and loads a skill with a `skill` tool when it fits. A Skills page to import (folder or GitHub link), turn on and off, plus a few built-in ones. Pumpkin Code also reads skills from the project folder.
 - **Connectors catalog.** Done: GitHub, Notion, Jira and Confluence, a browser, Git, folders, time, Context7 library docs, PostgreSQL and SQLite, with a token form, a Test button and a per-preset choice. Still to come: Google Drive and Slack, which need sign-in flows.
