@@ -796,9 +796,10 @@ class ServerManager:
              "The model did not fit in memory. Use a smaller quant, a shorter context, or a smaller KV cache type."),
             (r"failed to load multimodal model|mtmd_init", "The vision file (mmproj) does not work with this model. "
              "Clear the Vision file in the preset, or download the one made for this model."),
+            (r"unknown model architecture", "This llama-server is too old for this model: it does not know the "
+             "architecture{arch}. Update llama-server in Settings, or pull and rebuild it if you built it yourself."),
             (r"failed to load model|error loading model", "llama-server could not load the model file. It may be "
              "incomplete (re-download it) or need a newer llama-server."),
-            (r"unknown model architecture", "This llama-server is too old for this model. Update it in Settings."),
             (r"invalid argument|unknown argument|error: unrecognized", "llama-server did not accept an option. Check "
              "the extra arguments in the preset, or update llama-server."),
             (r"address already in use|bind.*failed", "Port %d is in use by another program." % self.port),
@@ -807,6 +808,9 @@ class ServerManager:
         ]
         for pat, msg in hints:
             if re.search(pat, tail, re.I):
+                if "{arch}" in msg:
+                    a = re.search(r"unknown model architecture:?\s*'([^']+)'", tail, re.I)
+                    msg = msg.replace("{arch}", f" '{a.group(1)}'" if a else "")
                 return msg
         last = [l.strip() for l in tail.splitlines() if l.strip()][-3:]
         return "llama-server stopped. " + (" ".join(last)[-300:] if last else "See the log for details.")

@@ -794,3 +794,58 @@ class TestPumpkinFolder(unittest.TestCase):
         r = c.places()
         self.assertTrue(r["places"])
         self.assertGreater(r["places"][0]["total_gb"], 0)
+
+
+class TestVisionRelayAndLoadErrors(unittest.TestCase):
+    def core(self):
+        import base64
+        from unittest import mock
+        c = Core.__new__(Core)
+        c.settings = dict(config.DEFAULT_SETTINGS)
+        c.vision_seen, c.vision_errors, c.vision_failed_until, c.vision_failed_msg = {}, {}, 0.0, ""
+        c.runs = 0
+
+        class H:
+            def describe(self, data):
+                return "a cat " + data.decode()
+
+        def run(fn, swap_ok=True):
+            c.runs += 1
+            return fn(H())
+        c.vision_run = run
+        pics = [{"type": "image_url", "image_url": {"url": "data:image/png;base64," + base64.b64encode(x).decode()}}
+                for x in (b"1", b"2", b"3")]
+        body = json.dumps({"messages": [{"role": "user", "content": [{"type": "text", "text": "hi"}] + pics}]}).encode()
+        return c, body, mock
+
+    def test_all_pictures_of_a_message_are_read_in_one_vision_run(self):
+        c, body, _ = self.core()
+        out = json.loads(c.relay_images(body))
+        self.assertEqual(c.runs, 1)                       # one swap of the chat model, not one per picture
+        texts = [p["text"] for p in out["messages"][0]["content"]]
+        self.assertTrue(all("a cat" in t for t in texts[1:]))
+        c.relay_images(body)                              # the chat sends them again: nothing is read twice
+        self.assertEqual(c.runs, 1)
+
+    def test_a_vision_model_that_will_not_start_is_not_retried_every_message(self):
+        c, body, _ = self.core()
+
+        def broken(fn, swap_ok=True):
+            c.runs += 1
+            raise RuntimeError("the vision model ran out of memory")
+        c.vision_run = broken
+        out = json.loads(c.relay_images(body))
+        self.assertIn("ran out of memory", out["messages"][0]["content"][1]["text"])
+        c.relay_images(body)
+        self.assertEqual(c.runs, 1)
+
+    def test_an_unknown_architecture_says_the_server_is_too_old(self):
+        from pumpkin import llama
+        s = llama.ServerManager.__new__(llama.ServerManager)
+        s.settings, s.exit_code = {"llama_port": 8080}, 1
+        lines = ["E llama_model_load: error loading model: unknown model architecture: 'flint'\n",
+                 "E llama_model_load_from_file_impl: failed to load model\n"]
+        s.log_tail = lambda n=60: lines
+        msg = s._explain_failure()
+        self.assertIn("too old", msg)
+        self.assertIn("'flint'", msg)

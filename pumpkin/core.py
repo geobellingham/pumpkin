@@ -72,7 +72,8 @@ class Core:
         self.image_server = images.ImageServer(self.settings)
         self.vision = vision.Helper(self.settings, self.library)
         self.code = coder.Manager(self)
-        self.vision_seen = {}                 # picture hash -> what the vision model said (a chat re-sends its pictures)
+        self.vision_errors, self.vision_failed_until, self.vision_failed_msg = {}, 0.0, ""
+        self.vision_seen = {}                # picture hash -> what the vision model said (a chat re-sends its pictures)
         self.image_lock = threading.Lock()
         self.pictures_seen = {}
         self.image_sizes = {}                # bundle id -> estimated GB before it is downloaded
@@ -1319,7 +1320,7 @@ class Core:
             req = json.loads(body.decode("utf-8"))
         except (ValueError, UnicodeDecodeError):
             return body
-        changed = False
+        found = []                                            # (parts, index, picture bytes, key)
         for msg in req.get("messages") or []:
             parts = msg.get("content") if isinstance(msg, dict) else None
             if not isinstance(parts, list):
@@ -1335,21 +1336,41 @@ class Core:
                     data = base64.b64decode(m.group(1))
                 except ValueError:
                     continue
-                key = hashlib.sha1(data).hexdigest()
-                seen = self.vision_seen.get(key)
-                if seen is None:
-                    try:
-                        seen = self.vision_run(lambda h, d=data: h.describe(d)) or \
-                            "(the vision model saw nothing to describe)"
-                        self.vision_seen[key] = seen          # a chat sends its pictures again with every message
-                        for k in list(self.vision_seen)[:-50]:
-                            self.vision_seen.pop(k, None)
-                    except (RuntimeError, ValueError, OSError) as e:
-                        seen = f"(it could not be read: {e})"
-                parts[i] = {"type": "text", "text": f"[A picture the user attached. A vision model describes it: "
-                                                     f"{seen}]"}
-                changed = True
-        return json.dumps(req).encode() if changed else body
+                found.append((parts, i, data, hashlib.sha1(data).hexdigest()))
+        # every new picture is read in ONE go: loading the vision model can mean stopping the chat model and
+        # starting it again, which must happen once per message and never once per picture
+        todo = {}
+        for _parts, _i, data, key in found:
+            if key not in self.vision_seen:
+                todo[key] = data
+        failed = None
+        if todo:
+            if time.time() < self.vision_failed_until:
+                failed = self.vision_failed_msg
+            else:
+                def read_all(h):
+                    for key, data in todo.items():
+                        try:
+                            self.vision_seen[key] = h.describe(data) or "(the vision model saw nothing to describe)"
+                        except (RuntimeError, ValueError, OSError) as e:
+                            self.vision_seen[key] = None
+                            self.vision_errors[key] = str(e)
+                try:
+                    self.vision_run(read_all)
+                except (RuntimeError, ValueError, OSError) as e:
+                    failed = str(e)
+                    # do not stop and start the chat model again for every message while this does not work
+                    self.vision_failed_until, self.vision_failed_msg = time.time() + 120, failed
+                for k in list(self.vision_seen)[:-50]:
+                    self.vision_seen.pop(k, None)
+        for parts, i, _data, key in found:
+            seen = self.vision_seen.get(key)
+            if seen is None:                                  # not read: say why, and try again next message
+                self.vision_seen.pop(key, None)
+                seen = f"(it could not be read: {failed or self.vision_errors.pop(key, 'unknown error')})"
+            parts[i] = {"type": "text", "text": f"[A picture the user attached. A vision model describes it: "
+                                                 f"{seen}]"}
+        return json.dumps(req).encode() if found else body
 
     def vision_state(self):
         st = self.vision.status()
