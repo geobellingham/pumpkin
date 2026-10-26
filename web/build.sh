@@ -31,6 +31,14 @@ sed -i "s/bundleStrategy: 'single'/bundleStrategy: 'split'/" svelte.config.js
 # no service worker: its offline copy could keep an old app (or an empty page) on screen after an update
 sed -i "s#from 'virtual:pwa-register/svelte'#from '\$lib/pumpkin/no-sw'#" src/lib/hooks/use-pwa.svelte.ts
 grep -q "lib/pumpkin/no-sw" src/lib/hooks/use-pwa.svelte.ts
+# the "Update available, reload" card is for a page that is older than the server. Comparing the version seen last
+# time with the server's version (the chat UI's check) shows it on the first start after every update, when the page
+# is already the new one. Compare the version this page was built as with the server's version instead.
+PW=src/lib/hooks/use-pwa.svelte.ts
+sed -i "s#import { browser } from '\$app/environment';#import { browser, version as builtVersion } from '\$app/environment';#" "$PW"
+sed -i "s#needRefreshByStorage = !!storedVersion \&\& storedVersion !== currentVersion;#needRefreshByStorage = !!builtVersion \&\& builtVersion !== currentVersion;#" "$PW"
+grep -q "version as builtVersion" "$PW"
+grep -q "builtVersion !== currentVersion" "$PW"
 # a picture the model drew (image_generate, image_edit) shows in the chat itself instead of inside a folded tool block
 TB=src/lib/components/app/chat/ChatMessages/ChatMessage/ChatMessageToolCall/ChatMessageToolCallBlock.svelte
 sed -i "0,/^\timport ChatMessageToolCallBlockDefault/s##\timport PumpkinToolImage from '\$lib/pumpkin/components/ToolImage.svelte';\n\timport PumpkinToolVideo from '\$lib/pumpkin/components/ToolVideo.svelte';\n&#" "$TB"
