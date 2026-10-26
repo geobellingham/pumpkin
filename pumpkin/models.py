@@ -2,6 +2,7 @@
 import fnmatch
 import glob
 import json
+import hashlib
 import os
 import re
 import threading
@@ -367,9 +368,9 @@ class Downloads:
     def _run(self, job):
         token = self.settings["hf_token"] or None
         os.makedirs(job["dest"], exist_ok=True)
-        sizes = {}
+        sizes, shas = {}, {}
         for f in job["files"]:
-            sizes[f] = self._size(job["repo"], f, token)
+            sizes[f], shas[f] = self._head(job["repo"], f, token)
         job["total"] = sum(sizes.values())
         done_before = 0
         for f in job["files"]:
@@ -381,23 +382,42 @@ class Downloads:
                 done_before += sizes[f]
                 job["done"] = done_before
                 continue
-            self._file(job, f, target, sizes[f], token, done_before)
-            done_before += sizes[f]
+            self._file(job, f, target, sizes[f], token, done_before, shas[f])
+            done_before += sizes[f] or os.path.getsize(target)
 
-    def _size(self, repo, f, token):
+    def _head(self, repo, f, token):
+        """(size in bytes or 0 when Hugging Face does not say, SHA-256 of the file when it is stored with LFS)."""
         url = f"{HF}/{repo}/resolve/main/{urllib.parse.quote(f)}"
         headers = {"User-Agent": "pumpkin"}
         if token:
             headers["Authorization"] = f"Bearer {token}"
         req = urllib.request.Request(url, headers=headers, method="HEAD")
         with urllib.request.urlopen(req, timeout=30) as r:
-            return int(r.headers.get("Content-Length") or r.headers.get("X-Linked-Size") or 0)
+            size = int(r.headers.get("Content-Length") or r.headers.get("X-Linked-Size") or 0)
+            etag = (r.headers.get("X-Linked-Etag") or "").strip().strip('"').lower()
+        return size, (etag if re.fullmatch(r"[0-9a-f]{64}", etag) else None)
 
-    def _file(self, job, f, target, size, token, done_before):
+    def _size(self, repo, f, token):
+        return self._head(repo, f, token)[0]
+
+    @staticmethod
+    def _sha256(path, job=None):
+        h = hashlib.sha256()
+        with open(path, "rb") as fh:
+            while True:
+                if job is not None and job["state"] == "cancelled":
+                    return None
+                b = fh.read(8 << 20)
+                if not b:
+                    break
+                h.update(b)
+        return h.hexdigest()
+
+    def _file(self, job, f, target, size, token, done_before, sha=None):
         part = target + ".part"
         have = os.path.getsize(part) if os.path.exists(part) else 0
         if size and have == size:
-            os.replace(part, target)                           # finished last time, only the rename was missed
+            self._finish(job, f, part, target, sha)            # finished last time, only the rename was missed
             return
         if size and have > size:
             os.remove(part)                                    # the file on Hugging Face changed: start over
@@ -412,6 +432,13 @@ class Downloads:
         with urllib.request.urlopen(req, timeout=60) as r:
             if have and r.status != 206:
                 have = 0                                       # server ignored the range: start over
+            if not size:
+                # Hugging Face did not say how big it is: take it from this answer, so a cut-off download is noticed
+                m = re.search(r"/(\d+)\s*$", r.headers.get("Content-Range") or "")
+                if m:
+                    size = int(m.group(1))
+                elif r.headers.get("Content-Length"):
+                    size = have + int(r.headers["Content-Length"])
             mode = "ab" if have else "wb"
             t0, last_bytes, last_t = time.time(), have, time.time()
             with open(part, mode) as out:
@@ -431,6 +458,19 @@ class Downloads:
                         last_bytes, last_t = got, now
         if size and os.path.getsize(part) < size:
             raise RuntimeError("The download stopped early. Retry to resume it.")
+        self._finish(job, f, part, target, sha)
+
+    def _finish(self, job, f, part, target, sha):
+        if sha:
+            # the checksum Hugging Face keeps for the file: a damaged download never counts as finished
+            job["current"] = f"Checking {os.path.basename(f)}"
+            got_sha = self._sha256(part, job)
+            if got_sha is None:
+                return                                         # cancelled while checking
+            if got_sha != sha:
+                os.remove(part)
+                raise RuntimeError(f"{os.path.basename(f)} arrived damaged (its checksum does not match). "
+                                   f"Download it again.")
         os.replace(part, target)
 
 

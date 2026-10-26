@@ -51,18 +51,45 @@ button{{font:inherit;padding:.6rem 1rem;border-radius:.6rem;border:0;background:
 <button>Open</button></form>{err}</main></body></html>"""
 
 
-def _read_body(h):
+def _eq(given, secret):
+    """Constant-time comparison that also takes non-ASCII input (compare_digest refuses str with it)."""
+    return hmac.compare_digest(str(given or "").encode("utf-8", "surrogatepass"), str(secret or "").encode("utf-8"))
+
+
+BODY_LIMIT = 512 * 2 ** 20                 # a chat with many pictures is big, but never this big
+
+
+class BodyError(ValueError):
+    """A request body that is malformed or too big."""
+
+
+def _read_body(h, limit=BODY_LIMIT):
     if (h.headers.get("Transfer-Encoding") or "").lower() == "chunked":
-        out = b""
+        parts, total = [], 0
         while True:
-            size = int(h.rfile.readline().strip().split(b";")[0] or b"0", 16)
+            try:
+                size = int(h.rfile.readline(100).strip().split(b";")[0] or b"0", 16)
+            except ValueError as e:
+                raise BodyError("The request body is not valid chunked data.") from e
+            if size < 0:
+                raise BodyError("The request body is not valid chunked data.")
             if size == 0:
                 h.rfile.readline()
                 break
-            out += h.rfile.read(size)
+            total += size
+            if total > limit:
+                raise BodyError(f"The request is too big (over {limit // 2 ** 20} MB).")
+            parts.append(h.rfile.read(size))
             h.rfile.readline()
-        return out
-    n = int(h.headers.get("Content-Length") or 0)
+        return b"".join(parts)
+    try:
+        n = int(h.headers.get("Content-Length") or 0)
+    except ValueError as e:
+        raise BodyError("Content-Length is not a number.") from e
+    if n < 0:
+        raise BodyError("Content-Length cannot be negative.")
+    if n > limit:
+        raise BodyError(f"The request is too big (over {limit // 2 ** 20} MB).")
     return h.rfile.read(n) if n else b""
 
 
@@ -234,13 +261,13 @@ class Web:
             if s:
                 h.session_id = s["id"]
                 return True
-            if hmac.compare_digest(v, self.token):
+            if _eq(v, self.token):
                 h.old_cookie = True
                 return True
         auth = h.headers.get("Authorization") or ""
         if auth.startswith("Bearer "):
             given = auth[7:].strip()
-            if hmac.compare_digest(given, self.token):
+            if _eq(given, self.token):
                 return True
             s = sessions.check(given)
             if s:
@@ -334,6 +361,9 @@ class Web:
             if path == "/login" and q.get("once"):
                 # the phone scanned a QR: a code that works once, for ten minutes; the real key never leaves
                 code = (q.get("once") or [""])[0].strip()
+                now = time.time()
+                for c in [c for c, e in list(self.once.items()) if e <= now and c != code]:
+                    self.once.pop(c, None)              # expired ones go on every lookup, not only on a new code
                 exp = self.once.pop(code, 0) if code else 0
                 if exp < time.time():
                     time.sleep(1)
@@ -343,7 +373,7 @@ class Web:
                 return self.send(h, 302, b"", headers={"Location": "/", "Set-Cookie": self.new_session_cookie(h)})
             if path == "/login":
                 key = (q.get("key") or [""])[0].strip()
-                if not key or not hmac.compare_digest(key, self.token):
+                if not key or not _eq(key, self.token):
                     if key:
                         time.sleep(1)
                     err = '<p class="err">That key is not right.</p>' if key else ""
@@ -980,7 +1010,10 @@ class Web:
     def proxy(self, h):
         port = int(self.core.settings["llama_port"])
         try:
-            body = _read_body(h)
+            try:
+                body = _read_body(h)
+            except BodyError as e:
+                return self.json(h, {"error": {"code": 413, "message": str(e), "type": "invalid_request_error"}}, 413)
             path = urlparse(h.path).path
             if h.command == "GET" and path in ("/v1/models", "/models") and self.core.server.state != "external" \
                     and (self.core.presets.all() or self.core.peer_models()):

@@ -567,8 +567,10 @@ class ServerManager:
             # Docker they would run directly on this computer, so they stay off; web search (MCP) still works.
             if has("--agent") and has("--tools-runtime") and preset.get("sandbox", True) and workspace.docker_usable():
                 # the sandbox with the work folder mounted, so files the AI makes end up in ~/Pumpkin/files
+                # if it cannot be started, the command tools stay off: docker:<image> needs the same Docker that failed
                 box = workspace.ensure(s)
-                cmd += ["--agent", "--tools-runtime", f"docker-container:{box}" if box else f"docker:{s['sandbox_image']}"]
+                if box:
+                    cmd += ["--agent", "--tools-runtime", f"docker-container:{box}"]
             mcp = self.mcp_config(preset)
             if mcp and has("--mcp-servers-config") and _mcp_has_servers(mcp):
                 cmd += ["--mcp-servers-config", mcp]
@@ -747,7 +749,10 @@ class ServerManager:
                     os.killpg(os.getpgid(p.pid), signal.SIGKILL)
                 except (ProcessLookupError, PermissionError):
                     pass
-                p.wait(timeout=5)
+                try:
+                    p.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    pass                                # stuck in the kernel (a GPU driver, say): forget it anyway
         self.proc = None
         try:
             os.remove(PID_PATH)
@@ -816,8 +821,13 @@ class ServerManager:
                                 self.state, self.error = "error", err
                             changed = True
                         self._inhibit(False)
-                    ok = health(self.port)
-                    if self.proc is not None:
+                    cur = self.proc
+                # asked without holding the lock: start() and stop() must never wait for this
+                ok = health(self.port)
+                with self.lock:
+                    if self.proc is not cur:
+                        pass                                       # started or stopped meanwhile: next round
+                    elif self.proc is not None:
                         if ok and self.state == "loading":
                             self.state, changed = "ready", True
                             threading.Thread(target=self.restore_context, args=(dict(self.preset or {}),),

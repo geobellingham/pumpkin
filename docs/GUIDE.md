@@ -269,8 +269,10 @@ Tips:
   Code reads it first.
 - Use a model that is good at tool calls (Qwen3 Coder 30B A3B, Qwen3.6, GLM, Devstral) and at least 32k of
   context. Long sessions are summarised by themselves when they get close to the limit.
-- It can only touch files inside the project folder. Commands run on your computer as you (not in the
-  Docker sandbox), which is why it asks first by default.
+- Its file tools only work inside the project folder. Commands are different: they run on your computer as you
+  (not in the Docker sandbox) and can reach anything you can, which is why it asks first by default. In
+  **Never ask** mode only the obviously risky commands still ask, so use it only with a model and a project you
+  trust.
 
 ## Skills
 

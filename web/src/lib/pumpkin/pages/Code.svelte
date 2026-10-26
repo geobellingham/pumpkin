@@ -86,7 +86,7 @@
 	];
 	const MODE_HELP: Record<string, string> = {
 		ask: 'It asks before it changes a file or runs a command.',
-		auto: 'It works on its own. Risky commands (sudo, git push, deleting folders) still ask.',
+		auto: 'It works on its own. Commands run on this computer as you, and only obviously risky ones (sudo, git push, deleting folders) still ask.',
 		edits: 'It changes files without asking and asks before it runs a command.'
 	};
 

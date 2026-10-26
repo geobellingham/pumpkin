@@ -656,3 +656,101 @@ class TestConnectors(unittest.TestCase):
         with self.assertRaises(RuntimeError) as err:
             self.c.handshake({"command": sys.executable, "args": ["-c", "import sys; sys.stderr.write('bad token'); sys.exit(1)"]}, timeout=30)
         self.assertIn("bad token", str(err.exception))
+
+
+class TestHardening(unittest.TestCase):
+    def test_keys_with_any_characters_are_compared_safely(self):
+        from pumpkin import server
+        self.assertFalse(server._eq("é", "abc"))                       # used to raise TypeError (an HTTP 500)
+        self.assertFalse(server._eq("\udce9", "abc"))
+        self.assertTrue(server._eq("abc", "abc"))
+        from pumpkin import devices
+        with mock_peer_key("k123"):
+            self.assertFalse(devices.key_ok("é"))
+            self.assertTrue(devices.key_ok("k123"))
+
+    def test_request_bodies_have_limits(self):
+        import io
+        from pumpkin import server
+
+        class H:
+            def __init__(self, headers, data):
+                self.headers, self.rfile = headers, io.BytesIO(data)
+
+        with self.assertRaises(server.BodyError):
+            server._read_body(H({"Content-Length": "-1"}, b""))
+        with self.assertRaises(server.BodyError):
+            server._read_body(H({"Content-Length": "100"}, b"x" * 100), limit=10)
+        with self.assertRaises(server.BodyError):
+            server._read_body(H({"Transfer-Encoding": "chunked"}, b"8\r\n12345678\r\n8\r\n12345678\r\n0\r\n\r\n"), limit=10)
+        self.assertEqual(server._read_body(H({"Transfer-Encoding": "chunked"}, b"3\r\nabc\r\n2\r\nde\r\n0\r\n\r\n")),
+                         b"abcde")
+
+    def test_docker_must_answer_to_count(self):
+        from unittest import mock
+        from pumpkin import workspace
+        workspace._usable.update(at=0.0, ok=False)
+        with mock.patch.object(workspace.shutil, "which", lambda b: "/usr/bin/docker"), \
+                mock.patch.object(workspace, "_docker", lambda *a, **k: (1, "", "Cannot connect to the Docker daemon")):
+            self.assertFalse(workspace.docker_usable())                  # installed but stopped
+        workspace._usable.update(at=0.0, ok=False)
+        with mock.patch.object(workspace.shutil, "which", lambda b: "/usr/bin/docker"), \
+                mock.patch.object(workspace, "_docker", lambda *a, **k: (0, "linux", "")):
+            self.assertTrue(workspace.docker_usable())
+        workspace._usable.update(at=0.0, ok=False)
+
+    def test_a_sandbox_that_will_not_start_leaves_the_command_tools_off(self):
+        from unittest import mock
+        from pumpkin import llama
+        lib = mock.Mock()
+        lib.resolve.return_value = {"path": "/m/x.gguf", "info": {}}
+        sm = llama.ServerManager.__new__(llama.ServerManager)
+        sm.settings = {"threads": 4, "sandbox_image": "ubuntu:24.04", "llama_port": 8080, "files_dir": tempfile.mkdtemp()}
+        sm.library = lib
+        sm.mcp_config = lambda p: None
+        info = {"flags": ["--agent", "--tools-runtime", "--mcp-servers-config"]}
+        with mock.patch.object(llama.workspace, "ensure", lambda s: None), \
+                mock.patch.object(llama.workspace, "docker_usable", lambda: True):
+            cmd = sm.build_cmd({"model": "x", "tools": True, "sandbox": True}, "/bin/llama-server", info)
+        self.assertNotIn("--tools-runtime", cmd)
+
+    def test_another_drive_is_outside_the_project(self):
+        from unittest import mock
+        from pumpkin import coder
+        t = coder.Tools(tempfile.mkdtemp(), web=False)
+
+        def other_drive(paths):
+            raise ValueError("Paths don't have the same drive")
+
+        with mock.patch.object(coder.os.path, "commonpath", other_drive):
+            with self.assertRaises(PermissionError):
+                t.path("D:/x")
+
+    def test_a_damaged_download_never_counts_as_finished(self):
+        import hashlib
+        from pumpkin import models
+        d = tempfile.mkdtemp()
+        part, target = os.path.join(d, "m.gguf.part"), os.path.join(d, "m.gguf")
+        with open(part, "wb") as f:
+            f.write(b"model bytes")
+        job = {"state": "downloading"}
+        with self.assertRaises(RuntimeError):
+            models.Downloads._finish(models.Downloads.__new__(models.Downloads), job, "m.gguf", part, target, "0" * 64)
+        self.assertFalse(os.path.exists(part) or os.path.exists(target))
+        with open(part, "wb") as f:
+            f.write(b"model bytes")
+        models.Downloads._finish(models.Downloads.__new__(models.Downloads), job, "m.gguf", part, target, hashlib.sha256(b"model bytes").hexdigest())
+        self.assertTrue(os.path.exists(target))
+
+
+class mock_peer_key:
+    def __init__(self, key):
+        from unittest import mock
+        from pumpkin import devices
+        self.p = mock.patch.object(devices, "peer_key", lambda: key)
+
+    def __enter__(self):
+        self.p.start()
+
+    def __exit__(self, *a):
+        self.p.stop()

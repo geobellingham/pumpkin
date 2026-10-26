@@ -88,7 +88,9 @@ def _tool(name, desc, props, required=()):
 
 
 class Tools:
-    """What the model can do in the project folder. It cannot reach outside it."""
+    """What the model can do in the project folder. The file tools (ls, read, edit, write...) cannot reach outside
+    it. bash is different: a command runs on this computer as the user, with the project as its working folder,
+    and can touch anything the user can. That is why commands ask first unless the user chose otherwise."""
 
     def __init__(self, root, web=True):
         self.root = os.path.realpath(root)
@@ -135,7 +137,11 @@ class Tools:
     def path(self, p, must_exist=False):
         p = str(p or ".").strip()
         full = os.path.realpath(os.path.join(self.root, os.path.expanduser(p)))
-        if os.path.commonpath([self.root, full]) != self.root:
+        try:
+            inside = os.path.commonpath([self.root, full]) == self.root
+        except ValueError:                       # another drive on Windows
+            inside = False
+        if not inside:
             raise PermissionError(f"{p} is outside the project folder. Only files in {self.root} can be used.")
         if must_exist and not os.path.exists(full):
             raise FileNotFoundError(f"{p} does not exist. Use ls or glob to find the right path.")
@@ -1137,7 +1143,7 @@ class Manager:
             "- Make the change the user asked for and nothing more. Keep the project's style.\n"
             "- After changing code, check it: run the tests, a build, or the program, and fix what fails.\n"
             "- For a job with several steps, keep a todo list with the todo tool and mark steps done as you go.\n"
-            "- Paths are relative to the project folder. You cannot leave it.\n"
+            "- Paths are relative to the project folder. Work only inside it, also with commands.\n"
             "- If the request is unclear, or something would be hard to take back (deleting data, pushing, "
             "rewriting history), ask the user instead of doing it.\n"
             "- When you are done, say in a few sentences what you changed and how you checked it. Don't paste "

@@ -856,7 +856,11 @@ class Core:
         root = os.path.realpath(os.path.expanduser(self.settings["files_dir"]))
         if source:
             p = os.path.realpath(os.path.join(root, str(source).lstrip("/\\")))
-            if os.path.commonpath([root, p]) != root or not os.path.isfile(p) \
+            try:
+                inside = os.path.commonpath([root, p]) == root
+            except ValueError:                   # another drive on Windows
+                inside = False
+            if not inside or not os.path.isfile(p) \
                     or not p.lower().endswith((".png", ".jpg", ".jpeg", ".webp")):
                 raise ValueError("That picture is not in the user's Files.")
             with open(p, "rb") as f:

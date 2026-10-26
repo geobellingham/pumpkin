@@ -149,7 +149,11 @@ def read_text(s):
 def read_file(s, rel):
     root = os.path.realpath(s["dir"])
     p = os.path.realpath(os.path.join(root, str(rel or "").lstrip("/\\")))
-    if os.path.commonpath([root, p]) != root or not os.path.isfile(p):
+    try:
+        inside = os.path.commonpath([root, p]) == root
+    except ValueError:                           # another drive on Windows
+        inside = False
+    if not inside or not os.path.isfile(p):
         raise ValueError(f"The skill {s['name']} has no file {rel}.")
     if os.path.getsize(p) > MAX_FILE:
         raise ValueError(f"{rel} is too big to read.")

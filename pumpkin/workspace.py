@@ -34,12 +34,11 @@ _usable = {"at": 0.0, "ok": False}
 
 
 def docker_usable():
-    """Docker is installed and can run the (Linux) sandbox. On Windows, Docker Desktop can be switched to
-    Windows containers, which cannot; that is checked at most once a minute."""
+    """Docker is installed, its daemon answers this user, and it runs Linux containers (Docker Desktop on Windows
+    can be switched to Windows containers). Installed but stopped, or the user not in the docker group, counts as
+    not usable. Asked at most once a minute."""
     if not shutil.which("docker"):
         return False
-    if os.name != "nt":
-        return True
     import time
     if time.time() - _usable["at"] > 60:
         code, out, _ = _docker("info", "--format", "{{.OSType}}", timeout=15)

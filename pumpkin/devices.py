@@ -151,7 +151,7 @@ def parse_code(code):
 
 
 def key_ok(given):
-    return bool(given) and hmac.compare_digest(given, peer_key())
+    return bool(given) and hmac.compare_digest(str(given).encode("utf-8", "surrogatepass"), peer_key().encode())
 
 
 # ------------------------------------------------------------------ requests from other devices
