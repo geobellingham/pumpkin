@@ -6,6 +6,7 @@
 	import Card from '../components/Card.svelte';
 	import Field from '../components/Field.svelte';
 	import Segmented from '../components/Segmented.svelte';
+	import PumpkinFolder from '../components/PumpkinFolder.svelte';
 	import { settingsStore } from '$lib/stores/settings/index.svelte';
 	import Toggle from '../components/Toggle.svelte';
 	import { api, pumpkin } from '../store.svelte';
@@ -118,6 +119,8 @@
 				</div>
 			</div>
 		</Card>
+
+		{#if pumpkin.state?.platform !== 'android'}<PumpkinFolder />{/if}
 
 		<Card description="For the chat and Pumpkin's pages, on this device. The button at the top of Pumpkin's pages switches it too." title="Appearance">
 			<Segmented

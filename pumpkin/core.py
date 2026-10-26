@@ -549,6 +549,89 @@ class Core:
                                                       "n_decode_total", "prompt_tokens_total")},
         }
 
+    # ---- where Pumpkin keeps everything
+    SUBDIRS = {"download_dir": "models", "reports_dir": "reports", "files_dir": "files", "image_dir": "image-models"}
+
+    def pumpkin_dir(self):
+        return self.settings["pumpkin_dir"] or config.USER_DIR
+
+    def places(self):
+        """Drives (and on Linux and macOS the mounted disks) to put Pumpkin's folder on, with free space."""
+        out, seen = [], set()
+
+        def add(path, label):
+            real = os.path.realpath(path)
+            if not os.path.isdir(real):
+                return
+            try:
+                u = shutil.disk_usage(real)
+                dev = os.stat(real).st_dev
+            except OSError:
+                return
+            if dev in seen:
+                return                                      # the same disk as one listed already
+            seen.add(dev)
+            out.append({"path": real, "label": label, "free_gb": round(u.free / 2 ** 30, 1),
+                        "total_gb": round(u.total / 2 ** 30, 1)})
+
+        if os.name == "nt":
+            import string
+            for letter in string.ascii_uppercase:
+                root = f"{letter}:\\"
+                if os.path.exists(root):
+                    add(root, f"Drive {letter}:")
+        else:
+            add(os.path.expanduser("~"), "Your home folder")
+            roots = ["/Volumes"] if sys.platform == "darwin" else ["/mnt", "/media", "/run/media"]
+            for r in roots:
+                try:
+                    for n in sorted(os.listdir(r)):
+                        p = os.path.join(r, n)
+                        if os.path.isdir(p) and not os.path.ismount(p) and r in ("/media", "/run/media"):
+                            for m in sorted(os.listdir(p)):        # /media/<user>/<disk>
+                                add(os.path.join(p, m), m)
+                        elif os.path.isdir(p):
+                            add(p, n)
+                except OSError:
+                    pass
+        return {"current": self.pumpkin_dir(), "default": config.USER_DIR, "places": out}
+
+    def set_pumpkin_dir(self, path):
+        """Puts Pumpkin's folder (models, image models, files, reports, saved conversations) at path. What is in
+        the old folder stays where it is and still works: models there are still found."""
+        raw = str(path or "").strip()
+        if not raw:
+            raise ValueError("Pick a folder.")
+        root = os.path.abspath(os.path.expanduser(raw))
+        if os.path.dirname(root) == root:                  # a whole drive: use a Pumpkin folder on it
+            root = os.path.join(root, "Pumpkin")
+        try:
+            os.makedirs(root, exist_ok=True)
+            probe = os.path.join(root, ".pumpkin-write-test")
+            with open(probe, "w") as f:
+                f.write("ok")
+            os.remove(probe)
+        except OSError as e:
+            raise ValueError(f"Pumpkin cannot write to {root}: {e.strerror or e}") from e
+        old_models = self.settings["download_dir"]
+        changes = {k: os.path.join(root, sub) for k, sub in self.SUBDIRS.items()}
+        for d in changes.values():
+            os.makedirs(d, exist_ok=True)
+        dirs = [changes["download_dir"]] + [d for d in (self.settings["models_dirs"] or [])
+                                            if os.path.realpath(d) != os.path.realpath(changes["download_dir"])]
+        if old_models and old_models not in dirs and os.path.isdir(old_models):
+            dirs.append(old_models)                         # models already downloaded there keep working
+        changes["models_dirs"] = dirs
+        changes["pumpkin_dir"] = "" if os.path.realpath(root) == os.path.realpath(config.USER_DIR) else root
+        self.settings.update(changes)
+        try:
+            self.library.scan(force=True)
+            if self.indexer:
+                self.indexer.poke()
+        except Exception:  # noqa: BLE001 - the folder is set; a rescan happens later anyway
+            pass
+        return {"current": root, **{k: changes[k] for k in self.SUBDIRS}}
+
     # ---- what is happening right now
     def decode_progress(self):
         """How many tokens the model has written for the answer in progress, read from llama-server itself. It moves

@@ -466,8 +466,14 @@ def metrics(port):
 
 
 # ---------------------------------------------------------------- running it
-def contexts_dir():
-    return os.path.join(config.DATA_DIR, "contexts")
+def contexts_dir(settings=None):
+    """Saved conversations (as big as the context, gigabytes each): in Pumpkin's folder when one was picked."""
+    root = ""
+    try:
+        root = (settings or {}).get("pumpkin_dir") if settings is not None else ""
+    except AttributeError:
+        root = ""
+    return os.path.join(root, "contexts") if root else os.path.join(config.DATA_DIR, "contexts")
 
 
 def _context_name(preset):
@@ -548,8 +554,8 @@ class ServerManager:
             cmd += ["--metrics"]
         if self._keeps() and has("--slot-save-path"):
             # lets Pumpkin save the conversation the model has read when it stops, and load it again at the next start
-            os.makedirs(contexts_dir(), exist_ok=True)
-            cmd += ["--slot-save-path", contexts_dir() + os.sep]
+            os.makedirs(contexts_dir(self.settings), exist_ok=True)
+            cmd += ["--slot-save-path", contexts_dir(self.settings) + os.sep]
         kv = preset.get("kv") or ""
         info_m = model.get("info") or {}
         heads = [info_m.get("key_length"), info_m.get("value_length")]
@@ -655,7 +661,7 @@ class ServerManager:
         if not self._keeps() or self.state != "ready" or not self.preset or self.proc is None:
             return
         name = _context_name(self.preset)
-        folder = contexts_dir()
+        folder = contexts_dir(self.settings)
         try:
             os.makedirs(folder, exist_ok=True)
             if shutil.disk_usage(folder).free < 4 * 2 ** 30:
@@ -678,7 +684,7 @@ class ServerManager:
         if not self._keeps() or not preset:
             return
         name = _context_name(preset)
-        path = os.path.join(contexts_dir(), name)
+        path = os.path.join(contexts_dir(self.settings), name)
         if not os.path.isfile(path):
             return
         try:

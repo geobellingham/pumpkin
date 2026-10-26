@@ -631,6 +631,15 @@ class Web:
             return core.recommendations(refresh=arg("refresh") == "1", goal=arg("goal"))
         if head == "setup" and ident == "goal" and method == "POST":
             return core.apply_goal(body.get("goal"))
+        if head == "setup" and ident == "places" and method == "GET":
+            return core.places()
+        if head == "setup" and ident == "folder" and method == "POST":
+            try:
+                return core.set_pumpkin_dir(body.get("path"))
+            except ValueError as e:
+                raise ApiError(str(e)) from e
+        if head == "setup" and ident == "folders" and method == "GET":
+            return _folders(arg("path", ""))
         if head == "connectors":
             if method == "GET" and not ident:
                 return {"items": connectors.public()}

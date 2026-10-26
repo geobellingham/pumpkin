@@ -4,6 +4,7 @@
 	import Card from '../components/Card.svelte';
 	import FitBadge from '../components/FitBadge.svelte';
 	import FoundModels from '../components/FoundModels.svelte';
+	import PumpkinFolder from '../components/PumpkinFolder.svelte';
 	import PumpkinLogo from '../components/PumpkinLogo.svelte';
 	import { api, pumpkin } from '../store.svelte';
 	import type { Fit, Hardware, LocalModel } from '../types';
@@ -135,6 +136,8 @@
 				</div>
 			{/if}
 		</Card>
+
+		{#if pumpkin.state?.platform !== 'android'}<PumpkinFolder compact />{/if}
 
 		<FoundModels />
 

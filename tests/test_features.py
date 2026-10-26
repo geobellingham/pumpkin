@@ -754,3 +754,43 @@ class mock_peer_key:
 
     def __exit__(self, *a):
         self.p.stop()
+
+
+class TestPumpkinFolder(unittest.TestCase):
+    """Everything big goes into one folder the user picks (another drive, say)."""
+
+    def test_picking_a_folder_moves_where_new_things_go(self):
+        from unittest import mock
+        from pumpkin import llama
+        c = Core.__new__(Core)
+        old = tempfile.mkdtemp(prefix="old-")
+        os.makedirs(os.path.join(old, "models"))
+
+        class S(dict):
+            def update(self, d):
+                dict.update(self, d)
+
+        base = dict(config.DEFAULT_SETTINGS)
+        base.update(download_dir=os.path.join(old, "models"), models_dirs=[os.path.join(old, "models")])
+        c.settings = S(base)
+        c.library = mock.Mock()
+        c.indexer = None
+        new = os.path.join(tempfile.mkdtemp(prefix="drive-"), "Pumpkin")
+        r = c.set_pumpkin_dir(new)
+        self.assertEqual(r["current"], new)
+        for key, sub in Core.SUBDIRS.items():
+            self.assertEqual(c.settings[key], os.path.join(new, sub))
+            self.assertTrue(os.path.isdir(os.path.join(new, sub)))
+        # new downloads go to the new folder first, models already in the old one are still found
+        self.assertEqual(c.settings["models_dirs"], [os.path.join(new, "models"), os.path.join(old, "models")])
+        self.assertEqual(llama.contexts_dir(c.settings), os.path.join(new, "contexts"))
+        self.assertEqual(c.pumpkin_dir(), new)
+        with self.assertRaises(ValueError):
+            c.set_pumpkin_dir("")
+
+    def test_the_places_list_has_free_space(self):
+        c = Core.__new__(Core)
+        c.settings = dict(config.DEFAULT_SETTINGS)
+        r = c.places()
+        self.assertTrue(r["places"])
+        self.assertGreater(r["places"][0]["total_gb"], 0)

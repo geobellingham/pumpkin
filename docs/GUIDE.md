@@ -44,7 +44,10 @@ Reports, Voice, Devices, Phone, Doctor and Settings.
 
 The first start walks you through four steps:
 
-1. **Your computer.** Pumpkin shows your GPU, video memory and RAM. If LM Studio, Ollama, the Hugging Face
+1. **Your computer.** Pumpkin shows your GPU, video memory and RAM, and asks where to keep its files: pick
+   a drive (say D:) and models, image models, your files, reports and saved conversations all go into a
+   Pumpkin folder there. You can change it later in Settings; what is already in the old folder stays there and
+   keeps working. If LM Studio, Ollama, the Hugging Face
    cache, Jan or GPT4All already downloaded models, tick the ones to use. They are used where they are,
    nothing is copied.
 2. **What for.** Chat, coding, research or agents. This sets the starting persona and which models are
