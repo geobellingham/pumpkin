@@ -5,6 +5,8 @@
 	import Card from '../components/Card.svelte';
 	import Empty from '../components/Empty.svelte';
 	import Segmented from '../components/Segmented.svelte';
+	import SpecCard from '../components/SpecCard.svelte';
+	import Compare from './Compare.svelte';
 	import { api, pumpkin } from '../store.svelte';
 	import { onDestroy, onMount } from 'svelte';
 
@@ -98,15 +100,18 @@
 	</div>
 {:else}
 	<div class="flex flex-col gap-4">
+		<div class="-mx-4 overflow-x-auto px-4 [scrollbar-width:none]">
 		<Segmented
 			bind:value={tab}
-			onchange={(v) => v !== 'speed' && loadList()}
+			onchange={(v) => v !== 'speed' && v !== 'compare' && loadList()}
 			options={[
 				{ label: 'Task reports', value: 'reports' },
 				{ label: 'Speed', value: 'speed' },
+				{ label: 'Compare', value: 'compare' },
 				{ label: 'Quality benchmarks', value: 'bench-files' }
 			]}
 		/>
+		</div>
 
 		{#if tab === 'speed'}
 			<Card description="Measures how fast the running model writes and reads, so you can compare presets." title="Speed test">
@@ -140,6 +145,9 @@
 					</div>
 				{/if}
 			</Card>
+			<SpecCard />
+		{:else if tab === 'compare'}
+			<Compare />
 		{:else}
 			<Card description={dir ? `Saved in ${dir}` : ''} title={tab === 'reports' ? 'Task reports' : 'Quality benchmarks'}>
 				{#if items === null}

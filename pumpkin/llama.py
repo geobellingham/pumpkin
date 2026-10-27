@@ -699,6 +699,18 @@ class ServerManager:
         except (OSError, ValueError, TypeError):
             pass
 
+    on_ready = None                # the app checks a llama-server it has not seen before
+
+    def _after_ready(self, preset):
+        if self.on_ready:
+            try:
+                self.on_ready(preset)
+            except Exception:  # noqa: BLE001 - the check must never stop the model
+                pass
+            if self.preset is None or self.preset.get("id") != preset.get("id") or self.state != "ready":
+                return                             # the check went back to another build and started again
+        self.restore_context(preset)
+
     def _inhibit(self, on):
         """While a model is loaded, keep the computer from going to sleep (the screen can still lock).
         Linux asks systemd; a Mac uses caffeinate (closing a laptop's lid still sleeps it)."""
@@ -840,7 +852,7 @@ class ServerManager:
                     elif self.proc is not None:
                         if ok and self.state == "loading":
                             self.state, changed = "ready", True
-                            threading.Thread(target=self.restore_context, args=(dict(self.preset or {}),),
+                            threading.Thread(target=self._after_ready, args=(dict(self.preset or {}),),
                                              daemon=True).start()
                             worked, self._worked = getattr(self, "_worked", None), None
                             if worked and self.on_recover:
@@ -921,7 +933,9 @@ class ServerManager:
                 pass
 
     def status(self):
-        return {"state": self.state, "error": self.error, "notice": self.notice, "preset": self.preset,
+        # an error a newer llama.cpp fixes: the Overview offers "Update llama.cpp and try again"
+        fix = "update_llama" if self.state == "error" and self.error and "too old for this model" in self.error else None
+        return {"state": self.state, "error": self.error, "notice": self.notice, "preset": self.preset, "fix": fix,
                 "uptime": time.time() - self.started_at if self.started_at and self.state == "ready" else None,
                 "port": self.port}
 

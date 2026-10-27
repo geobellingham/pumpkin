@@ -331,6 +331,61 @@ def speed_bench(port, label, vram_used=None):
     return row
 
 
+EDIT_TEXT = ("Pumpkins are grown on every continent except Antarctica. The plant is a vine that spreads across the "
+             "ground, with large leaves that shade the soil and keep weeds down. Each vine makes yellow flowers, and bees "
+             "carry pollen from the male flowers to the female ones. A pumpkin needs about one hundred days of warm "
+             "weather to ripen, and the skin hardens as it does. Farmers cut the fruit with a few inches of stem left on, "
+             "because a pumpkin without its stem rots sooner. Stored somewhere cool and dry, a whole pumpkin keeps for "
+             "two or three months. ") * 3
+
+
+def spec_bench(port):
+    """Speed for faster replies (self-speculative decoding): writing something new, where guessing from the chat
+    helps little, and rewriting a text with small changes, where it helps most. Returns tokens a second for each
+    and how many guessed tokens were right, when llama-server reports it."""
+    common = {"cache_prompt": False, "chat_template_kwargs": {"enable_thinking": False}, "temperature": 0}
+    out, drafted, accepted = {}, 0, 0
+    for key, msg, n in (("new", "Write a 150-word story about a lighthouse.", 220),
+                        ("edit", "Repeat this text exactly, word for word, but write 'squash' instead of 'pumpkin' "
+                                 "everywhere:\n\n" + EDIT_TEXT, 600)):
+        r = llama.http(port, "/v1/chat/completions", {"messages": [{"role": "user", "content": msg}], "max_tokens": n,
+                                                       **common}, timeout=1800)
+        t = r.get("timings") if isinstance(r, dict) else None
+        if not t:
+            raise RuntimeError(f"No timings in the reply: {str((r or {}).get('error', r))[:200]}")
+        out[key] = round(float(t.get("predicted_per_second") or 0), 1)
+        drafted += int(t.get("draft_n") or 0)
+        accepted += int(t.get("draft_n_accepted") or 0)
+    out["accepted"] = round(100 * accepted / drafted) if drafted else None
+    return out
+
+
+def spec_verdict(on, off):
+    """Plain words for a with/without measurement."""
+    ratio = lambda k: (on[k] / off[k]) if off.get(k) else 1.0
+    new, edit = ratio("new"), ratio("edit")
+    if new < 0.95 and edit < 1.05:
+        return "slower", f"Slower on this model ({new:.2f}× for new text, {edit:.2f}× for rewriting). Turn it off."
+    if edit >= 1.1 and new >= 0.95:
+        return "faster", (f"{edit:.1f}× faster when rewriting or quoting text, {new:.2f}× for new text. Keep it on.")
+    return "same", f"About the same ({new:.2f}× for new text, {edit:.2f}× for rewriting). Either way is fine."
+
+
+def ask_once(port, prompt, max_tokens=1200):
+    """One answer for the model comparison, with its speed."""
+    started = time.time()
+    r = llama.http(port, "/v1/chat/completions", {"messages": [{"role": "user", "content": prompt}],
+                                                   "max_tokens": max_tokens, "cache_prompt": False}, timeout=1800)
+    if not isinstance(r, dict) or r.get("error"):
+        raise RuntimeError(str((r or {}).get("error") if isinstance(r, dict) else r)[:300])
+    msg = ((r.get("choices") or [{}])[0].get("message") or {})
+    t = r.get("timings") or {}
+    return {"answer": (msg.get("content") or "").strip(), "thinking": (msg.get("reasoning_content") or "").strip(),
+            "gen": round(float(t.get("predicted_per_second") or 0), 1),
+            "prompt": round(float(t.get("prompt_per_second") or 0)), "tokens": int(t.get("predicted_n") or 0),
+            "seconds": round(time.time() - started, 1)}
+
+
 def speed_history():
     try:
         with open(SPEED_CSV, newline="") as f:

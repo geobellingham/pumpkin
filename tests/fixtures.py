@@ -61,11 +61,11 @@ import json, sys, time, os
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 args = sys.argv[1:]
 if "--version" in args:
-    print("version: 11796 (abcdef1)\nbuilt with cc for x86_64-linux-gnu\nVulkan backend"); sys.exit(0)
+    print("version: %s (abcdef1)\nbuilt with cc for x86_64-linux-gnu\nVulkan backend" % os.environ.get("FAKE_LLAMA_BUILD", "11796")); sys.exit(0)
 if "--help" in args:
     print("-m, --model\n-c\n-fit, --fit\n-fitt\n-fa\n-ctk\n--metrics\n--agent\n--tools-runtime\n"
           "--mcp-servers-config\n--reasoning-budget\n--no-reasoning-preserve\n--webui-config-file\n"
-          "--sleep-idle-seconds\n--mmproj\n--slot-save-path"); sys.exit(0)
+          "--sleep-idle-seconds\n--mmproj\n--slot-save-path\n--spec-default"); sys.exit(0)
 port = int(args[args.index("--port") + 1])
 if os.environ.get("FAKE_LLAMA_FAIL_ABOVE") and "-c" in args and \
         int(args[args.index("-c") + 1]) > int(os.environ["FAKE_LLAMA_FAIL_ABOVE"]):
@@ -104,6 +104,7 @@ class H(BaseHTTPRequestHandler):
             s.send_response(200); s.send_header("Content-Length", str(len(b))); s.end_headers(); s.wfile.write(b); return
         if p == "/slots": return s.j([{"id": 0, "is_processing": False, "next_token": [{"n_decoded": 0}]}])
         if p == "/tools": return s.j(TOOLS)
+        if p == "/props" and os.environ.get("FAKE_LLAMA_NEW_API"): return s.j({"model": {"context": 8192}})
         if p == "/props": return s.j({"model_path": args[args.index("-m") + 1], "default_generation_settings": {"n_ctx": 8192, "params": {}}, "modalities": {}, "build_info": "b11796", "ui_settings": {"systemMessage": "STALE SERVER PERSONA"}})
         s.j({"error": {"code": 404, "message": "nf"}}, 404)
     def do_POST(s):
@@ -190,7 +191,12 @@ class H(BaseHTTPRequestHandler):
                        "function": {"name": "web_search", "arguments": json.dumps({"query": "pumpkins"})}}]}
             else:
                 msg = {"role": "assistant", "content": "## Answer\n\nPumpkins are great."}
-            return s.j({"choices": [{"message": msg}], "timings": {"predicted_per_second": 37.1, "prompt_per_second": 812.0, "prompt_n": 2000}})
+            t = {"predicted_per_second": 37.1, "prompt_per_second": 812.0, "prompt_n": 2000, "predicted_n": 40}
+            if "--spec-default" in args:
+                t.update(draft_n=100, draft_n_accepted=60)
+                if "Repeat this text" in json.dumps(msgs):
+                    t["predicted_per_second"] = 74.2          # guessing from the chat pays off when text repeats
+            return s.j({"choices": [{"message": msg}], "timings": t})
         s.j({"error": "nf"}, 404)
 ThreadingHTTPServer(("127.0.0.1", port), H).serve_forever()
 '''

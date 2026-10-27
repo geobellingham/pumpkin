@@ -52,8 +52,8 @@ The first start walks you through four steps:
    nothing is copied.
 2. **What for.** Chat, coding, research or agents. This sets the starting persona and which models are
    recommended.
-3. **Model server.** Pumpkin downloads the llama.cpp build for your GPU (CUDA or Vulkan for NVIDIA, Vulkan
-   for AMD and Intel, Metal on a Mac, CPU otherwise).
+3. **Model server.** Pumpkin downloads the newest llama.cpp build for your GPU (CUDA or Vulkan for NVIDIA,
+   Vulkan for AMD and Intel, Metal on a Mac, CPU otherwise).
 4. **Your model.** Pick one you have or install the recommended one. It downloads, starts and opens the chat.
 
 ## The Overview: what is running right now
@@ -71,6 +71,10 @@ The Overview page is the dashboard.
   picture has room), the vision model, the image model (loading, drawing, making a video), downloads, installs,
   scheduled tasks and Pumpkin Code sessions, each with how long it has been at it. The model's line also
   shows how full its memory is for your chat.
+- **Warnings**: on Linux, when part of the model was moved to swap, or when it keeps reading itself from disk
+  while it writes (it does not fit in free RAM), so you know why it is slow. When the model stops because
+  llama.cpp is too old for it ("unknown model architecture"), **Update llama.cpp and try again** gets the
+  newest one and starts the model again.
 
 ## Setup list
 
@@ -106,10 +110,10 @@ A preset is a model plus how to run it. **Presets page > Edit** on a preset:
 |---|---|
 | Context | How much text the model can hold at once (your chat, documents, tool results). More context uses more memory. The estimate below shows whether it still fits. |
 | Memory for context | The KV cache type. `q8_0` halves its memory with almost no loss; `q4_0` saves more but can hurt quality. |
-| Vision file | The mmproj file that lets the model see pictures. Pumpkin fills it in when it finds one. |
+| Vision file | The mmproj file that lets the model see pictures. Each file shows the folder it is in; the one made for the chosen model comes first and is marked. Pumpkin fills it in when it finds one, and switches it when you pick another model. |
 | Tools | Gives the model your documents, memory, saving files, your devices, and (with Docker) commands in a sandbox. Turn this on for agents and tasks. |
 | Web search | Built-in web search and page reading. No API key. |
-| Faster replies | Speculative decoding: a small draft model guesses ahead and the big one checks. Same answers, often faster on dense models; it can be slower on MoE models, so measure with the speed test. |
+| Faster replies | Speculative decoding: the model guesses the next words from what is already in the chat and checks several at once. Same answers, faster when text repeats (quotes, code edits, summaries). Off for presets with a Vision file. It can cost speed on some models: **Reports > Speed > Faster replies > Measure** tries it on and off and the result shows here. |
 | Thinking budget | How long a thinking model may think before it answers. |
 | Unload when idle | Frees the GPU after this many minutes without use. |
 | GPU headroom | Memory kept free on the card for other programs. |
@@ -357,7 +361,13 @@ window closed, turn on **Settings > Start Pumpkin when I log in**.
 ## Reports and the speed test
 
 **Reports page**: every task run, readable and deletable. The **speed test** measures how fast the running
-model reads and writes, so you can compare presets (context sizes, quants, faster replies on or off).
+model reads and writes, so you can compare presets (context sizes, quants). **Faster replies > Measure** runs it
+with speculative decoding on and off for the running preset (the model restarts twice and comes back as it was)
+and says which is faster.
+
+**Compare** asks two to four presets the same question and shows the answers side by side with their speed
+and load time. They load one after another, the answers are saved as a report, and the preset that was running
+starts again at the end.
 
 ## Files
 
@@ -394,8 +404,9 @@ Pair the Pumpkins on your PC, Mac and phone, and one model can use the others.
 1. On the helper: **Devices > Let my other devices use this one**, copy the code.
 2. On the device you chat on: **Devices > Add a device**, paste the code.
 3. The helper's models appear in your chat's model list. Pick one to chat with it directly.
-4. Restart your model with **Tools** on. It gets `devices_list` and `devices_ask` and can hand work to a
-   device by itself, or when you ask: "have my Mac write the first draft, then check it".
+4. The running model gets `devices_list` and `devices_ask` when it starts, so if it has **Tools** on, Pumpkin
+   restarts it by itself once nobody is using it. Then it can hand work to a device by itself, or when you ask:
+   "have my Mac write the first draft, then check it".
 
 The devices need to reach each other: same Wi-Fi, or Tailscale on both. A helper only gives answers: no
 access to your files, settings or chats. **Make a new code** cuts off every device paired so far.
@@ -418,6 +429,13 @@ button at the top of Pumpkin's pages switches it too. It's kept per device.
 - **Performance and network**: CPU threads, ports.
 - **Hugging Face token**: only for models that need a license accepted.
 - **Signed-in devices**: see every browser and phone signed in, sign one out, or make a new access key.
+- **Model server**: the llama.cpp in use, and **Update llama.cpp**. New models often need a newer one. **Keep
+  llama.cpp up to date**: off, tell me (the Overview mentions it once yours is a week behind), or by itself (at
+  most once a day, while no model runs). **Which builds**: the latest release that has been out for a day, or the
+  newest build for brand-new models. The build before stays on disk, with **Go back**. The first time a new build
+  runs, Pumpkin checks it still answers the way the chat expects; if it doesn't, it goes back by itself and skips
+  that build. A llama-server you built yourself is never replaced: Pumpkin only says when the one it downloaded
+  is newer.
 - **Updates**: Pumpkin checks GitHub twice a day and updates in one click.
 - **Privacy**: the full list of what Pumpkin sends over the network and when. No accounts, analytics or
   crash reports.
@@ -447,9 +465,10 @@ pumpkin --version           which version you have
 
 | Problem | Try |
 |---|---|
+| "This llama-server is too old for this model" | **Update llama.cpp and try again** on the Overview. If you built llama.cpp yourself, pull and rebuild it. |
 | The model won't start / out of memory | Pumpkin already retried with a shorter context. Pick a smaller quant, lower the context, or use `q8_0` memory for context in the preset. |
 | The model doesn't use tools | Turn on **Tools** in the preset and restart the model. Try a model that is better with tools. |
 | No picture: "not enough free memory" | Images page > Memory > *Always*, so the text model always pauses while drawing. |
-| A paired device's model doesn't call `devices_ask` | Restart the chat model after pairing, so it gets the tool. |
+| A paired device's model doesn't call `devices_ask` | Check **Tools** is on in the preset. Pumpkin restarts the model by itself after pairing once it is idle; **Devices > Restart the model** does it now. |
 | The phone can't connect | Same Wi-Fi in home-network mode; with Tailscale, check both are signed in. The Phone page shows what's missing. |
 | Anything else | The Doctor page. If it doesn't help, open an issue on GitHub with what it shows. |

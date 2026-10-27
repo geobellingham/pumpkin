@@ -104,7 +104,11 @@
 
 		adding = true;
 
-		const r = await pumpkin.run(() => api<Device>('devices', { body: { code: code.trim() } }), 'Device added');
+		// a running model with tools gets the device tools by itself: Pumpkin restarts it once it is idle
+		const r = await pumpkin.run(
+			() => api<Device>('devices', { body: { code: code.trim() } }),
+			presetTools && hasTools !== true ? 'Device added. The model restarts by itself once it is idle, so it can ask it.' : 'Device added'
+		);
 
 		adding = false;
 
@@ -256,7 +260,7 @@
 							<span class="min-w-0 flex-1">
 								{presetTools === false
 									? 'Tools are off in the running preset, so the model cannot ask your devices.'
-									: 'The running model started before you paired, so it does not have the device tools yet.'}
+									: 'The running model started before you paired, so it does not have the device tools yet. Pumpkin restarts it by itself once nobody is using it, or you can do it now.'}
 							</span>
 							<Button class="rounded-full" onclick={restartModel} size="sm">
 								<RefreshCw class="h-4 w-4" />

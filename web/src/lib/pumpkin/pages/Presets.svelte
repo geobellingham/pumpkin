@@ -11,6 +11,7 @@
 	import Toggle from '../components/Toggle.svelte';
 	import { api, pumpkin } from '../store.svelte';
 	import type { Connector, Fit, LocalModel, Preset } from '../types';
+	import { folderLabel, madeFor, visionOptions } from '../vision-files';
 	import { onMount } from 'svelte';
 
 	let presets = $state<Preset[] | null>(null);
@@ -37,6 +38,29 @@
 	const modelList = $derived(models.filter((m) => m.kind === 'model'));
 	const projList = $derived(models.filter((m) => m.kind === 'mmproj'));
 	const selected = $derived(modelList.find((m) => m.path === editing?.model));
+	const chosenProj = $derived(projList.find((p) => p.path === editing?.mmproj));
+
+	// picking another model swaps the vision file for the one made for it (or none), so it never keeps the old model's
+	let lastModel = '';
+
+	$effect(() => {
+		const e = editing;
+
+		if (!e || !open) {
+			lastModel = '';
+
+			return;
+		}
+
+		if (lastModel && e.model !== lastModel) {
+			const m = modelList.find((x) => x.path === e.model);
+			const cur = projList.find((p) => p.path === e.mmproj);
+
+			if (!cur || !madeFor(cur, m)) e.mmproj = projList.find((p) => madeFor(p, m) && p.path === m?.mmproj)?.path ?? projList.find((p) => madeFor(p, m))?.path ?? '';
+		}
+
+		lastModel = e.model;
+	});
 	const ctxOptions = $derived.by(() => {
 		const max = selected?.info.ctx_train ?? 262144;
 		const sizes = [4096, 8192, 16384, 32768, 65536, 98304, 131072, 196608, 262144].filter((s) => s <= max);
@@ -178,9 +202,18 @@
 				</Field>
 
 				{#if projList.length}
-					<Field hint="Lets the model look at images you attach." label="Vision file">
-						<Select bind:value={editing.mmproj as string} options={[{ label: 'None', value: '' }, ...projList.map((m) => ({ label: m.file, value: m.path }))]} />
+					<Field hint="Lets the model look at images you attach. Only the vision file made for this model works with it." label="Vision file">
+						<Select bind:value={editing.mmproj as string} options={visionOptions(projList, selected)} />
 					</Field>
+					{#if selected && !projList.some((p) => madeFor(p, selected))}
+						<p class="-mt-2 text-xs text-muted-foreground">
+							None of these were made for {selected.file}. It may be a text-only model, or its vision file is not downloaded. Pumpkin can still pass pictures to a vision model you have installed (Settings, "Let text-only models see pictures").
+						</p>
+					{:else if chosenProj && selected && !madeFor(chosenProj, selected)}
+						<p class="-mt-2 text-xs text-amber-600 dark:text-amber-400">
+							This vision file is from {folderLabel(chosenProj.folder)}, another model's folder. It probably won't work with {selected.file}.
+						</p>
+					{/if}
 				{/if}
 
 				<div class="grid grid-cols-2 gap-3">
@@ -201,6 +234,24 @@
 				<div class="flex flex-col gap-1 rounded-xl border border-border/60 px-3 py-2">
 					<Toggle bind:checked={editing.tools as boolean} description="Your documents, memory, saving files and your other devices. With Docker, also commands and file edits in a sandbox." label="Tools" />
 					<Toggle bind:checked={editing.web as boolean} description="Built-in web search and page reading, no API key needed." disabled={!editing.tools} label="Web search" />
+					<Toggle
+						checked={editing.spec !== false && !editing.mmproj}
+						description={editing.mmproj
+							? 'Off while this preset reads pictures (a Vision file is set).'
+							: 'Guesses the next words from what is already in the chat and checks several at once. Same answers, faster when text repeats: quoting documents, editing code, summaries.'}
+						disabled={!!editing.mmproj}
+						label="Faster replies (speculative decoding)"
+						onchange={(v) => editing && (editing.spec = v)}
+					/>
+					{#if editing.spec_result && !editing.mmproj}
+						<p class={['-mt-1 pb-1 text-xs', editing.spec_result.verdict === 'slower' ? 'text-amber-600 dark:text-amber-400' : 'text-muted-foreground']}>
+							Measured {new Date(editing.spec_result.at * 1000).toLocaleDateString()}: {editing.spec_result.text}
+						</p>
+					{:else if !editing.mmproj}
+						<p class="-mt-1 pb-1 text-xs text-muted-foreground">
+							Not measured for this preset yet: start it, then Reports > Speed > Measure.
+						</p>
+					{/if}
 					{#if editing.tools && conns.length}
 						<Toggle
 							checked={editing.connectors == null}
@@ -234,12 +285,6 @@
 				<details class="rounded-xl border border-border/60 px-3 py-2 text-sm">
 					<summary class="cursor-pointer py-1 font-medium">Advanced</summary>
 					<div class="mt-3 flex flex-col gap-4 pb-2">
-						<Toggle
-							checked={editing.spec !== false}
-							description="Guesses the next words from what is already in the chat and checks several at once. Same answers, faster when text repeats: quoting documents, editing code, summaries. Off for models that read images."
-							label="Faster replies (speculative decoding)"
-							onchange={(v) => editing && (editing.spec = v)}
-						/>
 						<Field hint="Caps how long the model thinks before answering. Empty means no limit, 0 turns thinking off." label="Thinking budget (tokens)">
 							<Input bind:value={editing.think_budget} min="0" placeholder="No limit" type="number" />
 						</Field>

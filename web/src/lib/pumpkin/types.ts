@@ -14,9 +14,46 @@ export interface Preset {
 	name: string;
 	sandbox?: boolean;
 	spec?: boolean;
+	spec_result?: SpecResult;
 	think_budget?: number | null;
 	tools?: boolean;
 	web?: boolean;
+}
+
+export interface SpecResult {
+	at: number;
+	off: { accepted: number | null; edit: number; new: number };
+	on: { accepted: number | null; edit: number; new: number };
+	text: string;
+	verdict: 'faster' | 'same' | 'slower';
+}
+
+export interface CompareRow {
+	answer?: string;
+	error?: string;
+	gen?: number;
+	id: string;
+	load?: number;
+	name: string;
+	prompt?: number;
+	seconds?: number;
+	thinking?: string;
+	tokens?: number;
+	vram?: number | null;
+}
+
+export interface Job {
+	done: number;
+	error: string | null;
+	id: string;
+	kind: string;
+	phase?: string;
+	preset?: string;
+	prompt?: string;
+	result?: unknown;
+	results?: CompareRow[];
+	state: 'running' | 'done' | 'error';
+	total: number;
 }
 
 export interface Install {
@@ -56,6 +93,8 @@ export interface State {
 	activity: ActivityItem[];
 	now: number;
 	update?: { available: boolean; latest: string };
+	memory_note?: { kind: 'swap' | 'disk'; text: string } | null;
+	llama_update?: { available: boolean; current: string | null; latest: string | null; stale: boolean } | null;
 	agent: { busy: boolean; job: string | null; log_seq: number };
 	downloads: number;
 	has_models: boolean;
@@ -83,6 +122,7 @@ export interface State {
 	remote: string;
 	server: {
 		error: string | null;
+		fix?: 'update_llama' | null;
 		notice?: string | null;
 		port: number;
 		preset: Preset | null;
@@ -224,6 +264,8 @@ export interface Settings {
 	vision_keep_min: number;
 	llama_port: number;
 	llama_server: string;
+	llama_channel: 'release' | 'newest';
+	llama_updates: 'off' | 'notify' | 'auto';
 	max_steps: number;
 	memory: boolean;
 	models_dirs: string[];
@@ -256,6 +298,24 @@ export interface LlamaInfo {
 	} | null;
 	log: string;
 	path: string | null;
+	update?: LlamaUpdate;
+}
+
+export interface LlamaUpdate {
+	available: boolean;
+	backend: string;
+	channel: 'release' | 'newest';
+	checked: number | null;
+	current: string | null;
+	job: { done: number; error: string | null; id: string; state: string; tag?: string; total: number } | null;
+	latest: string | null;
+	mode: 'off' | 'notify' | 'auto';
+	own: boolean;
+	own_older: string | null;
+	own_older_path: string | null;
+	pinned: string | null;
+	previous: { path: string; version: string | null } | null;
+	skipped: Record<string, string>;
 }
 
 export interface Hardware {

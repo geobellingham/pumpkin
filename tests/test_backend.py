@@ -425,6 +425,41 @@ class TestServer(unittest.TestCase):
         self.assertEqual(code, 404)
         self.call("POST", "/pumpkin/api/llama/stop")
 
+    def test_7b_compare_models_and_measure_faster_replies(self):
+        code, lib = self.call("GET", "/pumpkin/api/models")
+        small = next(m for m in lib["models"] if m["file"] == "tiny-Q8_0.gguf")
+        a = self.call("POST", "/pumpkin/api/presets/from-model", {"path": small["path"], "name": "Compare A"})[1]
+        b = self.call("POST", "/pumpkin/api/presets/from-model", {"path": small["path"], "name": "Compare B"})[1]
+        self.call("POST", "/pumpkin/api/llama/start", {"preset": a["id"]})
+        self.assertTrue(self.wait(lambda: self.call("GET", "/pumpkin/api/state")[1]["server"]["state"] == "ready"))
+        code, j = self.call("POST", "/pumpkin/api/compare", {"presets": [a["id"]], "prompt": "hi"})
+        self.assertEqual(code, 409)                                 # one preset is no comparison
+        code, job = self.call("POST", "/pumpkin/api/compare", {"presets": [a["id"], b["id"]], "prompt": "Pumpkins?"})
+        self.assertEqual(code, 200, job)
+        self.assertTrue(self.wait(lambda: self.call("GET", f"/pumpkin/api/jobs/{job['id']}")[1]["state"] != "running", 60))
+        done = self.call("GET", f"/pumpkin/api/jobs/{job['id']}")[1]
+        self.assertEqual(done["state"], "done", done)
+        self.assertEqual([r["name"] for r in done["results"]], [a["name"], b["name"]])
+        self.assertIn("Pumpkins are great", done["results"][1]["answer"])
+        self.assertEqual(done["results"][0]["gen"], 37.1)
+        self.assertIn("Model comparison", self.call("GET", "/pumpkin/api/reports?name=" + done["result"]["report"])[1]["text"])
+        self.assertEqual(self.call("GET", "/pumpkin/api/jobs?kind=compare")[1]["job"]["id"], job["id"])
+        # Compare A ran before, so it is back once the comparison is over
+        self.assertTrue(self.wait(lambda: (self.call("GET", "/pumpkin/api/state")[1]["server"]["preset"] or {}).get("id") == a["id"]
+                                  and self.call("GET", "/pumpkin/api/state")[1]["server"]["state"] == "ready", 30))
+        code, job = self.call("POST", "/pumpkin/api/bench/spec", {})
+        self.assertEqual(code, 200, job)
+        self.assertTrue(self.wait(lambda: self.call("GET", f"/pumpkin/api/jobs/{job['id']}")[1]["state"] != "running", 60))
+        done = self.call("GET", f"/pumpkin/api/jobs/{job['id']}")[1]
+        self.assertEqual(done["state"], "done", done)
+        self.assertEqual(done["result"]["verdict"], "faster")
+        self.assertEqual(done["result"]["on"]["accepted"], 60)
+        self.assertEqual(done["result"]["off"]["edit"], 37.1)
+        saved = next(p for p in self.call("GET", "/pumpkin/api/presets")[1]["items"] if p["id"] == a["id"])
+        self.assertEqual(saved["spec_result"]["verdict"], "faster")
+        self.assertNotEqual(saved.get("spec"), False)               # the preset is back as it was
+        self.call("POST", "/pumpkin/api/llama/stop")
+
     def test_8_setup_goal_and_update_endpoints(self):
         code, j = self.call("POST", "/pumpkin/api/setup/goal", {"goal": "coding"})
         self.assertEqual(j["persona"], "Coder")

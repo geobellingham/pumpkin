@@ -421,6 +421,26 @@ def mapped_ram(pid):
     return 0.0
 
 
+def proc_disk(pid):
+    """How much of a process is in swap (GB) and how many bytes it has read from disk so far (Linux only:
+    Mac and Windows return None)."""
+    if MAC or WINDOWS or ANDROID or not pid:
+        return None
+    out = {"swap": 0.0, "read": 0}
+    try:
+        with open(f"/proc/{int(pid)}/status") as f:
+            for line in f:
+                if line.startswith("VmSwap:"):
+                    out["swap"] = int(line.split()[1]) * 1024 / GiB
+        with open(f"/proc/{int(pid)}/io") as f:
+            for line in f:
+                if line.startswith("read_bytes:"):
+                    out["read"] = int(line.split()[1])
+    except (OSError, ValueError, IndexError):
+        return None
+    return out
+
+
 def cpu():
     if MAC:
         return _mac_cpu()

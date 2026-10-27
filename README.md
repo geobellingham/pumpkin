@@ -125,8 +125,8 @@ Then open **Pumpkin** from your app menu, or run `pumpkin`. The first start walk
    Hugging Face cache or others already downloaded models, it offers to use them where they are.
 2. **What for.** Chat, coding, research or agents. This picks the starting personality and the models
    it recommends.
-3. **Model server.** It downloads the official llama.cpp build for your GPU (Vulkan for AMD and Intel,
-   CUDA or Vulkan for NVIDIA), or uses the one you already have.
+3. **Model server.** It downloads the newest official llama.cpp build for your GPU (Vulkan for AMD and Intel,
+   CUDA or Vulkan for NVIDIA), or uses the one you already have. It can keep it up to date by itself.
 4. **Your model.** Use one you already have, or install the best match in one click. It downloads,
    starts, and opens the chat.
 
@@ -299,8 +299,9 @@ pumpkin stop                stop Pumpkin and the model
 
 Found a problem? See [SECURITY.md](SECURITY.md) and open a private security advisory on GitHub instead of a
 public issue. Releases are built by GitHub Actions pinned to exact commits, and Dependabot keeps them current.
-- Pumpkin pins the llama.cpp release its UI is built from and downloads the same release of
-  llama-server, so the two always match. You can point it at your own build in Settings.
+- The first time a new llama.cpp build runs, Pumpkin checks it still answers the way the chat UI (built
+  from a pinned llama.cpp release) expects, and goes back to the build before if it doesn't. You can point it
+  at your own build in Settings.
 
 ## Roadmap
 

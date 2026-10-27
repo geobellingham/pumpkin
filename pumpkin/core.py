@@ -9,7 +9,7 @@ import sys
 import threading
 import time
 
-from . import (__version__, agent, coder, config, connectors, devices, docs, hardware, images, llama, mcp_local, memory, migrate, models,
+from . import (__version__, agent, coder, config, connectors, devices, docs, hardware, images, llama, llamaup, mcp_local, memory, migrate, models,
                recommend, remote, skills, updates, vision, workspace)
 
 # which setting holds the chosen model for each kind of image model
@@ -88,6 +88,8 @@ class Core:
         self.hw = None
         self.hw_at = 0
         threading.Thread(target=self._check_update, daemon=True).start()
+        self.server.on_ready = self._after_ready
+        threading.Thread(target=self._watch_llama, daemon=True).start()
         if self.settings["autostart_model"]:
             p = self.presets.get(self.settings["last_preset"])
             if p:
@@ -543,12 +545,179 @@ class Core:
             "has_models": any(m["kind"] == "model" for m in self.library.scan()),
             "migrated": self.migrated,
             "update": updates.cached_status(),
+            "llama_update": self._llama_cached(),
+            "memory_note": self.memory_note(proc, srv, met),
             "platform": "android" if hardware.ANDROID else sys.platform,
             "remote": self.settings["remote"],
             "activity": self.activity(met, srv),
             "metrics_more": {k: met.get(k) for k in ("requests_processing", "requests_deferred",
                                                       "n_decode_total", "prompt_tokens_total")},
         }
+
+    _disk = None                          # (when, bytes read, tokens written) at the last look
+    _disk_hits = 0
+
+    def memory_note(self, proc, srv, met):
+        """The Overview's warning when the model is slow because it does not fit: part of it was moved to swap, or it
+        keeps reading its weights from disk while it writes (its file does not fit in free RAM). Linux only."""
+        if srv["state"] != "ready" or not proc or proc.poll() is not None:
+            self._disk, self._disk_hits = None, 0
+            return None
+        d = hardware.proc_disk(proc.pid)
+        if not d:
+            return None
+        name = (srv.get("preset") or {}).get("name") or "The model"
+        if d["swap"] >= 0.5:
+            return {"kind": "swap", "gb": round(d["swap"], 1),
+                    "text": f"{d['swap']:.1f} GB of {name} was moved to swap, so it answers slowly. Close other programs, "
+                            f"or pick a smaller quant or a shorter context."}
+        now, decoded = time.time(), float(met.get("n_decode_total") or 0)
+        prev, self._disk = self._disk, (now, d["read"], decoded)
+        if prev and now - prev[0] >= 1:
+            rate = (d["read"] - prev[1]) / (now - prev[0])
+            writing = decoded > prev[2]           # reading a saved conversation back in writes nothing: not this
+            self._disk_hits = self._disk_hits + 1 if rate > 100 * 2 ** 20 and writing else 0
+            self._disk_rate = rate
+        if self._disk_hits >= 3:
+            return {"kind": "disk", "mbs": round(getattr(self, "_disk_rate", 0) / 2 ** 20),
+                    "text": f"{name} keeps reading itself from disk while it writes (about "
+                            f"{round(getattr(self, '_disk_rate', 0) / 2 ** 20)} MB/s), because it does not fit in free RAM. "
+                            f"Close other programs, or pick a smaller quant or a shorter context."}
+        return None
+
+    # ---- restarting the model after pairing
+    def model_idle(self):
+        """Nobody is using the model right now: no chat answer, task, Pumpkin Code step or picture in progress."""
+        if self.server.state != "ready" or self.runner.busy or self.image_lock.locked():
+            return False
+        if any(getattr(x, "state", "") in ("running", "waiting") for x in list(self.code.sessions.values())):
+            return False
+        if time.time() - (self.chat_at or 0) < 60:
+            return False                          # a chat answer just ended: a follow-up may be on its way
+        met = llama.metrics(self.server.port)
+        return not met.get("requests_processing")
+
+    def after_pairing(self, name):
+        """A device was paired: the model gets devices_ask only when it starts, so start it again by itself once it is
+        idle (up to 30 minutes later), instead of asking you to press Restart."""
+        def run():
+            end = time.time() + 1800
+            while time.time() < end:
+                pre = dict(self.server.preset or {})
+                if self.server.state != "ready" or not pre.get("tools"):
+                    return                        # nothing running, or tools off: Devices still offers the button
+                if self.devices_loaded():
+                    return                        # it has them already (started after the pairing)
+                if self.model_idle():
+                    self.server.start(pre)
+                    self.server.notice = f"Restarted {pre.get('name')} so it can ask {name} for help."
+                    self.server._changed()
+                    return
+                time.sleep(5)
+        threading.Thread(target=run, daemon=True).start()
+
+    # ---- faster replies (speculative decoding), measured
+    def measure_spec(self):
+        """Runs the speed test with faster replies on and off for the running preset, then puts it back as it was.
+        The result is kept with the preset and shown next to its switch."""
+        if any(j["kind"] in ("spec", "compare") and j["state"] == "running" for j in self.jobs.values()):
+            raise RuntimeError("A measurement is already running.")
+        pre = dict(self.server.preset or {})
+        if self.server.state != "ready" or not pre.get("id"):
+            raise RuntimeError("Start a preset first.")
+        if pre.get("mmproj"):
+            raise RuntimeError("Faster replies is always off for a model that reads pictures. Clear its Vision file to "
+                               "measure it.")
+        info = llama.probe(llama.find_server(self.settings)) or {}
+        if "--spec-default" not in (info.get("flags") or []):
+            raise RuntimeError("This llama-server cannot do faster replies (--spec-default). Update llama.cpp in "
+                               "Settings.")
+
+        def fn(progress, cancelled, job):
+            res = {}
+            first = pre.get("spec", True) is not False
+            try:
+                for i, on in enumerate((first, not first)):
+                    if cancelled():
+                        raise RuntimeError("Cancelled")
+                    job["phase"] = f"Testing with faster replies {'on' if on else 'off'}"
+                    progress(i, 2)
+                    if i:
+                        self.server.start(dict(pre, spec=on))
+                        if not self.server.wait_ready(timeout=900, cancelled=cancelled):
+                            raise RuntimeError(self.server.error or "The model did not start again.")
+                    res["on" if on else "off"] = agent.spec_bench(self.server.port)
+            finally:
+                job["phase"] = "Putting the preset back"
+                self.server.start(pre)
+                self.server.wait_ready(timeout=900)
+            verdict, text = agent.spec_verdict(res["on"], res["off"])
+            result = {"on": res["on"], "off": res["off"], "verdict": verdict, "text": text, "at": time.time()}
+            self.presets.update(pre["id"], {"spec_result": result})
+            progress(2, 2)
+            return result
+        return self.start_job("spec", fn, preset=pre.get("name"), phase="Starting")
+
+    # ---- comparing models side by side
+    def compare_models(self, preset_ids, prompt):
+        """Asks the same question to each preset in turn (one model in memory at a time) and keeps the answers with
+        their speed, as a report. The preset that was running is started again at the end."""
+        prompt = (prompt or "").strip()
+        if not prompt:
+            raise RuntimeError("Write the question to ask.")
+        chosen = [self.presets.get(i) for i in preset_ids or []]
+        chosen = [p for p in chosen if p]
+        if len(chosen) < 2:
+            raise RuntimeError("Pick at least two presets.")
+        if len(chosen) > 4:
+            raise RuntimeError("Four presets at most: each one has to load in turn.")
+        if self.server.state == "external":
+            raise RuntimeError("Another llama-server is running on Pumpkin's port. Stop it first.")
+        if any(j["kind"] in ("spec", "compare") and j["state"] == "running" for j in self.jobs.values()):
+            raise RuntimeError("A comparison is already running.")
+        was = dict(self.server.preset) if self.server.state in ("ready", "loading") and self.server.preset else None
+
+        def fn(progress, cancelled, job):
+            job["results"] = []
+            try:
+                for i, p in enumerate(chosen):
+                    if cancelled():
+                        raise RuntimeError("Cancelled")
+                    job["phase"] = f"Loading {p.get('name')}"
+                    progress(i, len(chosen))
+                    row = {"id": p["id"], "name": p.get("name")}
+                    t0 = time.time()
+                    try:
+                        if not (self.server.state == "ready" and (self.server.preset or {}).get("id") == p["id"]):
+                            self.server.start(p)
+                            if not self.server.wait_ready(timeout=900, cancelled=cancelled):
+                                raise RuntimeError(self.server.error or "It did not start.")
+                        row["load"] = round(time.time() - t0, 1)
+                        job["phase"] = f"Asking {p.get('name')}"
+                        row.update(agent.ask_once(self.server.port, prompt))
+                        row["vram"] = hardware.live().get("vram_used")
+                    except RuntimeError as e:
+                        row["error"] = str(e)
+                    job["results"].append(row)
+                progress(len(chosen), len(chosen))
+            finally:
+                if was:
+                    job["phase"] = f"Starting {was.get('name')} again"
+                    try:
+                        self.server.start(was)
+                    except RuntimeError:
+                        pass
+            lines = []
+            for r in job["results"]:
+                lines.append(f"### {r['name']}\n")
+                if r.get("error"):
+                    lines.append(f"Did not answer: {r['error']}\n")
+                    continue
+                lines.append(f"_{r['gen']} tokens/s writing, {r['prompt']} tokens/s reading, {r['tokens']} tokens, "
+                             f"{r['seconds']} s to answer, {r['load']} s to load_\n\n{r['answer']}\n")
+            path = self.reports.save("Model comparison", prompt, "\n".join(lines))
+            return {"results": job["results"], "report": os.path.basename(path)}
+        return self.start_job("compare", fn, phase="Starting", prompt=prompt)
 
     # ---- where Pumpkin keeps everything
     SUBDIRS = {"download_dir": "models", "reports_dir": "reports", "files_dir": "files", "image_dir": "image-models"}
@@ -1397,7 +1566,7 @@ class Core:
     # ---- background jobs (llama-server download)
     def start_job(self, kind, fn, **extra):
         job = {"id": config.new_id(), "kind": kind, "state": "running", "done": 0, "total": 0, "error": None,
-               "result": None, "cancel": False, **extra}
+               "result": None, "cancel": False, "started": time.time(), **extra}
         self.jobs[job["id"]] = job
 
         def progress(done, total):
@@ -1413,12 +1582,193 @@ class Core:
         threading.Thread(target=run, daemon=True).start()
         return job
 
-    def download_llama(self, backend):
+    def download_llama(self, backend=None, then_start=None, tag=None):
+        """Setup's download and the Update button: the newest llama.cpp for this computer (the release the chat UI
+        was built from when GitHub cannot be asked). The build in use stays on disk until the new one has started
+        once and answered like the chat expects. then_start: a preset to start once it is in (Update and try again)."""
+        if any(j["kind"] == "llama" and j["state"] == "running" for j in self.jobs.values()):
+            raise RuntimeError("llama.cpp is already being downloaded.")
+        cur = llama.find_server(self.settings)
+        backend = backend or llamaup.backend_of(cur, self.hardware()["backend"])
+
         def fn(progress, cancelled, job):
-            path = llama.download_release(backend, progress=progress, cancelled=cancelled)
-            self.settings.update({"llama_server": path})
+            # "Update and try again" is for a model llama.cpp may have learned only hours ago: take the newest build,
+            # whatever the setting says (a day-old release would still not know it)
+            want = tag or llamaup.target_tag(self.settings, backend, channel="newest" if then_start else None)
+            job["tag"] = want
+            path = self._install_llama(backend, want, progress, cancelled)
+            if then_start:
+                p = self.presets.get(then_start)
+                if p:
+                    self.server.start(p)
             return path
         return self.start_job("llama", fn)
+
+    def _install_llama(self, backend, tag, progress=None, cancelled=lambda: False):
+        cur = llama.find_server(self.settings)
+        have = next((d for d in llamaup.downloaded() if d["tag"] == tag and d["backend"] == backend), None)
+        if have and (llama.probe(have["path"]) or {}).get("ok"):
+            path = have["path"]                         # already on disk: just use it
+        else:
+            path = llama.download_release(backend, tag=tag, progress=progress, cancelled=cancelled)
+            info = llama.probe(path) or {}
+            if not info.get("ok"):
+                # built for a newer system than this one (a newer macOS or glibc, say): keep what works
+                err = (info.get("error") or "no output")[-200:]
+                if re.search(llamaup.SYSTEM_TOO_OLD, err):
+                    # later builds will need it too, and where it started is unknown: skip everything newer than the
+                    # one that runs here, so an automatic update does not fetch one build after another for nothing
+                    have_n = (llama.probe(cur) or {}).get("build") if cur else None
+                    llamaup.mark_too_new(backend, f"b{have_n + 1}" if have_n and have_n < llamaup.build_number(tag)
+                                         else tag, err)
+                else:
+                    # only this build for this backend: the CPU build of the same release may still run
+                    llamaup.mark_bad(f"{tag}-{backend}", f"does not run here: {err}")
+                shutil.rmtree(os.path.join(llama.LLAMA_DIR, f"{tag}-{backend}"), ignore_errors=True)
+                pinned = llama.pinned_tag()
+                if cur or not pinned or pinned == tag:
+                    why = llamaup.system_hint(info.get("error")) or (info.get("error") or "it gave no answer")[-200:]
+                    raise RuntimeError(f"llama.cpp {tag} does not run on this computer: {why}. "
+                                       + ("Pumpkin kept the one you had." if cur else ""))
+                return self._install_llama(backend, pinned, progress, cancelled)
+        changes = {"llama_server": path}
+        if cur and os.path.realpath(cur) != os.path.realpath(path):
+            changes["llama_previous"] = cur
+        self.settings.update(changes)
+        return path
+
+    def llama_back(self):
+        """Goes back to the llama-server used before the last update."""
+        prev = self.settings["llama_previous"]
+        if not prev or not os.path.isfile(prev):
+            raise RuntimeError("The llama.cpp from before is not on this computer any more.")
+        cur = llama.find_server(self.settings)
+        info = llama.probe(cur) or {}
+        if cur and info.get("version") and llamaup.owned(cur):
+            llamaup.mark_bad(info["version"], "you went back from it")
+        self.settings.update({"llama_server": prev, "llama_previous": cur or ""})
+        return self.llama_status()
+
+    def llama_status(self, fresh=False):
+        """What the Model server card shows about versions: the one in use, the newest out, and whether it is yours."""
+        binary = llama.find_server(self.settings)
+        info = llama.probe(binary) or {}
+        own = bool(binary) and not llamaup.owned(binary)
+        backend = llamaup.backend_of(binary, self.hardware()["backend"])
+        latest = None
+        if not hardware.ANDROID:
+            # only a fresh look asks GitHub; the card asks for one when the last look is a few hours old
+            latest = llamaup.check(self.settings, backend, force=True, current=info.get("version")) if fresh else \
+                llamaup.cached(self.settings, backend, info.get("version"))["latest"]
+        cur_n = info.get("build") or 0
+        mine = llamaup.downloaded()
+        prev = self.settings["llama_previous"]
+        prev_info = llama.probe(prev) if prev and os.path.isfile(prev) else None
+        return {
+            "mode": self.settings["llama_updates"], "channel": self.settings["llama_channel"],
+            "current": info.get("version"), "latest": latest, "pinned": llama.pinned_tag(),
+            "available": bool(latest) and llamaup.build_number(latest) > cur_n and bool(cur_n),
+            "own": own, "backend": backend,
+            # your own build is older than one Pumpkin has downloaded
+            "own_older": (mine[0]["tag"] if own and mine and llamaup.build_number(mine[0]["tag"]) > cur_n else None),
+            "own_older_path": (mine[0]["path"] if own and mine else None),
+            "previous": {"path": prev, "version": (prev_info or {}).get("version")} if prev_info else None,
+            "skipped": llamaup.bad_tags(), "checked": llamaup.checked_at(),
+            "job": next(({k: j.get(k) for k in ("id", "state", "done", "total", "error", "tag")}
+                         for j in sorted(self.jobs.values(), key=lambda j: -j.get("started", 0))
+                         if j["kind"] == "llama" and (j["state"] == "running" or time.time() - j.get("ended", 0) < 30)),
+                        None),
+        }
+
+    def _llama_cached(self):
+        """For the Overview: a newer llama.cpp is out and the one in use is getting old (only when you asked to be told)."""
+        if hardware.ANDROID or self.settings["llama_updates"] != "notify":
+            return None
+        cur = llama.find_server(self.settings)
+        if not cur or not llamaup.owned(cur):
+            return None
+        info = llama.probe(cur) or {}
+        backend = llamaup.backend_of(cur, (self.hw or {}).get("backend") or "cpu")
+        c = llamaup.cached(self.settings, backend, info.get("version"))
+        return {**c, "current": info.get("version")} if c["available"] and c["stale"] else None
+
+    def _watch_llama(self):
+        """Keep llama.cpp up to date (Settings): look for a newer one every few hours, and with "update by itself"
+        install it while no model is running, at most once a day."""
+        time.sleep(90)
+        while True:
+            try:
+                self._llama_tick()
+            except Exception:  # noqa: BLE001 - GitHub or the disk may fail; try again next round
+                pass
+            time.sleep(1800)
+
+    def _llama_tick(self):
+        if hardware.ANDROID or self.settings["llama_updates"] == "off":
+            return
+        cur = llama.find_server(self.settings)
+        if not cur or not llamaup.owned(cur):
+            return                                      # nothing installed yet, or your own build: left alone
+        backend = llamaup.backend_of(cur, self.hardware()["backend"])
+        info = llama.probe(cur) or {}
+        latest = llamaup.check(self.settings, backend, current=info.get("version"))
+        if not latest or llamaup.build_number(latest) <= (info.get("build") or 0):
+            return
+        if self.settings["llama_updates"] != "auto":
+            return
+        st = llamaup._load()
+        if time.time() - st.get("auto_at", 0) < 20 * 3600:
+            return
+        if self.server.state not in ("off", "error") or self.vision.busy or \
+                any(j["state"] == "running" for j in self.jobs.values()):
+            return                                      # a model is in use: next round
+        st["auto_at"] = time.time()
+        llamaup._save(st)
+        self._install_llama(backend, latest)
+        agent.notify(self.settings, f"llama.cpp updated to {latest}",
+                     "Pumpkin uses it the next time a model starts.")
+
+    def _after_ready(self, preset):
+        """A model just started. If it runs on a llama-server Pumpkin has not seen before, ask it what the chat asks.
+        A build that breaks the chat goes back to the one before (or the one the chat was built from)."""
+        binary = llama.find_server(self.settings)
+        info = llama.probe(binary) or {}
+        tag = info.get("version")
+        if not tag or hardware.ANDROID or llamaup.checked_ok(tag):
+            return
+        if tag == llama.pinned_tag():
+            llamaup.mark_ok(tag)                        # the chat UI was built from this one
+            return
+        serious, minor = llamaup.check_api(self.server.port, info.get("flags") or [])
+        if not serious:
+            llamaup.mark_ok(tag)
+            if llamaup.owned(binary):
+                llamaup.prune([binary, self.settings["llama_previous"]])
+            if minor:
+                self.server.notice = (f"llama.cpp {tag} works, but {minor[0]}. If something in the chat looks off, go "
+                                      f"back to the one before in Settings.")
+                self.server._changed()
+            return
+        if not llamaup.owned(binary):
+            self.server.notice = (f"Your llama-server {tag} answers in a way Pumpkin's chat does not understand yet "
+                                  f"({serious[0]}). Pumpkin's own download is the safer choice (Settings).")
+            self.server._changed()
+            return
+        llamaup.mark_bad(tag, serious[0])
+        prev = self.settings["llama_previous"]
+        back = prev if prev and os.path.isfile(prev) and (llama.probe(prev) or {}).get("ok") else None
+        if back:
+            self.settings.update({"llama_server": back, "llama_previous": ""})
+        else:
+            pinned = llama.pinned_tag()
+            if not pinned:
+                return
+            self._install_llama(llamaup.backend_of(binary, self.hardware()["backend"]), pinned)
+        went = (llama.probe(llama.find_server(self.settings)) or {}).get("version") or "the one before"
+        self.server.start(preset)
+        self.server.notice = (f"llama.cpp {tag} answers the chat in a way Pumpkin does not understand yet "
+                              f"({serious[0]}), so Pumpkin went back to {went}. It skips {tag} from now on.")
+        self.server._changed()
 
     def run_bench(self):
         if self.bench_state["running"]:

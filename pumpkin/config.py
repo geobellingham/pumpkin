@@ -27,6 +27,9 @@ DEFAULT_SETTINGS = {
     "port": 8090,                      # Pumpkin (UI + API)
     "llama_port": 8080,                # llama-server, only ever on 127.0.0.1
     "llama_server": "",                # explicit path; empty = find or use the downloaded one
+    "llama_previous": "",              # the llama-server used before the last update, for going back
+    "llama_updates": "notify",         # keep llama.cpp up to date: off | notify (say when a newer one is out) | auto
+    "llama_channel": "release",        # release: a build at least a day old | newest: the newest build, for brand-new models
     "models_dirs": [os.path.join(USER_DIR, "models")],
     "download_dir": os.path.join(USER_DIR, "models"),
     "reports_dir": os.path.join(USER_DIR, "reports"),

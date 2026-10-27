@@ -544,9 +544,26 @@ class Web:
                 binary = llama.find_server(core.settings)
                 return {"path": binary, "info": llama.probe(binary), "candidates": llama.candidates(core.settings),
                         "backend": core.hardware()["backend"], "platform": "android" if hardware.ANDROID else sys.platform,
-                        "log": "".join(core.server.log_tail(80))}
-            if ident == "download" and method == "POST":
-                return core.download_llama(body.get("backend") or core.hardware()["backend"])
+                        "log": "".join(core.server.log_tail(80)),
+                        "update": core.llama_status(fresh=arg("fresh") == "1")}
+            if ident in ("download", "update") and method == "POST":
+                try:
+                    return core.download_llama(body.get("backend") or None, then_start=body.get("then_start") or None)
+                except RuntimeError as e:
+                    raise ApiError(str(e), 409)
+            if ident == "back" and method == "POST":
+                try:
+                    return core.llama_back()
+                except RuntimeError as e:
+                    raise ApiError(str(e), 409)
+            if ident == "use" and method == "POST":
+                # switch from your own build to the one Pumpkin downloaded (only paths Pumpkin knows of)
+                path = str(body.get("path") or "")
+                if path not in llama.candidates(core.settings):
+                    raise ApiError("That llama-server is not one Pumpkin found.", 400)
+                cur = llama.find_server(core.settings)
+                core.settings.update({"llama_server": path, "llama_previous": cur or ""})
+                return core.llama_status()
             if ident == "start" and method == "POST":
                 p = core.presets.get(body.get("preset"))
                 if not p:
@@ -559,6 +576,11 @@ class Web:
             if ident == "log":
                 return {"log": "".join(core.server.log_tail(int(arg("n", "200"))))}
         if head == "jobs":
+            if not ident and method == "GET":
+                # the newest job of a kind (a page opened again while its comparison or measurement runs)
+                kind = arg("kind", "")
+                mine = sorted((j for j in core.jobs.values() if j["kind"] == kind), key=lambda j: -j.get("started", 0))
+                return {"job": {k: v for k, v in mine[0].items()} if mine else None}
             job = core.jobs.get(ident or "")
             if not job:
                 raise ApiError("Unknown job.", 404)
@@ -782,6 +804,16 @@ class Web:
             if method == "DELETE" or (ident == "delete" and method == "POST"):
                 core.reports.delete(body.get("name") or arg("name"), folder)
                 return {"ok": True}
+        if head == "compare" and method == "POST":
+            try:
+                return core.compare_models(body.get("presets") or [], body.get("prompt") or "")
+            except RuntimeError as e:
+                raise ApiError(str(e), 409)
+        if head == "bench" and ident == "spec" and method == "POST":
+            try:
+                return core.measure_spec()
+            except RuntimeError as e:
+                raise ApiError(str(e), 409)
         if head == "bench":
             if method == "POST" and ident == "speed":
                 core.run_bench()
@@ -864,6 +896,7 @@ class Web:
                 if method == "POST":
                     added = devices.add(body.get("code", ""))
                     threading.Thread(target=core.refresh_peers, daemon=True).start()   # its models show up in the chat
+                    core.after_pairing((added or {}).get("name") or "the new device")
                     return added
             if ident and len(parts) > 2 and parts[2] == "test" and method == "POST":
                 d = devices.find(ident)

@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { CircleAlert, ListChecks, LoaderCircle, MessageSquareText, Play } from '@lucide/svelte';
+	import { CircleAlert, ListChecks, LoaderCircle, MessageSquareText, Play, RefreshCw } from '@lucide/svelte';
 	import { Button } from '$lib/components/ui/button';
 	import Activity from '../components/Activity.svelte';
 	import Card from '../components/Card.svelte';
@@ -63,6 +63,32 @@
 		await pumpkin.run(() => api('settings', { body: { checklist_hidden: v }, method: 'PUT' }));
 	}
 
+	// "too old for this model": download the newest llama.cpp and start the same preset again
+	let updating = $state(false);
+
+	async function updateAndRetry() {
+		const preset = s?.server.preset?.id;
+
+		updating = true;
+
+		const job = await pumpkin.run(() => api<{ id: string }>('llama/update', { body: { then_start: preset } }));
+
+		while (job) {
+			await new Promise((r) => setTimeout(r, 1000));
+
+			const j = await api<{ error: string | null; state: string }>(`jobs/${job.id}`).catch(() => null);
+
+			if (!j || j.state !== 'running') {
+				if (j?.state === 'error') pumpkin.say(j.error ?? 'The update did not work', 'error');
+
+				break;
+			}
+		}
+
+		updating = false;
+		void pumpkin.refresh();
+	}
+
 	const hist = $derived(pumpkin.history);
 	const live = $derived(s?.live);
 	const gpuMemLabel = $derived(s?.platform === 'android' ? 'For models' : live?.unified ? 'GPU memory' : 'Video memory');
@@ -102,6 +128,12 @@
 	{#if s?.update?.available}
 		<Card description="Open Settings to see what changed and update." title="Pumpkin {s.update.latest} is out">
 			<Button class="rounded-full" href="#/pumpkin/settings" size="sm">See the update</Button>
+		</Card>
+	{/if}
+
+	{#if s?.llama_update?.available}
+		<Card description="New models often need a newer llama.cpp. Yours is {s.llama_update.current}." title="llama.cpp {s.llama_update.latest} is out">
+			<Button class="rounded-full" href="#/pumpkin/settings" size="sm">Update in Settings</Button>
 		</Card>
 	{/if}
 
@@ -161,10 +193,26 @@
 			</dl>
 
 			{#if s?.server.state === 'error' && s.server.error}
-				<p class="mt-4 flex flex-wrap gap-2 rounded-xl bg-destructive/10 p-3 text-sm text-destructive">
+				<div class="mt-4 rounded-xl bg-destructive/10 p-3 text-sm text-destructive">
+					<p class="flex flex-wrap gap-2">
+						<CircleAlert class="mt-0.5 h-4 w-4 shrink-0" />
+						<span class="min-w-0 flex-1 break-words">{s.server.error}</span>
+						<a class="shrink-0 underline" href="#/pumpkin/settings">See log</a>
+					</p>
+					{#if s.server.fix === 'update_llama'}
+						<div class="mt-3 flex flex-wrap items-center gap-2">
+							<Button class="rounded-full" disabled={updating} onclick={updateAndRetry} size="sm">
+								{#if updating}<LoaderCircle class="h-4 w-4 animate-spin" />{:else}<RefreshCw class="h-4 w-4" />{/if}
+								Update llama.cpp and try again
+							</Button>
+							{#if updating}<span class="text-xs text-muted-foreground">Downloading the newest llama.cpp…</span>{/if}
+						</div>
+					{/if}
+				</div>
+			{:else if s?.memory_note}
+				<p class="mt-4 flex gap-2 rounded-xl bg-amber-500/10 p-3 text-sm text-amber-700 dark:text-amber-400">
 					<CircleAlert class="mt-0.5 h-4 w-4 shrink-0" />
-					<span class="min-w-0 flex-1 break-all">{s.server.error}</span>
-					<a class="shrink-0 underline" href="#/pumpkin/settings">See log</a>
+					<span class="min-w-0 flex-1">{s.memory_note.text}</span>
 				</p>
 			{:else if s?.server.notice && (s.server.state === 'ready' || s.server.state === 'loading')}
 				<p class="mt-4 rounded-xl bg-background/60 p-3 text-sm text-muted-foreground">{s.server.notice}</p>
