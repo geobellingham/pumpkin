@@ -74,6 +74,51 @@ class TestEngine(unittest.TestCase):
         self.assertEqual(images.pick_release(rels, "vulkan", "win32", "x64"), (None, None))
 
 
+class TestMacEngineChoice(unittest.TestCase):
+    """stable-diffusion.cpp's Mac builds follow the newest macOS, whatever their file names say."""
+
+    def rels(self):
+        return [{"tag_name": f"master-{n}", "assets": [{"name": f"sd-master-{n}-bin-Darwin-macOS-15.7-arm64.zip"}]}
+                for n in (3, 2, 1)]
+
+    def run_download(self, too_new):
+        from unittest import mock
+        installed = []
+
+        def install(backend, rel, asset, progress, cancelled):
+            installed.append(rel["tag_name"])
+            return os.path.join(images.SD_DIR, f"{rel['tag_name']}-metal", "sd-server")
+
+        with mock.patch.object(images, "_github", lambda path: self.rels()), \
+                mock.patch.object(images, "_install_engine", install), \
+                mock.patch.object(images, "_too_new_for_this_mac", lambda path: any(t in path for t in too_new)), \
+                mock.patch.object(images.shutil, "rmtree", lambda *a, **k: None), \
+                mock.patch.object(images, "mac_version", lambda: 15), \
+                mock.patch.object(images.sys, "platform", "darwin"):
+            try:
+                return images.download_engine("metal"), installed
+            except RuntimeError as e:
+                return str(e), installed
+
+    def test_builds_come_newest_first(self):
+        found = images.release_builds(self.rels(), "metal", "darwin", "arm64")
+        self.assertEqual([r["tag_name"] for r, _ in found], ["master-3", "master-2", "master-1"])
+
+    def test_a_build_that_is_too_new_for_this_mac_is_replaced_by_an_older_one(self):
+        path, installed = self.run_download(too_new=["master-3", "master-2"])
+        self.assertEqual(installed, ["master-3", "master-2", "master-1"])
+        self.assertIn("master-1", path)
+
+    def test_the_newest_build_is_kept_when_it_runs(self):
+        path, installed = self.run_download(too_new=[])
+        self.assertEqual(installed, ["master-3"])
+
+    def test_when_none_runs_the_mac_is_told_to_update(self):
+        msg, installed = self.run_download(too_new=["master"])
+        self.assertIn("newer macOS", msg)
+        self.assertEqual(len(installed), 3)
+
+
 class TestBundles(unittest.TestCase):
     Z = next(b for b in images.catalog() if b["id"] == "z-image-turbo")
     TREES = {

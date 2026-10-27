@@ -91,16 +91,24 @@ def _github(path):
         return json.loads(r.read().decode())
 
 
-def pick_release(releases, backend, system=None, arch=None):
-    """The newest release that has a build for this backend: (release, asset), or (None, None)."""
+def release_builds(releases, backend, system=None, arch=None):
+    """Every release that has a build for this backend, newest first: [(release, asset)]."""
     pat = asset_pattern(backend, system, arch)
+    out = []
     for rel in releases:
         if rel.get("draft"):
             continue
         for a in rel.get("assets") or []:
             if pat.match(a.get("name") or ""):
-                return rel, a
-    return None, None
+                out.append((rel, a))
+                break
+    return out
+
+
+def pick_release(releases, backend, system=None, arch=None):
+    """The newest release that has a build for this backend: (release, asset), or (None, None)."""
+    found = release_builds(releases, backend, system, arch)
+    return found[0] if found else (None, None)
 
 
 def mac_version():
@@ -150,23 +158,52 @@ def engine_info(settings):
     return info
 
 
+def _too_new_for_this_mac(path):
+    """A Mac build can be made for a newer macOS than its file name says (it then stops at start with "built for
+    macOS 26.0 which is newer than running OS"). Starts it once to find out."""
+    try:
+        r = subprocess.run([path, "--help"], capture_output=True, text=True, timeout=60)
+    except (OSError, subprocess.SubprocessError):
+        return False
+    out = (r.stdout or "") + (r.stderr or "")
+    return r.returncode != 0 and ("newer than running OS" in out or "Symbol not found" in out)
+
+
 def download_engine(backend, progress=None, cancelled=lambda: False):
     """Downloads sd-server for this backend and returns its path. Falls back to the CPU build when a release has
-    none for the GPU."""
+    none for the GPU. On a Mac the newest release that runs on this macOS is used: its Mac builds follow the newest
+    macOS, so an older Mac goes back to an older release."""
     try:
-        releases = _github("/releases?per_page=15")
+        releases = _github("/releases?per_page=30")
     except (urllib.error.URLError, OSError, ValueError, HTTPException) as e:
         raise RuntimeError(f"Could not reach GitHub to find stable-diffusion.cpp ({e}). Try again in a minute.")
-    rel, asset = pick_release(releases, backend)
-    if not rel and backend != "cpu":
+    builds = release_builds(releases, backend)
+    if not builds and backend != "cpu":
         backend = "cpu"
-        rel, asset = pick_release(releases, backend)
-    if not rel:
+        builds = release_builds(releases, backend)
+    if not builds:
         raise RuntimeError("No stable-diffusion.cpp build for this computer was found in its recent releases.")
-    need = mac_needs(asset["name"]) if sys.platform == "darwin" else 0
-    if need and 0 < mac_version() < need:
-        raise RuntimeError(f"stable-diffusion.cpp's Mac build needs macOS {need} or newer, and this Mac has macOS "
-                           f"{mac_version()}. Update macOS to make pictures here, or let a paired PC draw.")
+    mac = sys.platform == "darwin"
+    newest_need = 0
+    for rel, asset in builds[:8]:
+        need = mac_needs(asset["name"]) if mac else 0
+        newest_need = newest_need or need
+        if need and 0 < mac_version() < need:
+            continue                                            # the file name already says it is too new
+        path = _install_engine(backend, rel, asset, progress, cancelled)
+        if mac and _too_new_for_this_mac(path):
+            shutil.rmtree(os.path.join(SD_DIR, os.path.relpath(path, SD_DIR).split(os.sep)[0]), ignore_errors=True)
+            try:
+                os.remove(os.path.join(SD_DIR, "installed.json"))
+            except OSError:
+                pass
+            continue                                            # built for a newer macOS than its name says
+        return path
+    raise RuntimeError(f"stable-diffusion.cpp's recent Mac builds need a newer macOS than this Mac has "
+                       f"(macOS {mac_version()}). Update macOS to make pictures here, or let a paired PC draw.")
+
+
+def _install_engine(backend, rel, asset, progress, cancelled):
     tag = rel.get("tag_name") or "latest"
     os.makedirs(SD_DIR, exist_ok=True)
     target = os.path.join(SD_DIR, f"{config.slug(tag)}-{backend}")
@@ -204,6 +241,8 @@ def download_engine(backend, progress=None, cancelled=lambda: False):
     with open(os.path.join(SD_DIR, "installed.json"), "w", encoding="utf-8") as f:
         json.dump({"path": path, "backend": backend, "tag": tag}, f)
     return path
+
+
 
 
 # ---------------------------------------------------------------- image models

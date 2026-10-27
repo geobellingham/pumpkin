@@ -84,7 +84,7 @@ try:
     job = call("POST", "/pumpkin/api/images/engine", {"backend": backend} if backend else {})
     job = wait(lambda: (j := call("GET", f"/pumpkin/api/jobs/{job['job']}"))["state"] != "running" and j,
                "the image engine", 900)
-    if job["state"] != "done" and sys.platform == "darwin" and "needs macOS" in (job["error"] or ""):
+    if job["state"] != "done" and sys.platform == "darwin" and ("needs macOS" in (job["error"] or "") or "newer macOS" in (job["error"] or "")):
         # stable-diffusion.cpp builds its Mac release on the newest macOS; an older Mac gets told so up front
         print("as expected on this older Mac:", job["error"])
         print("\nAll good (this Mac is too old for the image engine).")
