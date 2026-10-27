@@ -16,3 +16,8 @@ updates:
     groups:
       gradle:
         patterns: ["*"]
+    # a new major version of the Android Gradle plugin, Kotlin or Chaquopy is a migration, not an update: it is done
+    # by hand when wanted
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
