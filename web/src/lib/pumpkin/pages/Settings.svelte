@@ -31,6 +31,7 @@
 	let upd = $state<UpdateInfo | null>(null);
 	let updating = $state(false);
 	let stuck = $state<string | null>(null);
+	let progress = $state('');
 	let svc = $state<{ active: boolean; available: boolean; installed: boolean; linger: boolean; linger_command: string } | null>(null);
 
 	onMount(async () => {
@@ -61,19 +62,35 @@
 			return;
 		}
 
-		// the server goes away and comes back as the new version; give up after a few minutes and say why
-		const was = pumpkin.state?.version;
+		// the server goes away and comes back as the new version. The page reloads as soon as it answers again after
+		// having been away, or answers with another version; after a few minutes it gives up and says why
+		const was = upd?.current ?? pumpkin.state?.version;
 		const started = Date.now();
+		let down = false;
+		progress = 'Starting the update';
 		const timer = setInterval(async () => {
 			const r = await api<{ version: string }>('state').catch(() => null);
 
-			if (r && r.version !== was) {
+			if (!r) down = true;
+
+			if (r && (down || (was && r.version !== was))) {
 				clearInterval(timer);
 				location.reload();
-			} else if (Date.now() - started > 4 * 60_000) {
+
+				return;
+			}
+
+			// what the installer says, so a slow or stuck update shows where it is
+			const l = await api<{ log: string }>('update/log').catch(() => null);
+			const last = (l?.log ?? '').split('\n').map((x) => x.trim()).filter(Boolean).pop();
+
+			if (last) progress = last;
+
+			if (Date.now() - started > 4 * 60_000) {
 				clearInterval(timer);
 				updating = false;
-				stuck = (await api<{ log: string }>('update/log').catch(() => null))?.log ?? '';
+				progress = '';
+				stuck = l?.log ?? (await api<{ log: string }>('update/log').catch(() => null))?.log ?? '';
 			}
 		}, 2500);
 	}
@@ -191,6 +208,9 @@
 					{/if}
 					<Button class="rounded-full" disabled={updating} onclick={checkNow} size="sm" variant="secondary">Check now</Button>
 				</div>
+				{#if updating && progress}
+					<p class="text-xs text-muted-foreground">{progress}</p>
+				{/if}
 				{#if stuck !== null}
 					<div class="rounded-xl border border-destructive/40 p-3 text-xs">
 						<p class="mb-2 text-sm">The update did not finish. Run this in a terminal instead:</p>
