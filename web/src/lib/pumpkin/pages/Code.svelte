@@ -24,6 +24,7 @@
 	import Segmented from '../components/Segmented.svelte';
 	import Select from '../components/Select.svelte';
 	import { api, pumpkin } from '../store.svelte';
+	import WorkspacesCard from './WorkspacesCard.svelte';
 	import { onDestroy, onMount, tick } from 'svelte';
 
 	interface Summary {
@@ -35,6 +36,7 @@
 		root: string;
 		state: string;
 		title: string;
+		workspace?: { id: string; kind: string; name: string } | null;
 		updated: number;
 	}
 
@@ -49,9 +51,12 @@
 		danger?: boolean;
 		diff?: string;
 		id: string;
-		kind: 'command' | 'edit';
+		args?: Record<string, unknown>;
+		connector?: string;
+		kind: 'command' | 'edit' | 'tool';
 		new_file?: boolean;
 		path?: string;
+		tool?: string;
 	}
 
 	interface View extends Summary {
@@ -195,6 +200,13 @@
 		}
 	}
 
+	async function startWorkspace(id: string) {
+		starting = true;
+		const v = await pumpkin.run(() => api<View>('code', { body: { workspace: id } }));
+		starting = false;
+		if (v) await openSession(v.id);
+	}
+
 	async function send() {
 		if (!view || !message.trim()) return;
 		const text = message.trim();
@@ -264,7 +276,7 @@
 
 	function argLine(e: Ev) {
 		const a = (e.args ?? {}) as Record<string, unknown>;
-		return String(a.path ?? a.pattern ?? a.command ?? a.query ?? a.url ?? '');
+		return String(a.path ?? a.pattern ?? a.command ?? a.query ?? a.url ?? a.task ?? '');
 	}
 
 	function diffLines(d: string) {
@@ -276,6 +288,7 @@
 
 	const VERB: Record<string, string> = {
 		bash: 'Ran',
+		delegate: 'Helper',
 		edit: 'Changed',
 		glob: 'Found',
 		grep: 'Searched',
@@ -339,6 +352,7 @@
 
 {#if !view}
 	<div class="flex flex-col gap-4">
+		{#if !info?.android}<WorkspacesCard home={info?.home ?? ''} onstart={startWorkspace} />{/if}
 		<Card
 			description="Give it a project folder and a job, like “fix the failing test” or “add dark mode to the settings page”. It reads the code, changes files, runs commands and tests, and keeps going until it is done. Every change can be undone."
 			title="Pumpkin Code"
@@ -448,7 +462,7 @@
 				<button aria-label="All sessions" class="shrink-0 rounded-full p-1.5 hover:bg-muted" onclick={closeSession} type="button"><ArrowLeft class="h-4 w-4" /></button>
 				<div class="min-w-0 flex-1">
 					<p class="truncate text-sm font-medium">{view.title || 'New session'}</p>
-					<p class="truncate text-xs text-muted-foreground">{short(view.root)}</p>
+					<p class="truncate text-xs text-muted-foreground">{#if view.workspace}<span class="font-medium">{view.workspace.name}</span>, {/if}{short(view.root)}</p>
 				</div>
 
 				{#if view.ctx}
@@ -523,6 +537,10 @@
 								{/if}
 							</div>
 						</details>
+					{:else if e.kind === 'helper' && e.state === 'start'}
+						<p class="text-xs text-muted-foreground">A helper is looking into it: {e.task}</p>
+					{:else if e.kind === 'helper' && e.state === 'step'}
+						<p class="truncate pl-4 text-xs text-muted-foreground">Helper: {VERB[String(e.tool)] ?? e.tool} {argLine({ args: e.args } as Ev)}</p>
 					{:else if e.kind === 'todo'}
 						<ul class="rounded-xl border border-border/60 px-3 py-2 text-sm">
 							{#each (e.items as { done: boolean; text: string }[]) ?? [] as it, i (i)}
@@ -558,6 +576,9 @@
 						{#if view.pending.kind === 'edit'}
 							<p class="mb-2 text-sm font-medium">{view.pending.new_file ? 'Create' : 'Change'} <code>{view.pending.path}</code>?</p>
 							{@render diffView(view.pending.diff ?? '')}
+						{:else if view.pending.kind === 'tool'}
+							<p class="mb-2 text-sm font-medium">Use <code>{view.pending.tool}</code> from {view.pending.connector}?</p>
+							<pre class="overflow-auto rounded-lg bg-muted/40 p-3 text-xs whitespace-pre-wrap">{JSON.stringify(view.pending.args ?? {}, null, 2)}</pre>
 						{:else}
 							<p class="mb-2 text-sm font-medium">Run this command?{#if view.pending.danger}<span class="ml-1 text-destructive">It is hard to take back.</span>{/if}</p>
 							<pre class="overflow-auto rounded-lg bg-muted/40 p-3 text-xs whitespace-pre-wrap">{view.pending.command}</pre>
@@ -565,7 +586,7 @@
 						<div class="mt-3 flex flex-wrap items-center gap-2">
 							<Button class="rounded-full" onclick={() => answer('yes')} size="sm">Yes</Button>
 							<Button class="rounded-full" onclick={() => answer('always')} size="sm" variant="secondary">
-								{view.pending.kind === 'edit' ? 'Yes to all file changes' : 'Always for this command'}
+								{view.pending.kind === 'edit' ? 'Yes to all file changes' : view.pending.kind === 'tool' ? 'Always for this tool' : 'Always for this command'}
 							</Button>
 							<Input bind:value={note} class="h-8 min-w-40 flex-1 text-xs" placeholder="Or say what to do instead" />
 							<Button class="rounded-full" onclick={() => answer('no')} size="sm" variant="ghost">No</Button>

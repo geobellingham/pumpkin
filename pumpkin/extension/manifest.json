@@ -1,0 +1,14 @@
+{
+  "manifest_version": 3,
+  "name": "Pumpkin",
+  "description": "Lets the AI model running on your own computer in Pumpkin work in your browser: read pages, click and type, with your approval.",
+  "version": "0.10.0",
+  "minimum_chrome_version": "116",
+  "permissions": ["sidePanel", "tabs", "scripting", "storage"],
+  "host_permissions": ["http://127.0.0.1/*", "http://localhost/*"],
+  "optional_host_permissions": ["http://*/*", "https://*/*"],
+  "background": { "service_worker": "background.js" },
+  "side_panel": { "default_path": "sidepanel.html" },
+  "action": { "default_title": "Pumpkin" },
+  "icons": { "16": "icons/icon16.png", "32": "icons/icon32.png", "48": "icons/icon48.png", "128": "icons/icon128.png" }
+}

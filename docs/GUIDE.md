@@ -21,6 +21,8 @@ Reports, Voice, Devices, Phone, Doctor and Settings.
 - [Editing pictures](#editing-pictures)
 - [Short videos](#short-videos)
 - [Pumpkin Code](#pumpkin-code)
+- [Workspaces](#workspaces)
+- [Working in your browser](#working-in-your-browser)
 - [Skills](#skills)
 - [Connectors](#connectors)
 - [Memory](#memory)
@@ -280,6 +282,61 @@ Tips:
   (not in the Docker sandbox) and can reach anything you can, which is why it asks first by default. In
   **Never ask** mode only the obviously risky commands still ask, so use it only with a model and a project you
   trust.
+
+## Workspaces
+
+A workspace is a folder Pumpkin Code keeps coming back to, with its own settings. It is not only for code:
+pick *Documents and writing*, *Spreadsheets and data* or *Any files* and Pumpkin Code works the same way on
+reports, notes and tables.
+
+**In the app:** Code page > *Workspaces* (above the folder picker). **New workspace**, then fill in:
+
+- **Folder** and **kind**. The kind changes how the model is told to work (code: tests and small diffs;
+  writing: keep your voice and structure; data: check numbers by running them).
+- **Instructions**: always applied, like an `AGENTS.md` that lives in Pumpkin instead of in the folder.
+- **Memory**: what the model learned about this work. It adds to it with the `remember` tool, and you can edit it.
+- **Connectors**: the apps from the Connectors page this workspace may use (their tools show up in the session
+  and ask first, unless the tool only reads).
+- **Skills**: all of them, or only some. **Model** and **approval mode**: the defaults for new sessions here.
+
+It can read `.docx`, `.xlsx` and `.pptx` files (text, sheets and slides). It does not write them.
+In a terminal: `pumpkin code -w NAME`.
+
+**Helper agents.** When a job needs a lot of reading (a big folder, many pages), the model can send a helper.
+The helper starts with an empty context, can only read and search, and returns a short summary. You see
+*Helper* lines in the session. A helper uses the same model, one request at a time, so it saves context
+rather than time.
+
+## Working in your browser
+
+The Pumpkin extension (Chrome, Edge and other Chromium browsers) lets the model on your computer use your own
+browser: open pages, read them, click, type, scroll. It uses your logins and your tabs. Nothing leaves your
+computer except what the pages themselves send.
+
+**Set it up:** Devices > *Browser extension*. Download the zip, unzip it, open `chrome://extensions`, turn on
+Developer mode, **Load unpacked**, pick the folder. Click the Pumpkin icon, make a pairing code on the Devices
+page (it works once, for ten minutes) and type it in the panel.
+
+**Use it:** keep the panel open (it is how Pumpkin reaches the browser) and tell it what to do: "find the
+cheapest flight on this page", "fill in this form with the details from my notes". A new chat starts in the tab
+you are looking at; the tabs it opens are its tabs too. It cannot see your other tabs.
+
+**What keeps it safe:**
+
+- The first time it wants a site you are asked: *Allow this chat*, *Always allow* or *No*. Chrome asks you
+  as well, once per site. Banks, mail, password managers and local addresses are always asked about and never
+  kept. Manage kept sites on the Devices page.
+- *Approval* in the panel's settings: **Ask before each action** (you see what it is about to click or type),
+  **Ask once for each site**, or **Never ask**.
+- It never types into password fields. If a page needs a login, it asks you to log in.
+- Text on a page is data, never orders. If a page contains something that reads like instructions to the AI
+  ("ignore your previous instructions..."), Pumpkin warns the model and asks you before the next action, even
+  in *Never ask* mode.
+- The paired browser's key only opens the browser endpoints, not your files, chats or settings. Remove a
+  browser on the Devices page and it stops working at once.
+
+Tips: a model that is good at tool calls works best, and pages with lots of text need a larger context.
+Pages inside frames, canvas apps (maps, design tools) and the browser's own pages (`chrome://`) cannot be read.
 
 ## Skills
 

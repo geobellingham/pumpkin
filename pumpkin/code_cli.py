@@ -117,6 +117,13 @@ class Session:
                         print(t.dim("  ⎿ " + l[:200]))
                 elif ev.get("name") != "todo":
                     print(t.dim(f"  ⎿ {len(lines)} lines" if len(lines) != 1 else "  ⎿ " + lines[0][:160]))
+        elif k == "helper":
+            if ev.get("state") == "start":
+                print(t.dim("A helper is looking into it: " + str(ev.get("task", ""))[:160]))
+            elif ev.get("state") == "step":
+                a = ev.get("args") or {}
+                arg = a.get("path") or a.get("pattern") or a.get("query") or a.get("url") or ""
+                print(t.dim(f"  helper: {ev.get('tool')}({str(arg)[:80]})"))
         elif k == "todo":
             self.todo(ev.get("items") or [])
         elif k == "info":
@@ -152,10 +159,14 @@ class Session:
             self.asked_diff = p.get("diff")
             print(t.bold(("Create " if p.get("new_file") else "Change ") + p.get("path", "") + "?"))
             print(self.diff(p.get("diff") or ""))
+        elif p["kind"] == "tool":
+            print(t.bold(f"Use {p.get('tool', '')} from {p.get('connector', '')}?"))
+            for k, v in (p.get("args") or {}).items():
+                print("  " + t.dim(f"{k}: ") + str(v)[:300])
         else:
             warn = t.red(" (this one is hard to take back)") if p.get("danger") else ""
             print(t.bold("Run this?") + warn + "\n  " + t.orange(p.get("command", "")))
-        opts = "[y]es / [a]lways" + (" for this command" if p["kind"] == "command" else " for file changes") + \
+        opts = "[y]es / [a]lways" + {"command": " for this command", "tool": " for this tool"}.get(p["kind"], " for file changes") + \
             " / [n]o, or say what to do instead: "
         try:
             ans = input(opts).strip()
@@ -202,6 +213,18 @@ class Session:
             time.sleep(0.15)
 
 
+def new_session(root, args, preset, workspace):
+    """What to send to start a session: a workspace brings its own folder and approval mode unless --mode is given."""
+    body = {"root": root, "preset": preset}
+    if workspace:
+        body["workspace"] = workspace["id"]
+        if args.mode:
+            body["mode"] = args.mode
+    else:
+        body["mode"] = args.mode or "ask"
+    return body
+
+
 def run(args):
     from . import __main__ as m
     term = Term()
@@ -224,6 +247,21 @@ def run(args):
             print(term.red(f"No preset matches {args.model}. Presets: " + ", ".join(p["name"] for p in info["presets"])))
             sys.exit(1)
         preset = hit[0]["id"]
+    workspace = None
+    if args.workspace:
+        try:
+            mine = api("GET", "workspaces")["items"]
+        except RuntimeError as e:
+            print(term.red(str(e)))
+            sys.exit(1)
+        hit = [w for w in mine if w["name"].lower() == args.workspace.lower()] or \
+            [w for w in mine if args.workspace.lower() in w["name"].lower()]
+        if len(hit) != 1:
+            print(term.red((f"No workspace matches {args.workspace}." if not hit else f"{args.workspace} matches several workspaces.")
+                           + " Workspaces: " + (", ".join(w["name"] for w in mine) or "none yet (make one in the Code page)")))
+            sys.exit(1)
+        workspace = hit[0]
+        root = workspace["root"]
     sid = None
     if args.cont:
         mine = [s for s in info["sessions"] if os.path.realpath(s["root"]) == root]
@@ -231,13 +269,14 @@ def run(args):
             sid = mine[0]["id"]
     try:
         if not sid:
-            sid = api("POST", "code", {"root": root, "mode": args.mode, "preset": preset})["id"]
+            sid = api("POST", "code", new_session(root, args, preset, workspace))["id"]
     except RuntimeError as e:
         print(term.red(str(e)))
         sys.exit(1)
     s = Session(api, term, sid)
     model = info.get("running") or "the default preset"
-    print(term.orange("🎃 Pumpkin Code") + term.dim(f"  {root}  ·  {model}  ·  /help for commands"))
+    where = f"{workspace['name']}  ·  {root}" if workspace else root
+    print(term.orange("🎃 Pumpkin Code") + term.dim(f"  {where}  ·  {model}  ·  /help for commands"))
     if args.cont:
         v = api("GET", f"code/{sid}")
         for ev in v["events"][-12:]:
@@ -271,7 +310,7 @@ def run(args):
                 elif cmd == "todo":
                     s.todo(api("GET", f"code/{sid}?after=999999999")["todo"] or [])
                 elif cmd == "new":
-                    sid = api("POST", "code", {"root": root, "mode": args.mode, "preset": preset})["id"]
+                    sid = api("POST", "code", new_session(root, args, preset, workspace))["id"]
                     s = Session(api, term, sid)
                     print(term.dim("New session."))
                 elif cmd == "model":

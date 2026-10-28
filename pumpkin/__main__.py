@@ -339,7 +339,9 @@ def main(argv=None):
     c.add_argument("-d", "--dir", help="the project folder (default: this one)")
     c.add_argument("-c", "--continue", dest="cont", action="store_true", help="continue the last session here")
     c.add_argument("-m", "--model", help="the preset to use (part of its name)")
-    c.add_argument("--mode", choices=["ask", "edits", "auto"], default="ask",
+    c.add_argument("-w", "--workspace", help="a workspace to work in (part of its name): its folder, instructions, "
+                                              "memory and connectors")
+    c.add_argument("--mode", choices=["ask", "edits", "auto"], default=None,
                    help="ask before changes (default), change files freely, or never ask")
     args = ap.parse_args(argv)
     config.ensure_dirs()

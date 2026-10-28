@@ -17,7 +17,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, quote, unquote, urlparse
 
 from . import (APP_NAME, __version__, agent, config, devices, discover, docs, doctor, hardware, llama, memory, models,
-               remote, sessions, connectors, skills, updates, workspace)
+               remote, sessions, connectors, skills, updates, workspace, workspaces, browser)
 
 COOKIE = "pumpkin_key"
 KILL_SW = """self.addEventListener('install', () => self.skipWaiting());
@@ -129,6 +129,8 @@ class Web:
         self.gz_cache = {}
         self.stopped = threading.Event()
         self.once = {}                      # single-use sign-in codes for the phone's QR: code -> expiry
+        self.pair_codes = {}                # pairing codes for the browser extension: code -> expiry
+        self.pair_fails = 0                 # wrong codes lately; too many and every code is dropped
         self.bind_lock = threading.Lock()   # one rebind at a time
 
     # ------------------------------------------------------------ lifecycle
@@ -252,14 +254,14 @@ class Web:
     def authed(self, h):
         """Signed in with this browser's own session (cookie), or with Pumpkin's key (the command line, the
         desktop window, and cookies from before sessions existed). Remembers which session asked."""
-        h.session_id, h.old_cookie = None, False
+        h.session_id, h.old_cookie, h.scope = None, False, "full"
         for part in (h.headers.get("Cookie") or "").split(";"):
             k, _, v = part.strip().partition("=")
             if k != COOKIE:
                 continue
             s = sessions.check(v)
             if s:
-                h.session_id = s["id"]
+                h.session_id, h.scope = s["id"], s.get("scope", "full")
                 return True
             if _eq(v, self.token):
                 h.old_cookie = True
@@ -271,7 +273,7 @@ class Web:
                 return True
             s = sessions.check(given)
             if s:
-                h.session_id = s["id"]
+                h.session_id, h.scope = s["id"], s.get("scope", "full")
                 return True
         return False
 
@@ -390,10 +392,16 @@ class Web:
             ui = self.ui_file(path)
             if ui and not ui.endswith("index.html"):
                 return self.static(h, ui)               # open-source scripts and icons; data stays locked
+            if path == API + "browser/pair" and h.command == "POST":
+                return self.browser_pair(h)
             if not self.authed(h):
                 if path.startswith(API) or "text/html" not in (h.headers.get("Accept") or ""):
                     return self.json(h, {"error": {"code": 401, "message": "Sign in to Pumpkin first."}}, 401)
                 return self.send(h, 200, LOGIN_HTML.format(app=APP_NAME, err=""))
+            if getattr(h, "scope", "full") != "full" and path != API + "browser" and \
+                    not path.startswith(API + "browser/"):
+                return self.json(h, {"error": {"code": 403, "message": "This key only works for the Pumpkin browser "
+                                                                        "extension."}}, 403)
             if h.old_cookie and h.command == "GET" and "text/html" in (h.headers.get("Accept") or ""):
                 # signed in before sessions existed: swap the cookie for a session of its own, same page
                 return self.send(h, 302, b"", headers={"Location": h.path, "Set-Cookie": self.new_session_cookie(h)})
@@ -414,6 +422,154 @@ class Web:
                     self.json(h, {"error": f"Something went wrong in Pumpkin: {e}"}, 500)
                 except OSError:
                     pass
+
+    # ------------------------------------------------------------ the browser extension
+    def browser_pair(self, h):
+        """The extension trades a pairing code (made on the Devices page, good for ten minutes, once) for its own
+        key. That key opens the browser endpoints and nothing else."""
+        if h.headers.get("X-Pumpkin") != "1":
+            return self.json(h, {"error": "Missing X-Pumpkin header."}, 403)
+        try:
+            raw = _read_body(h)
+            body = json.loads(raw.decode() or "{}") if raw else {}
+        except (ValueError, ApiError):
+            return self.json(h, {"error": "The request is not valid JSON."}, 400)
+        code = re.sub(r"[^A-Za-z0-9]", "", str(body.get("code") or "")).upper()
+        now = time.time()
+        for c in [c for c, e in list(self.pair_codes.items()) if e <= now]:
+            self.pair_codes.pop(c, None)
+        exp = self.pair_codes.pop(code, 0) if code else 0
+        if exp < now:
+            self.pair_fails += 1
+            if self.pair_fails >= 10:
+                self.pair_codes.clear()                  # someone is guessing: every code is dropped
+            time.sleep(1)
+            return self.json(h, {"error": "That code is not right, or too old. Make a new one on Pumpkin's Devices "
+                                          "page."}, 401)
+        self.pair_fails = 0
+        name = re.sub(r"\s+", " ", str(body.get("name") or "")).strip()[:60] or sessions.describe(
+            h.headers.get("User-Agent") or "")
+        key = sessions.create(h.headers.get("User-Agent") or "", h.client_address[0] if h.client_address else "",
+                              scope="browser", name=name + " (extension)")
+        return self.json(h, {"key": key, "version": __version__})
+
+    def send_extension(self, h):
+        """The extension as a zip to load into Chrome or Edge (the manifest gets this Pumpkin's version)."""
+        import io
+        import zipfile
+        root = os.path.join(os.path.dirname(os.path.abspath(__file__)), "extension")
+        if not os.path.isdir(root):
+            raise FileNotFoundError("The extension files are missing from this Pumpkin.")
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+            for base, _dirs, files in os.walk(root):
+                for f in sorted(files):
+                    full = os.path.join(base, f)
+                    rel = os.path.relpath(full, root).replace(os.sep, "/")
+                    with open(full, "rb") as fh:
+                        data = fh.read()
+                    if rel == "manifest.json":
+                        m = json.loads(data.decode("utf-8"))
+                        m["version"] = re.sub(r"[^0-9.]", "", __version__) or "1"
+                        data = json.dumps(m, indent=2).encode("utf-8")
+                    z.writestr(f"pumpkin-extension/{rel}", data)
+        body = buf.getvalue()
+        h.send_response(200)
+        h.send_header("Content-Type", "application/zip")
+        h.send_header("Content-Length", str(len(body)))
+        h.send_header("Content-Disposition", 'attachment; filename="pumpkin-extension.zip"')
+        h.send_header("Cache-Control", "no-store")
+        h.end_headers()
+        if h.command != "HEAD":
+            h.wfile.write(body)
+
+    def browser_api(self, method, parts, q, body, session_id, scope):  # noqa: C901
+        core = self.core
+        hub = core.browser
+        what = parts[0] if parts else ""
+        arg = lambda k, d=None: (q.get(k) or [d])[0]
+        full = scope == "full"
+        # ---- the Devices page (only a full sign-in)
+        if what == "" and method == "GET":
+            if not full:
+                raise ApiError("Only Pumpkin itself can see this.", 403)
+            return {"connected": hub.connected(), "tabs": len(hub.tabs), "sites": browser.sites(core.settings),
+                    "paired": [s for s in sessions.listing() if s.get("scope") == "browser"]}
+        if what == "code" and method == "POST":
+            if not full:
+                raise ApiError("Only Pumpkin itself can make a pairing code.", 403)
+            alphabet = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"              # no look-alikes (0/O, 1/I/L)
+            code = "".join(secrets.choice(alphabet) for _ in range(8))
+            now = time.time()
+            for c in [c for c, e in list(self.pair_codes.items()) if e <= now]:
+                self.pair_codes.pop(c, None)
+            self.pair_codes[code] = now + 600
+            return {"code": f"{code[:4]}-{code[4:]}", "expires": int(now + 600)}
+        if what == "paired" and method == "DELETE" and len(parts) > 1:
+            if not full:
+                raise ApiError("Only Pumpkin itself can do this.", 403)
+            mine = [s for s in sessions.listing() if s.get("scope") == "browser" and s["id"] == parts[1]]
+            if not mine or not sessions.remove(parts[1]):
+                raise ApiError("That browser is not paired.", 404)
+            return {"ok": True}
+        if what == "sites" and method == "PUT":
+            if not full:
+                raise ApiError("Only Pumpkin itself can change this.", 403)
+            lists = {k: sorted({browser.origin_of(x) for x in (body.get(k) or []) if browser.origin_of(x)})
+                     for k in ("allowed", "blocked")}
+            core.settings.update({"browser_sites": lists})
+            return browser.sites(core.settings)
+        # ---- the extension
+        if what == "info" and method == "GET":
+            return {"connected": hub.connected(), "version": __version__,
+                    "presets": [{"id": p["id"], "name": p.get("name")} for p in core.presets.all()],
+                    "running": (core.server.preset or {}).get("name") if core.server.state in ("ready", "loading")
+                    else None, "sites": browser.sites(core.settings)}
+        if what == "poll" and method == "POST":
+            cmds = hub.poll(session_id or "", body.get("tabs") if isinstance(body.get("tabs"), list) else None,
+                            wait=min(float(body.get("wait") or browser.POLL_SECONDS), 30))
+            return {"commands": cmds}
+        if what == "result" and method == "POST":
+            if not hub.answer(str(body.get("id") or ""), body.get("ok"), body.get("result")):
+                raise ApiError("Nothing is waiting for that answer any more.", 404)
+            return {"ok": True}
+        if what == "sessions":
+            cm = core.code
+            ident = parts[1] if len(parts) > 1 else None
+            action = parts[2] if len(parts) > 2 else None
+            if not ident and method == "GET":
+                return {"sessions": cm.list("browser")}
+            if not ident and method == "POST":
+                s = cm.create_browser(body.get("mode") or "edits", body.get("preset") or None)
+                if body.get("text"):
+                    s.send(body["text"])
+                return s.view()
+            s = cm.get(ident)
+            if s.kind != "browser":
+                raise ApiError("That is not a browser session.", 404)
+            if method == "GET" and not action:
+                return s.view(int(arg("after", "0") or 0))
+            if method == "DELETE" and not action:
+                cm.delete(ident)
+                return {"ok": True}
+            if method == "POST" and action == "send":
+                s.send(body.get("text"))
+                return s.view(int(body.get("after") or 0))
+            if method == "POST" and action == "answer":
+                s.answer(body.get("id"), body.get("allow") if body.get("allow") in ("yes", "always", "no") else "no",
+                         body.get("note", ""))
+                return {"ok": True}
+            if method == "POST" and action == "stop":
+                s.stop()
+                return {"ok": True}
+            if method == "POST" and action == "mode":
+                s.set_mode(body.get("mode"))
+                return s.summary()
+            if method == "POST" and action == "model":
+                s.preset = body.get("preset") or None
+                s.save()
+                return s.summary()
+        raise ApiError(f"Unknown endpoint {method} browser/{'/'.join(parts)}", 404)
 
     # ------------------------------------------------------------ other Pumpkins asking this one
     def peer(self, h, name):
@@ -469,6 +625,17 @@ class Web:
         core = self.core
         method = h.command
         try:
+            if name == "browser/extension.zip" and method == "GET":
+                return self.send_extension(h)
+            if name == "browser" or name.startswith("browser/"):
+                body = {}
+                if method in ("POST", "PUT", "PATCH", "DELETE"):
+                    if h.headers.get("X-Pumpkin") != "1":
+                        raise ApiError("Missing X-Pumpkin header.", 403)
+                    raw = _read_body(h)
+                    body = json.loads(raw.decode() or "{}") if raw else {}
+                return self.json(h, self.browser_api(method, name.split("/")[1:], q, body,
+                                                     getattr(h, "session_id", None), getattr(h, "scope", "full")))
             if name == "files/download" and method == "GET":
                 return self.send_file(h, (q.get("path") or [""])[0], (q.get("inline") or [""])[0] == "1")
             if name == "files/upload" and method == "POST":
@@ -982,6 +1149,31 @@ class Web:
                 except RuntimeError as e:
                     raise ApiError(str(e), 409)
 
+        # ---- workspaces: folders Pumpkin Code keeps coming back to
+        if head == "workspaces":
+            try:
+                if method == "GET" and not ident:
+                    return {"items": workspaces.all_items(), "kinds": workspaces.KINDS,
+                            "connectors": [{"id": c["id"], "name": c["name"], "ready": c["enabled"] and c["available"]
+                                            and not c["missing"]} for c in connectors.public() if c["added"]],
+                            "skills": [x["name"] for x in skills.all_skills(core.settings) if x["enabled"]],
+                            "presets": [{"id": p["id"], "name": p.get("name")} for p in core.presets.all()]}
+                if method == "POST" and not ident:
+                    return workspaces.create(body)
+                if method == "GET" and ident:
+                    return workspaces.view(ident)
+                if method == "PUT" and ident and len(parts) > 2 and parts[2] == "memory":
+                    return {"memory": workspaces.set_memory(ident, body.get("text"))}
+                if method == "PUT" and ident:
+                    return workspaces.update(ident, body)
+                if method == "DELETE" and ident:
+                    workspaces.delete(ident)
+                    return {"ok": True}
+            except FileNotFoundError as e:
+                raise ApiError(str(e), 404) from e
+            except ValueError as e:
+                raise ApiError(str(e)) from e
+
         # ---- Pumpkin Code: the coding agent
         if head == "code":
             cm = core.code
@@ -992,7 +1184,11 @@ class Web:
                         "running": (core.server.preset or {}).get("name") if core.server.state in ("ready", "loading")
                         else None, "home": os.path.expanduser("~"), "android": hardware.ANDROID}
             if method == "POST" and not ident:
-                s = cm.create(body.get("root"), body.get("mode") or "ask", body.get("preset") or None)
+                try:
+                    s = cm.create(body.get("root"), body.get("mode") or ("" if body.get("workspace") else "ask"),
+                                  body.get("preset") or None, body.get("workspace") or None)
+                except FileNotFoundError as e:
+                    raise ApiError(str(e), 404) from e
                 if body.get("text"):
                     s.send(body["text"])
                 return s.view()

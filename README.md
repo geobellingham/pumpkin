@@ -66,6 +66,15 @@ The [guide](docs/GUIDE.md) explains every feature and how to use it.
   so they fit the model's context. A session started in the terminal can be followed on your phone.
   It works best with a model that is good at tool calls (Qwen3 Coder, Qwen3.6, GLM, Devstral) and
   32k of context or more.
+- **Helper agents.** For a job that needs a lot of reading, Pumpkin Code hands it to a helper: a fresh
+  conversation that can only look (read files, search, the web) and brings back a short summary, so the main
+  session's memory stays free.
+- **Workspaces.** Pumpkin Code for any folder and any kind of work (code, writing, spreadsheets, anything).
+  Each workspace keeps its own instructions, memory, connectors, skills, model and approval mode. It reads Word,
+  Excel and PowerPoint files too.
+- **Works in your browser.** The Pumpkin extension for Chrome and Edge lets the model on your computer read
+  pages, click and type in your own browser, like a coworker at your screen. It asks which sites it may use,
+  asks before it acts (if you want), never types passwords, and treats what a page says as data, not orders.
 - **Switch models from the chat.** Every preset shows up in the chat's model list. Pick another one
   and Pumpkin stops the current model and starts that one for you.
 - **Uses the models you already have.** Finds LM Studio, Ollama, Hugging Face, llama.cpp, Jan and GPT4All
@@ -310,8 +319,6 @@ Planned, roughly in this order. The longer list is in [docs/WISHLIST.md](docs/WI
 - A test pass on more real hardware, mostly Windows, Mac and Android
 - Scheduling from the chat: ask in plain words ("tomorrow at 3, review my code") and the model sets up the task
 - Google Drive and Slack connectors
-- Workspaces: Pumpkin Code for any folder and any kind of work, with its own instructions and memory
-- Helper agents that take a research job and report back
 - More natural voices generated on your computer (Kokoro, Orpheus)
 - "Look at my screen" for vision models
 - Signed Windows builds ([code signing policy](docs/CODE_SIGNING.md)) and Mac builds

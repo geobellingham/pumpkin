@@ -6,7 +6,9 @@ import shutil
 import sys
 import tempfile
 import time
+import types
 import unittest
+from unittest import mock
 import urllib.error
 import urllib.request
 
@@ -122,6 +124,82 @@ class TestTools(unittest.TestCase):
     def test_output_is_kept_when_a_background_child_holds_the_pipe(self):
         out, ok = self.t.bash("echo important; sleep 8 &")
         self.assertIn("important", out)
+
+
+class TestHelper(unittest.TestCase):
+    """The delegate tool: a helper with a fresh context that can only look, and answers with a summary."""
+
+    def setUp(self):
+        self.root = tempfile.mkdtemp(prefix="proj-")
+        with open(os.path.join(self.root, "app.py"), "w") as f:
+            f.write("def greet():\n    return 1\n")
+        m = types.SimpleNamespace(ctx=lambda: 8192, tool_limit=lambda: 20000, skills_for=lambda r, w=None: [])
+        self.s = coder.Session(m, self.root)
+        self.s.tokens = 1234
+
+    def tearDown(self):
+        shutil.rmtree(self.root, ignore_errors=True)
+
+    def call(self, name, **a):
+        return {"id": "c1", "function": {"name": name, "arguments": json.dumps(a)}}
+
+    def test_it_reads_and_reports_without_touching_the_session(self):
+        seen = []
+        replies = iter([{"content": "", "tool_calls": [self.call("grep", pattern="greet")]},
+                        {"content": "greet is in app.py line 1.", "tool_calls": []}])
+
+        def fake(tools=True, messages=None, defs=None):
+            seen.append((messages and [dict(x) for x in messages], defs))
+            return next(replies)
+        self.s._complete = fake
+        self.s.messages = [{"role": "system", "content": "main"}, {"role": "user", "content": "do it"}]
+        out, ok, _ = self.s._do("delegate", {"task": "where is greet defined?"})
+        self.assertTrue(ok)
+        self.assertEqual(out, "greet is in app.py line 1.")
+        first = seen[0][0]
+        self.assertEqual(first[1]["content"], "where is greet defined?")           # a fresh context: only the task
+        self.assertNotIn("do it", json.dumps(first))
+        self.assertIn("app.py:1:", seen[1][0][-1]["content"])                      # the helper really searched
+        names = {d["function"]["name"] for d in seen[0][1]}
+        self.assertTrue({"ls", "glob", "grep", "read"} <= names <= set(coder.HELPER_TOOLS))   # nothing that changes
+        self.assertEqual(self.s.tokens, 1234)                                      # the session's own count stays
+        self.assertEqual(len(self.s.messages), 2)
+        kinds = [(e["kind"], e.get("state")) for e in self.s.events]
+        self.assertEqual(kinds, [("helper", "start"), ("helper", "step"), ("helper", "done")])
+
+    def test_it_cannot_change_anything_or_delegate_again(self):
+        self.assertIn("can only use", self.s._helper_call(self.call("bash", command="rm -rf x")))
+        self.assertIn("can only use", self.s._helper_call(self.call("write", path="x", content="y")))
+        self.assertIn("can only use", self.s._helper_call(self.call("delegate", task="more")))
+        self.assertEqual(os.listdir(self.root), ["app.py"])
+
+    def test_a_helper_that_does_not_stop_is_asked_for_its_report(self):
+        calls = []
+
+        def fake(tools=True, messages=None, defs=None):
+            calls.append(tools)
+            if tools:
+                return {"content": "", "tool_calls": [self.call("ls")]}
+            return {"content": "Here is what I saw.", "tool_calls": []}
+        self.s._complete = fake
+        with mock.patch.object(coder, "HELPER_STEPS", 3):
+            out = self.s._delegate("look around")
+        self.assertEqual(out, "Here is what I saw.")
+        self.assertEqual(calls, [True, True, True, False])
+
+    def test_a_failing_model_gives_the_session_a_message_not_a_crash(self):
+        def fake(tools=True, messages=None, defs=None):
+            raise RuntimeError("The model answered with an error: boom")
+        self.s._complete = fake
+        out = self.s._delegate("look")
+        self.assertIn("could not finish", out)
+        self.assertIn("boom", out)
+
+    def test_the_tool_is_offered_only_when_helpers_are_on(self):
+        t = coder.Tools(self.root, web=False)
+        self.assertIn("delegate", [d["function"]["name"] for d in t.definitions()])
+        t.helpers = False
+        self.assertNotIn("delegate", [d["function"]["name"] for d in t.definitions()])
 
 
 class TestSession(unittest.TestCase):
@@ -369,6 +447,33 @@ class TestSession(unittest.TestCase):
         self.assertIn("Run this?", text)
         self.assertIn("I changed the greeting to Hi and ran it.", text)
         self.assertIn("☐ Find the greeting", text)
+
+    def test_j_workspaces_over_the_api(self):
+        st, made = self.call("POST", "workspaces", {"root": self.proj, "name": "Demo", "kind": "writing", "mode": "edits",
+                                                    "instructions": "Be brief."})
+        self.assertEqual(st, 200, made)
+        st, bad = self.call("POST", "workspaces", {"root": self.proj, "name": "Other", "kind": "poetry"})
+        self.assertEqual(st, 400)
+        self.assertIn("kind of work", json.dumps(bad))
+        st, lst = self.call("GET", "workspaces")
+        self.assertEqual([w["name"] for w in lst["items"]], ["Demo"])
+        self.assertIn("writing", lst["kinds"])
+        st, w = self.call("PUT", f"workspaces/{made['id']}", {"connectors": [], "name": "Demo 2"})
+        self.assertEqual(w["name"], "Demo 2")
+        st, m = self.call("PUT", f"workspaces/{made['id']}/memory", {"text": "Likes short answers."})
+        st, full = self.call("GET", f"workspaces/{made['id']}")
+        self.assertEqual(full["memory"].strip(), "Likes short answers.")
+        self.assertTrue(full["folder_ok"])
+        # a session from the workspace takes its folder, approval mode and name
+        st, v = self.call("POST", "code", {"workspace": made["id"]})
+        self.assertEqual(st, 200, v)
+        self.assertEqual((v["root"], v["mode"], v["workspace"]["name"]), (os.path.realpath(self.proj), "edits", "Demo 2"))
+        st, none = self.call("POST", "code", {"workspace": "nope"})
+        self.assertEqual(st, 404)
+        self.call("DELETE", f"code/{v['id']}")
+        self.call("DELETE", f"workspaces/{made['id']}")
+        st, lst = self.call("GET", "workspaces")
+        self.assertEqual(lst["items"], [])
 
     def test_c_a_long_session_is_summarised(self):
         p = self.start_model()

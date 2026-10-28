@@ -4,6 +4,7 @@
 	import { Input } from '$lib/components/ui/input';
 	import { Switch } from '$lib/components/ui/switch';
 	import qrcode from 'qrcode-generator';
+	import BrowserCard from './BrowserCard.svelte';
 	import Card from '../components/Card.svelte';
 	import Field from '../components/Field.svelte';
 	import Toggle from '../components/Toggle.svelte';
@@ -363,6 +364,10 @@
 			{/if}
 		{/if}
 	</Card>
+
+	{#if !android}
+		<BrowserCard />
+	{/if}
 
 	{#if android}
 		<p class="px-1 text-xs text-muted-foreground">

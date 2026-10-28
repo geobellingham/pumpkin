@@ -57,7 +57,7 @@ def make_gguf(path, arch="qwen3moe", size_gb=0.0, name="Test Model", layers=48, 
 
 FAKE_SERVER = r'''#!/usr/bin/env python3
 """Fake llama-server for tests: --version, --help, and a tiny OpenAI-style API with tools."""
-import json, sys, time, os
+import json, re, sys, time, os
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 args = sys.argv[1:]
 if "--version" in args:
@@ -129,6 +129,35 @@ class H(BaseHTTPRequestHandler):
             seen = os.path.join(os.path.dirname(os.path.abspath(args[args.index("-m") + 1])), "chat-%d.json" % port)
             json.dump(body, open(seen, "w"))
             names = [t.get("function", {}).get("name") for t in body.get("tools") or []]
+            if "read_page" in names and "click" in names:                # Pumpkin working in the browser
+                text = json.dumps(msgs[:3])
+                url = re.search(r"https?://[^\s\"\\]+", text)
+                url = url.group(0) if url else "http://127.0.0.1:1/"
+                tools = [m for m in msgs if m.get("role") == "tool"]
+                last = str((tools[-1] if tools else {}).get("content", ""))
+                def ref(pat):
+                    for m in reversed(tools):
+                        hit = re.search(r"\[(\d+)\] " + pat, str(m.get("content", "")))
+                        if hit: return hit.group(1)
+                    return "0"
+                plan = [("open_tab", {"url": url}), ("read_page", {}),
+                        ("type", {"ref": int(ref(r'textbox "Your name"')), "text": "Pumpkin"}),
+                        ("click", {"ref": int(ref(r'button "Greet"'))}), ("read_page", {})]
+                if "INJECT" in text:
+                    plan = [("open_tab", {"url": url}), ("read_page", {}), ("click", {"ref": int(ref(r'button "Greet"'))})]
+                done = len(tools)
+                s.send_response(200); s.send_header("Content-Type", "text/event-stream"); s.end_headers()
+                send = lambda d, fin=None: s.wfile.write(("data: " + json.dumps({"choices": [{"delta": d, "finish_reason": fin}]}) + "\n\n").encode())
+                if done < len(plan):
+                    name, a = plan[done]
+                    send({"tool_calls": [{"index": 0, "id": "b%d" % done, "type": "function", "function": {"name": name, "arguments": json.dumps(a)}}]})
+                    send({}, "tool_calls")
+                else:
+                    for w in ["The page", " says: ", (re.findall(r"Hello, [A-Za-z]+!", last) or ["nothing"])[-1]]:
+                        send({"content": w})
+                    send({}, "stop")
+                s.wfile.write(("data: " + json.dumps({"choices": [], "usage": {"prompt_tokens": 500, "completion_tokens": 20}}) + "\n\n").encode())
+                s.wfile.write(b"data: [DONE]\n\n"); s.wfile.flush(); s.close_connection = True; return
             if names and "edit" in names and "bash" in names:          # Pumpkin Code
                 if "TOOBIG" in json.dumps(msgs[:3]) and "cut off because" not in json.dumps(msgs):
                     return s.j({"error": {"code": 500, "message": "Failed to parse tool call arguments as JSON: parse error at line 1, column 24500: syntax error while parsing value - invalid string: missing closing quote"}}, 500)

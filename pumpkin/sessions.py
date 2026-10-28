@@ -87,17 +87,18 @@ def describe(ua):
     return f"{browser} on {system}"
 
 
-def create(ua="", ip="", local=False):
-    """A new session; returns the key for the cookie ("<id>.<secret>")."""
+def create(ua="", ip="", local=False, scope="full", name=None):
+    """A new session; returns the key for the cookie ("<id>.<secret>"). scope "browser" is for the Pumpkin browser
+    extension: its key opens the browser endpoints and nothing else."""
     sid, secret = secrets.token_hex(6), secrets.token_urlsafe(24)
     now = int(time.time())
-    name = describe(ua)
+    name = (name or describe(ua))[:80]
     with _lock:
         items = _load()
         if local and name.startswith("Pumpkin app"):   # the app window signs in at every start: replace
             items[:] = [s for s in items if not (s.get("local") and s.get("name") == name)]
         items.append({"id": sid, "hash": _hash(secret), "name": name, "ip": ip, "local": bool(local),
-                      "created": now, "last_used": now})
+                      "created": now, "last_used": now, **({"scope": scope} if scope != "full" else {})})
         items.sort(key=lambda s: s.get("last_used", 0), reverse=True)
         del items[MAX_SESSIONS:]
         _save()

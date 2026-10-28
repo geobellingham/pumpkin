@@ -9,7 +9,7 @@ import sys
 import threading
 import time
 
-from . import (__version__, agent, coder, config, connectors, devices, docs, hardware, images, llama, llamaup, mcp_local, memory, migrate, models,
+from . import (__version__, agent, browser, coder, config, connectors, devices, docs, hardware, images, llama, llamaup, mcp_local, memory, migrate, models,
                recommend, remote, skills, updates, vision, workspace)
 
 # which setting holds the chosen model for each kind of image model
@@ -72,6 +72,7 @@ class Core:
         self.image_server = images.ImageServer(self.settings)
         self.vision = vision.Helper(self.settings, self.library)
         self.code = coder.Manager(self)
+        self.browser = browser.Hub()
         self.vision_errors, self.vision_failed_until, self.vision_failed_msg = {}, 0.0, ""
         self.vision_seen = {}                # picture hash -> what the vision model said (a chat re-sends its pictures)
         self.image_lock = threading.Lock()

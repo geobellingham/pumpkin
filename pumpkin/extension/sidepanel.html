@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pumpkin</title>
+<link rel="stylesheet" href="sidepanel.css">
+</head>
+<body>
+<main id="app">
+  <section id="pair" hidden>
+    <h1><img src="icons/icon32.png" alt=""> Pumpkin</h1>
+    <p>Connect this browser to Pumpkin on your computer. In Pumpkin, open <b>Devices</b>, <b>Browser extension</b>, and make a pairing code.</p>
+    <label>Pumpkin address<input id="base" value="http://127.0.0.1:8090" autocomplete="off" spellcheck="false"></label>
+    <label>Pairing code<input id="code" placeholder="ABCD-EFGH" autocomplete="off" spellcheck="false"></label>
+    <button id="connect" class="primary">Connect</button>
+    <p id="pair-error" class="error" hidden></p>
+  </section>
+
+  <section id="chat" hidden>
+    <header>
+      <span id="dot" class="dot" title="Connection to Pumpkin"></span>
+      <strong>Pumpkin</strong>
+      <span class="spacer"></span>
+      <button id="new" class="quiet" title="Start a new chat">New</button>
+      <button id="menu" class="quiet" title="Settings" aria-label="Settings">&#8943;</button>
+    </header>
+    <div id="settings" hidden>
+      <label>Approval
+        <select id="mode">
+          <option value="ask">Ask before each action</option>
+          <option value="edits">Ask once for each site</option>
+          <option value="auto">Never ask</option>
+        </select>
+      </label>
+      <label>Model
+        <select id="preset"></select>
+      </label>
+      <button id="unpair" class="quiet danger">Disconnect this browser</button>
+    </div>
+    <div id="notice" hidden></div>
+    <div id="feed" aria-live="polite"></div>
+    <div id="asks"></div>
+    <form id="form">
+      <textarea id="text" rows="2" placeholder="What should Pumpkin do in your browser?"></textarea>
+      <button id="send" class="primary" type="submit">Send</button>
+      <button id="stop" class="primary" type="button" hidden>Stop</button>
+    </form>
+  </section>
+</main>
+<script src="pagefn.js"></script>
+<script src="sidepanel.js"></script>
+</body>
+</html>
