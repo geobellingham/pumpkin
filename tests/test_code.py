@@ -202,6 +202,56 @@ class TestHelper(unittest.TestCase):
         self.assertNotIn("delegate", [d["function"]["name"] for d in t.definitions()])
 
 
+class TestOnlyOfferedTools(unittest.TestCase):
+    """A model can name any tool, and a page or file it read can tell it to. Only the tools offered run."""
+
+    def setUp(self):
+        self.root = tempfile.mkdtemp(prefix="proj-")
+        self.m = types.SimpleNamespace(ctx=lambda: 8192, tool_limit=lambda: 20000, skills_for=lambda r, w=None: [],
+                                       settings_get=lambda k, d: d, notify=lambda s, d: None)
+
+    def tearDown(self):
+        shutil.rmtree(self.root, ignore_errors=True)
+
+    def call(self, tool, **a):
+        return {"id": "c1", "function": {"name": tool, "arguments": json.dumps(a)}}
+
+    def test_a_browser_session_cannot_touch_files_or_run_commands(self):
+        s = coder.Session(self.m, self.root, "auto", kind="browser")
+        offered = s._offered()
+        self.assertIn("read_page", offered)
+        for name, a in (("write", {"path": "x.txt", "content": "pwned"}), ("edit", {"path": "x", "old": "a", "new": "b"}),
+                        ("bash", {"command": "echo pwned > y.txt"}), ("read", {"path": "secret.txt"}),
+                        ("delegate", {"task": "read every file"}), ("ls", {}), ("skill", {"path": "x"}),
+                        ("remember", {"note": "x"}), ("describe", {"ref": 1})):
+            self.assertNotIn(name, offered)
+            out = s._call(self.call(name, **a))
+            self.assertIn("no tool called", out, name)
+            self.assertIsNone(s.pending)
+        self.assertEqual(os.listdir(self.root), [])
+        bad = [e for e in s.events if e["kind"] == "tool"]
+        self.assertTrue(all(not e["ok"] for e in bad))
+
+    def test_tools_switched_off_stay_off(self):
+        s = coder.Session(self.m, self.root, "auto")
+        s.tools.helpers = False
+        s.tools.web = False
+        self.assertIn("no tool called delegate", s._call(self.call("delegate", task="x")))
+        self.assertIn("no tool called web_search", s._call(self.call("web_search", query="x")))
+        # a helper only gets the looking tools that the session offers
+        out = s._helper_call(self.call("web_search", query="x"))
+        self.assertIn("a helper can only use", out)
+        self.assertNotIn("web_search", out)
+        self.assertIn("a helper can only use", s._helper_call(self.call("bash", command="id")))
+
+    def test_a_project_folder_cannot_hold_pumpkins_own_settings(self):
+        m = coder.Manager.__new__(coder.Manager)
+        os.makedirs(config.CONFIG_DIR, exist_ok=True)
+        with self.assertRaises(ValueError) as e:
+            m.create(os.path.dirname(config.CONFIG_DIR))
+        self.assertIn("Pumpkin's own settings", str(e.exception))
+
+
 class TestSession(unittest.TestCase):
     @classmethod
     def setUpClass(cls):

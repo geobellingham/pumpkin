@@ -439,7 +439,7 @@ class Session:
         self.allow_browser = False           # "yes to all actions" said in a browser session
         self.site_ok = set()                 # sites the user allowed for this session (browser sessions)
         self.site_no = set()                 # and the ones they refused
-        self.suspect = ""                    # a page said something that reads like orders: the next action asks
+        self.suspect = ""                    # a page said something that reads like orders: every action asks until the user writes again
         self.tab_url = {}                    # tab id -> the address it had last time we heard
         self.mcp = {}                        # connector id -> its running client (started when the work begins)
         self.mcp_names = {}                  # tool name the model sees -> (connector id, its own tool name, read only)
@@ -565,6 +565,7 @@ class Session:
                 self.messages.append({"role": "system", "content": self.m.system_prompt(self)})
             self.messages.append({"role": "user", "content": text})
             self.emit("user", text=text)
+            self.suspect = ""                    # a page that gave orders keeps every action asking until the user speaks again
             self.state, self.error, self.cancel = "running", None, False
         threading.Thread(target=self._run, daemon=True).start()
 
@@ -736,7 +737,7 @@ class Session:
         cl = self.mcp.get(cid)
         if cl is None or not cl.alive:
             raise LookupError(f"{cid} is not running any more.")
-        if self._needs_ask("tool", name) and not ro:
+        if self._needs_ask("tool", name) and (not ro or self.mode == "ask"):   # the read-only hint is the server's word
             ok, note = self._ask("tool", name=name, connector=cid, tool=tool, args=_short_args(a))
             if not ok:
                 return "The user said no to this." + (f" They said: {note}" if note else ""), False, {"declined": True}
@@ -768,6 +769,10 @@ class Session:
         self.mcp = {}
         self.mcp_names, self.tools.extra = {}, []
 
+    def _offered(self):
+        """The names of the tools this session offers the model right now."""
+        return {d["function"]["name"] for d in self.tools.definitions()}
+
     def _call(self, c):
         fn = c.get("function") or {}
         name = fn.get("name") or "?"
@@ -780,6 +785,10 @@ class Session:
             self.emit("tool", name=name, args={"raw": str(raw)[:2000]}, ok=False, result="The arguments were not valid JSON.")
             return "Error: the arguments were not valid JSON. Send one JSON object."
         ev = {"name": name, "args": _short_args(args)}
+        if name not in self._offered():
+            # a model (or a page or file talking to it) can name any tool: only the ones this session offers run
+            self.emit("tool", **ev, ok=False, result=f"There is no tool called {name} here.")
+            return f"Error: there is no tool called {name} here. Use only the tools you were given."
         self.set_phase("tool", _tool_label(name, args))
         try:
             text, ok, extra = self._do(name, args)
@@ -942,6 +951,8 @@ class Session:
         """The model may use this site: yes, or the user says so when asked. Raises PermissionError when not."""
         if not origin:
             return
+        if browser.own(origin, getattr(getattr(self.m, "core", None), "settings", None)):
+            raise PermissionError(f"{origin} is Pumpkin itself (or its model server). It cannot be used from here.")
         saved = self._sites()
         if origin in self.site_no or origin in saved["blocked"]:
             raise PermissionError(f"The user does not allow {origin}. Do not try to use it, and do not look for a "
@@ -984,7 +995,6 @@ class Session:
             ok, note = self._ask("browser", action=name, target=what[:300], origin=where, warning=self.suspect)
             if not ok:
                 return "The user said no to this." + (f" They said: {note}" if note else ""), False, {"declined": True}
-            self.suspect = ""
         out = self._hub_call(hub, name, {**args, "allowed": self._allowed()}, lambda: self.cancel)
         res = out.get("result")
         res = res if isinstance(res, dict) else {"text": str(res or "")}
@@ -994,6 +1004,11 @@ class Session:
             res = out.get("result") if isinstance(out.get("result"), dict) else {"text": str(out.get("result") or "")}
         if res.get("needs_permission"):
             return f"Error: {res['needs_permission']} is not allowed yet.", False, {}
+        got = browser.origin_of(res.get("url"))
+        if got and out.get("ok"):
+            # the page the browser says it used (a redirect or a click can land anywhere): checked here as well,
+            # so nothing from a site the user did not allow reaches the model, whatever the extension did
+            self._site_ok(got)
         if res.get("url"):
             self.tab_url[res.get("tab") if res.get("tab") is not None else "current"] = res["url"]
             self.tab_url["current"] = res["url"]
@@ -1074,8 +1089,9 @@ class Session:
                 raise ValueError
         except ValueError:
             return "Error: the arguments were not valid JSON. Send one JSON object."
-        if name not in HELPER_TOOLS:
-            return f"Error: a helper can only use {', '.join(HELPER_TOOLS)}."
+        allowed = [t for t in HELPER_TOOLS if t in self._offered()]
+        if name not in allowed:
+            return f"Error: a helper can only use {', '.join(allowed)}."
         self.set_phase("tool", "Helper: " + _tool_label(name, args))
         self.emit("helper", state="step", tool=name, args=_short_args(args))
         try:
@@ -1394,6 +1410,8 @@ class Manager:
             raise ValueError(f"{root or 'That'} is not a folder on this computer.")
         if os.path.dirname(root) == root or root == os.path.realpath(os.path.expanduser("~")):
             raise ValueError("Pick a project folder, not the whole disk or your home folder.")
+        if workspaces.holds_pumpkin(root):
+            raise ValueError("That folder holds Pumpkin's own settings and keys. Pick a project folder.")
         s = Session(self, root, mode, preset, workspace=w["id"] if w else None)
         with self.lock:
             self._load()

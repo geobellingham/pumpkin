@@ -144,7 +144,8 @@ class H(BaseHTTPRequestHandler):
                         ("type", {"ref": int(ref(r'textbox "Your name"')), "text": "Pumpkin"}),
                         ("click", {"ref": int(ref(r'button "Greet"'))}), ("read_page", {})]
                 if "INJECT" in text:
-                    plan = [("open_tab", {"url": url}), ("read_page", {}), ("click", {"ref": int(ref(r'button "Greet"'))})]
+                    plan = [("open_tab", {"url": url}), ("read_page", {}), ("click", {"ref": int(ref(r'button "Greet"'))}),
+                            ("click", {"ref": int(ref(r'button "Greet"'))})]
                 done = len(tools)
                 s.send_response(200); s.send_header("Content-Type", "text/event-stream"); s.end_headers()
                 send = lambda d, fin=None: s.wfile.write(("data: " + json.dumps({"choices": [{"delta": d, "finish_reason": fin}]}) + "\n\n").encode())

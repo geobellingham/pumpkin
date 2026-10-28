@@ -295,8 +295,10 @@ reports, notes and tables.
   writing: keep your voice and structure; data: check numbers by running them).
 - **Instructions**: always applied, like an `AGENTS.md` that lives in Pumpkin instead of in the folder.
 - **Memory**: what the model learned about this work. It adds to it with the `remember` tool, and you can edit it.
+  Notes that read like orders to the model are not kept, and the model is told the notes are background, not
+  instructions.
 - **Connectors**: the apps from the Connectors page this workspace may use (their tools show up in the session
-  and ask first, unless the tool only reads).
+  and ask first; a tool that says it only reads skips the question, except in *Ask first*).
 - **Skills**: all of them, or only some. **Model** and **approval mode**: the defaults for new sessions here.
 
 It can read `.docx`, `.xlsx` and `.pptx` files (text, sheets and slides). It does not write them.
@@ -324,14 +326,21 @@ you are looking at; the tabs it opens are its tabs too. It cannot see your other
 **What keeps it safe:**
 
 - The first time it wants a site you are asked: *Allow this chat*, *Always allow* or *No*. Chrome asks you
-  as well, once per site. Banks, mail, password managers and local addresses are always asked about and never
-  kept. Manage kept sites on the Devices page.
+  as well, once per site. Banks, mail, password managers and anything on your own computer or home network
+  (your router, a NAS, `.local` names) are always asked about and never kept. Manage kept sites on the Devices
+  page.
+- Pumpkin's own page (and its model server) can never be used from the browser, even if you say yes.
 - *Approval* in the panel's settings: **Ask before each action** (you see what it is about to click or type),
   **Ask once for each site**, or **Never ask**.
-- It never types into password fields. If a page needs a login, it asks you to log in.
+- It never types into password fields or card number and security code fields. If a page needs a login or a
+  payment, it asks you to do that part.
+- When it asks before a click, you see the button's label and what it actually says on screen, so a button
+  labelled "Next" that says "Delete my account" shows both.
 - Text on a page is data, never orders. If a page contains something that reads like instructions to the AI
-  ("ignore your previous instructions..."), Pumpkin warns the model and asks you before the next action, even
-  in *Never ask* mode.
+  ("ignore your previous instructions..."), Pumpkin warns the model and asks you before every action until you
+  write your next message, even in *Never ask* mode.
+- A browser chat only has the browser tools: it cannot read or change your files or run commands, whatever a
+  page tells it.
 - The paired browser's key only opens the browser endpoints, not your files, chats or settings. Remove a
   browser on the Devices page and it stops working at once.
 

@@ -43,6 +43,15 @@ function pumpkinPage(op, args) {
     return t === 'password' || ac.includes('password');
   }
 
+  // card numbers and security codes: like passwords, only the user types these
+  function isCard(el) {
+    if (el.tagName !== 'INPUT') return false;
+    const ac = (el.getAttribute('autocomplete') || '').toLowerCase();
+    if (/\bcc-(number|csc|exp|exp-month|exp-year)\b/.test(ac)) return true;
+    const hint = [el.name, el.id, el.getAttribute('aria-label'), el.getAttribute('placeholder')].join(' ').toLowerCase();
+    return /\b(cvv|cvc|csc|cvv2|card.?number|cardnumber|cc.?num|security.?code)\b/.test(hint);
+  }
+
   function roleOf(el) {
     const r = el.getAttribute('role');
     if (r) return r;
@@ -91,6 +100,7 @@ function pumpkinPage(op, args) {
     const t = el.tagName.toLowerCase();
     let s = (ref != null ? '[' + ref + '] ' : '') + role + ' "' + nameOf(el) + '"';
     if (isPassword(el)) s += ' (password: only the user types here)';
+    else if (isCard(el)) s += ' (card details: only the user types here)';
     else if (t === 'input' || t === 'textarea') {
       const ty = (el.getAttribute('type') || 'text').toLowerCase();
       if (ty === 'checkbox' || ty === 'radio') s += el.checked ? ' [checked]' : ' [not checked]';
@@ -181,7 +191,13 @@ function pumpkinPage(op, args) {
 
   if (op === 'describe') {
     const el = target();
-    return Object.assign({ text: describe(el) }, here());
+    let text = describe(el);
+    const btnValue = el.tagName === 'INPUT' && ['button', 'submit', 'reset'].includes((el.type || '').toLowerCase()) ? el.value : '';
+    const seen = isPassword(el) || isCard(el) ? '' : clean(el.innerText || btnValue || '', 90);
+    const named = nameOf(el);
+    if (seen && seen.toLowerCase() !== named.toLowerCase()) text += ' — on screen it says "' + seen + '"';
+    if (!visible(el)) text += ' — it is not visible on the page';
+    return Object.assign({ text }, here());
   }
 
   if (op === 'click') {
@@ -201,6 +217,7 @@ function pumpkinPage(op, args) {
   if (op === 'type') {
     const el = target();
     if (isPassword(el)) throw new Error('That is a password field. Only the user types there: ask them to.');
+    if (isCard(el)) throw new Error('That field is for card details. Only the user types there: ask them to.');
     if (el.tagName === 'INPUT' && (el.getAttribute('type') || '').toLowerCase() === 'file') throw new Error('That is a file picker; it cannot be used.');
     const text = String(args.text == null ? '' : args.text);
     const clear = args.clear !== false;

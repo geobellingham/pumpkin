@@ -10,6 +10,7 @@ import time
 from . import hardware
 
 WINDOWS = os.name == "nt"
+LINE_LIMIT = 16 * 2 ** 20                # one message from a connector; longer ones are dropped, not kept in memory
 
 
 class McpError(RuntimeError):
@@ -92,7 +93,14 @@ class Client:
     def _read_out(self):
         p = self.proc
         try:
-            for line in p.stdout:
+            while True:
+                line = p.stdout.readline(LINE_LIMIT)
+                if not line:
+                    break
+                if len(line) >= LINE_LIMIT and not line.endswith(b"\n"):
+                    while line and not line.endswith(b"\n"):    # too long to be an answer worth keeping: skip it
+                        line = p.stdout.readline(LINE_LIMIT)
+                    continue
                 try:
                     msg = json.loads(line)
                 except ValueError:
@@ -117,7 +125,7 @@ class Client:
 
     def _read_err(self):
         try:
-            for line in self.proc.stderr:
+            for line in iter(lambda: self.proc.stderr.readline(4096), b""):
                 self._err.append(line.decode("utf-8", "replace"))
                 del self._err[:-40]
         except (OSError, ValueError):

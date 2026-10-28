@@ -4,7 +4,9 @@ The model's tool calls (read the page, click, type...) are turned into commands.
 Chrome or Edge, fetches them from here, runs them in the page, and posts the result back. Everything that decides
 what the model may do lives here, on the computer running Pumpkin: which sites it may touch, what asks first, and
 what looks like a page trying to give the model orders."""
+import ipaddress
 import re
+import socket
 import threading
 import time
 from urllib.parse import urlparse
@@ -58,6 +60,10 @@ SENSITIVE = (
     r"(^|\.)([a-z0-9]+-)?(bank|banking|ebank|ibank|netbank|onlinebanking|secure)[a-z0-9-]*\.[a-z.]+$",
     r"^(localhost|127\.0\.0\.1|\[::1\])$",                  # Pumpkin itself and other local services
 )
+# names that only mean something on the user's own network: routers, NAS boxes, printers, other computers
+LOCAL_NAMES = re.compile(r"(^|\.)(localhost|local|lan|home|internal|intranet|corp|localdomain|home\.arpa)$")
+# Pumpkin's own servers: the model never drives these pages (they change Pumpkin itself)
+OWN_PORTS = ("port", "llama_port", "image_port", "vision_port")
 _SENSITIVE = [re.compile(p) for p in SENSITIVE]
 
 INJECTION = re.compile(
@@ -80,18 +86,99 @@ def origin_of(url):
         return ""
     if u.scheme not in ("http", "https") or not u.hostname:
         return ""
-    port = f":{u.port}" if u.port and u.port not in (80, 443) else ""
-    return f"{u.scheme}://{u.hostname.lower()}{port}"
+    try:
+        port = f":{u.port}" if u.port and u.port not in (80, 443) else ""
+    except ValueError:                           # a port that is not a number
+        return ""
+    host = u.hostname.lower()
+    return f"{u.scheme}://{'[' + host + ']' if ':' in host else host}{port}"
+
+
+def _ip(host):
+    """The address a host name stands for when it is written as a number (127.0.0.1, ::1, 2130706433, 0x7f.1)."""
+    h = host.strip("[]")
+    try:
+        return ipaddress.ip_address(h)
+    except ValueError:
+        pass
+    if re.fullmatch(r"[0-9a-fx.]+", h) and re.search(r"\d", h):
+        try:                                     # the old short and hex forms browsers still accept
+            return ipaddress.ip_address(socket.inet_aton(h))
+        except (OSError, ValueError):
+            return None
+    return None
+
+
+def private(host):
+    """The host is on the user's own computer or network (or a cloud's metadata address)."""
+    host = str(host or "").lower().rstrip(".")
+    if not host:
+        return False
+    ip = _ip(host)
+    if ip is not None:
+        if getattr(ip, "ipv4_mapped", None):
+            ip = ip.ipv4_mapped
+        return not ip.is_global
+    return "." not in host or bool(LOCAL_NAMES.search(host))
 
 
 def sensitive(url_or_origin):
-    """The site is one the model must not use without the user saying so again: banks, mail, passwords..."""
+    """The site is one the model must not use without the user saying so again: banks, mail, passwords, and
+    anything on the user's own computer or network (routers, NAS boxes, other services)."""
     o = origin_of(url_or_origin) or str(url_or_origin or "")
     host = urlparse(o).hostname or o
     if not host:
         return False
     host = host.lower()
-    return any(p.search(host) for p in _SENSITIVE)
+    return private(host) or any(p.search(host) for p in _SENSITIVE)
+
+
+_mine = {"at": 0.0, "ips": set()}
+
+
+def _this_computer(host):
+    host = str(host or "").lower().rstrip(".")
+    if host == "localhost" or host.endswith(".localhost"):
+        return True
+    ip = _ip(host)
+    if ip is None:
+        try:
+            return host == socket.gethostname().lower()
+        except OSError:
+            return False
+    if getattr(ip, "ipv4_mapped", None):
+        ip = ip.ipv4_mapped
+    if ip.is_loopback or ip.is_unspecified:
+        return True
+    if time.time() - _mine["at"] > 60:
+        try:
+            from . import devices
+            _mine["ips"] = set(devices._local_ips())
+        except Exception:  # noqa: BLE001 - only this computer's own addresses are missed
+            _mine["ips"] = set()
+        _mine["at"] = time.time()
+    return str(ip) in _mine["ips"]
+
+
+def own(url_or_origin, settings=None):
+    """The address is one of Pumpkin's own servers (its page, llama-server, the picture servers). The model is
+    never allowed there: those pages can change Pumpkin's settings and what it runs."""
+    o = origin_of(url_or_origin)
+    if not o:
+        return False
+    u = urlparse(o)
+    if not _this_computer(u.hostname or ""):
+        return False
+    port = u.port or (443 if u.scheme == "https" else 80)
+    ports = set()
+    for k in OWN_PORTS:
+        try:
+            ports.add(int(settings[k]))
+        except (TypeError, KeyError, ValueError, AttributeError):
+            pass
+    if not ports:
+        ports = {int(v) for k, v in config.DEFAULT_SETTINGS.items() if k in OWN_PORTS}
+    return port in ports
 
 
 def scan(text):

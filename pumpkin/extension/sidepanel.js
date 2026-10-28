@@ -346,9 +346,22 @@ function pickTab(args) {
   return id;
 }
 
-function allowedOrigin(url, allowed) {
-  const o = originOf(url);
-  return o && (allowed || []).includes(o) ? o : '';
+// Pumpkin's own page (and the same port on this computer under another name): the model never works there,
+// whatever the server says, because those pages can change Pumpkin itself
+function isPumpkin(origin) {
+  const mine = originOf(S.base);
+  if (!origin || !mine) return false;
+  if (origin === mine) return true;
+  try {
+    const a = new URL(origin), b = new URL(mine);
+    const local = (h) => h === 'localhost' || h.endsWith('.localhost') || h === '[::1]' || /^127\./.test(h) || h === '0.0.0.0';
+    return local(a.hostname) && local(b.hostname) && (a.port || '80') === (b.port || '80');
+  } catch (e) { return false; }
+}
+
+function checkOrigin(origin, allowed) {
+  if (isPumpkin(origin)) throw new Error('That is Pumpkin itself. The model cannot use it from the browser.');
+  return (allowed || []).includes(origin);
 }
 
 async function inPage(tabId, op, args) {
@@ -393,7 +406,7 @@ async function execute(tool, args) {
     const url = String(args.url || '');
     const origin = originOf(url);
     if (!origin) throw new Error('Give a full web address starting with https:// or http://.');
-    if (!allowed.includes(origin)) return { needs_permission: origin };
+    if (!checkOrigin(origin, allowed)) return { needs_permission: origin };
     if (tool === 'open_tab') {
       const t = await chrome.tabs.create({ url, active: true });
       S.scope.add(t.id); S.opened.add(t.id); S.current = t.id;
@@ -429,7 +442,7 @@ async function execute(tool, args) {
   const info = await tabInfo(id);
   const origin = originOf(info.url);
   if (!origin) throw new Error('That tab is not a web page the extension can read (' + (info.url || 'empty') + ').');
-  if (!allowed.includes(origin)) return { needs_permission: origin };
+  if (!checkOrigin(origin, allowed)) return { needs_permission: origin };
   S.current = id;
   const op = tool === 'read_page' ? 'read' : tool === 'describe' ? 'describe' : tool;
   const pageArgs = tool === 'describe' ? { ref: args.ref } : args;

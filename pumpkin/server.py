@@ -57,6 +57,7 @@ def _eq(given, secret):
 
 
 BODY_LIMIT = 512 * 2 ** 20                 # a chat with many pictures is big, but never this big
+BROWSER_BODY_LIMIT = 4 * 2 ** 20           # what the browser extension sends: a page's text, a list of tabs
 
 
 class BodyError(ValueError):
@@ -78,7 +79,7 @@ def _read_body(h, limit=BODY_LIMIT):
                 break
             total += size
             if total > limit:
-                raise BodyError(f"The request is too big (over {limit // 2 ** 20} MB).")
+                raise BodyError(f"The request is too big (over {_size(limit)}).")
             parts.append(h.rfile.read(size))
             h.rfile.readline()
         return b"".join(parts)
@@ -89,8 +90,12 @@ def _read_body(h, limit=BODY_LIMIT):
     if n < 0:
         raise BodyError("Content-Length cannot be negative.")
     if n > limit:
-        raise BodyError(f"The request is too big (over {limit // 2 ** 20} MB).")
+        raise BodyError(f"The request is too big (over {_size(limit)}).")
     return h.rfile.read(n) if n else b""
+
+
+def _size(n):
+    return f"{n // 2 ** 20} MB" if n >= 2 ** 20 else f"{n // 1024} KB"
 
 
 def _folders(path):
@@ -430,8 +435,12 @@ class Web:
         if h.headers.get("X-Pumpkin") != "1":
             return self.json(h, {"error": "Missing X-Pumpkin header."}, 403)
         try:
-            raw = _read_body(h)
+            raw = _read_body(h, 64 * 1024)               # anyone can reach this before signing in: keep it small
             body = json.loads(raw.decode() or "{}") if raw else {}
+            if not isinstance(body, dict):
+                raise ValueError
+        except BodyError as e:
+            return self.json(h, {"error": str(e)}, 413)
         except (ValueError, ApiError):
             return self.json(h, {"error": "The request is not valid JSON."}, 400)
         code = re.sub(r"[^A-Za-z0-9]", "", str(body.get("code") or "")).upper()
@@ -526,7 +535,7 @@ class Web:
                     "running": (core.server.preset or {}).get("name") if core.server.state in ("ready", "loading")
                     else None, "sites": browser.sites(core.settings)}
         if what == "poll" and method == "POST":
-            cmds = hub.poll(session_id or "", body.get("tabs") if isinstance(body.get("tabs"), list) else None,
+            cmds = hub.poll(session_id or "", body.get("tabs")[:200] if isinstance(body.get("tabs"), list) else None,
                             wait=min(float(body.get("wait") or browser.POLL_SECONDS), 30))
             return {"commands": cmds}
         if what == "result" and method == "POST":
@@ -632,8 +641,10 @@ class Web:
                 if method in ("POST", "PUT", "PATCH", "DELETE"):
                     if h.headers.get("X-Pumpkin") != "1":
                         raise ApiError("Missing X-Pumpkin header.", 403)
-                    raw = _read_body(h)
+                    raw = _read_body(h, BROWSER_BODY_LIMIT)
                     body = json.loads(raw.decode() or "{}") if raw else {}
+                    if not isinstance(body, dict):
+                        raise ApiError("Send a JSON object.")
                 return self.json(h, self.browser_api(method, name.split("/")[1:], q, body,
                                                      getattr(h, "session_id", None), getattr(h, "scope", "full")))
             if name == "files/download" and method == "GET":
