@@ -89,6 +89,7 @@ class Core:
         self.hw_at = 0
         threading.Thread(target=self._check_update, daemon=True).start()
         self.server.on_ready = self._after_ready
+        self.server.on_gpu_broken = self._gpu_broken
         threading.Thread(target=self._watch_llama, daemon=True).start()
         if self.settings["autostart_model"]:
             p = self.presets.get(self.settings["last_preset"])
@@ -1607,11 +1608,21 @@ class Core:
     def _install_llama(self, backend, tag, progress=None, cancelled=lambda: False):
         cur = llama.find_server(self.settings)
         have = next((d for d in llamaup.downloaded() if d["tag"] == tag and d["backend"] == backend), None)
-        if have and (llama.probe(have["path"]) or {}).get("ok"):
+        hp = (llama.probe(have["path"]) or {}) if have else {}
+        if have and hp.get("ok") and not hp.get("gpu_error"):
             path = have["path"]                         # already on disk: just use it
         else:
             path = llama.download_release(backend, tag=tag, progress=progress, cancelled=cancelled)
             info = llama.probe(path) or {}
+            if info.get("ok") and info.get("gpu_error"):
+                # it starts, but its GPU code does not compile on this system. A week, not a month: a system update
+                # (or the next build) may well fix it
+                have_n = (llama.probe(cur) or {}).get("build") if cur else None
+                llamaup.mark_too_new(backend, f"b{have_n + 1}" if have_n and have_n < llamaup.build_number(tag)
+                                     else tag, info["gpu_error"], days=7, kind="gpu")
+                shutil.rmtree(os.path.join(llama.LLAMA_DIR, f"{tag}-{backend}"), ignore_errors=True)
+                raise RuntimeError(f"llama.cpp {tag} cannot use the GPU on this computer: {info['gpu_error']}. "
+                                   + ("Pumpkin kept the one you had." if cur else ""))
             if not info.get("ok"):
                 # built for a newer system than this one (a newer macOS or glibc, say): keep what works
                 err = (info.get("error") or "no output")[-200:]
@@ -1755,19 +1766,48 @@ class Core:
             self.server._changed()
             return
         llamaup.mark_bad(tag, serious[0])
+        went = self._revert_llama(binary)
+        if not went:
+            return
+        self.server.start(preset)
+        self.server.notice = (f"llama.cpp {tag} answers the chat in a way Pumpkin does not understand yet "
+                              f"({serious[0]}), so Pumpkin went back to {went}. It skips {tag} from now on.")
+        self.server._changed()
+
+    def _revert_llama(self, binary):
+        """Switches to the llama-server used before (or the one the chat was built from). Returns its version, or
+        None when there is nothing to go back to."""
         prev = self.settings["llama_previous"]
         back = prev if prev and os.path.isfile(prev) and (llama.probe(prev) or {}).get("ok") else None
         if back:
             self.settings.update({"llama_server": back, "llama_previous": ""})
         else:
             pinned = llama.pinned_tag()
-            if not pinned:
-                return
+            cur = (llama.probe(binary) or {}).get("version")
+            if not pinned or pinned == cur:
+                return None
             self._install_llama(llamaup.backend_of(binary, self.hardware()["backend"]), pinned)
-        went = (llama.probe(llama.find_server(self.settings)) or {}).get("version") or "the one before"
+        return (llama.probe(llama.find_server(self.settings)) or {}).get("version") or "the one before"
+
+    def _gpu_broken(self, preset):
+        """A model could not start because the build's GPU code does not compile on this system (a Mac whose macOS is
+        older than the build needs). Pumpkin's own download goes back to the build before and skips this one and
+        newer ones for a week; a build you made yourself is left alone."""
+        binary = llama.find_server(self.settings)
+        info = llama.probe(binary) or {}
+        tag = info.get("version")
+        if not tag or hardware.ANDROID or not llamaup.owned(binary):
+            return
+        backend = llamaup.backend_of(binary, self.hardware()["backend"])
+        llamaup.mark_too_new(backend, tag, "its GPU code does not compile with this system's graphics compiler",
+                             days=7, kind="gpu")
+        went = self._revert_llama(binary)
+        if not went:
+            return
         self.server.start(preset)
-        self.server.notice = (f"llama.cpp {tag} answers the chat in a way Pumpkin does not understand yet "
-                              f"({serious[0]}), so Pumpkin went back to {went}. It skips {tag} from now on.")
+        self.server.notice = (f"llama.cpp {tag} cannot use the GPU on this computer (its GPU code does not compile "
+                              f"here), so Pumpkin went back to {went}. It skips {tag} and newer builds for a week; "
+                              f"a newer macOS may fix it.")
         self.server._changed()
 
     def run_bench(self):

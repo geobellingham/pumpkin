@@ -206,6 +206,7 @@ class TestAfterReady(_Dirs):
         server._changed = lambda: None
         c = types.SimpleNamespace(settings=settings, server=server, data=s, hardware=lambda: {"backend": "vulkan"})
         c._install_llama = lambda *a, **k: core.Core._install_llama(c, *a, **k)
+        c._revert_llama = lambda b: core.Core._revert_llama(c, b)
         return c
 
     def test_serious_problem_goes_back(self):
@@ -231,6 +232,128 @@ class TestAfterReady(_Dirs):
         self.assertFalse(os.path.exists(oldest))
         self.assertTrue(os.path.exists(old))                # kept for going back
         self.assertEqual(c.server.started, [])
+
+
+METAL_LOG = [
+    "E ggml_metal_library_compile_all: failed to build 'unary' library: Error Domain=MTLLibraryErrorDomain Code=3\n",
+    "E ggml_metal_init: error: failed to initialize the Metal library\n",
+    "E ggml_backend_metal_device_init_backend: error: failed to allocate context\n",
+    "E llama_init_from_model: failed to initialize the context: failed to initialize MTL0 backend\n",
+]
+
+
+class TestGpuBroken(_Dirs):
+    """A build whose GPU code does not compile here: the right words, no useless halving of the context, back to the
+    build before, and skipped for a week."""
+
+    def manager(self, lines):
+        s = llama.ServerManager.__new__(llama.ServerManager)
+        s.settings, s.exit_code = {"llama_port": 8080}, 1
+        s.log_tail = lambda n=60: lines
+        return s
+
+    def test_says_the_gpu_code_and_not_memory(self):
+        s = self.manager(METAL_LOG)
+        msg = s._explain_failure()
+        self.assertIn("cannot use the GPU", msg)
+        self.assertNotIn("did not fit in memory", msg)
+        self.assertFalse(s._out_of_memory())                  # so the context is not halved for nothing
+
+    def test_a_real_shortage_is_still_a_shortage(self):
+        s = self.manager(["E ggml_vulkan: failed to allocate buffer of size 9000000000\n"])
+        self.assertIn("did not fit in memory", s._explain_failure())
+        self.assertTrue(s._out_of_memory())
+        s = self.manager(["E cudaMalloc failed: out of memory\n"])
+        self.assertTrue(s._out_of_memory())
+
+    def test_probe_notices_it(self):
+        d = os.path.join(self.tmp, "bin")
+        os.makedirs(d)
+        p = os.path.join(d, "llama-server")
+        with open(p, "w") as f:
+            f.write("#!/bin/sh\necho 'E ggml_metal_init: error: failed to initialize the Metal library' >&2\n"
+                    "echo 'version: 12100 (abc1234)'\n")
+        os.chmod(p, 0o755)
+        info = llama.probe(p)
+        self.assertTrue(info["ok"])
+        self.assertIn("GPU code", info["gpu_error"])
+
+    def test_skipped_for_a_week_not_a_month(self):
+        llamaup.mark_too_new("metal", "b12100", "GPU code", days=7, kind="gpu")
+        self.assertIn("metal", llamaup.too_new())
+        st = llamaup._load()
+        st["too_new"]["metal"]["at"] = time.time() - 8 * DAY
+        llamaup._save(st)
+        self.assertEqual(llamaup.too_new(), {})
+        llamaup.mark_too_new("metal", "b12200", "system", days=30)       # an old, expired mark does not block a new one
+        self.assertEqual(llamaup.too_new()["metal"]["tag"], "b12200")
+        st = llamaup._load()
+        st["too_new"]["metal"]["at"] = time.time() - 10 * DAY
+        llamaup._save(st)
+        self.assertIn("metal", llamaup.too_new())                         # a system mark lasts a month
+        llamaup.mark_too_new("cpu", "b12300", "x", days=7, kind="gpu")
+        self.assertIn("GPU code does not work", llamaup.bad_tags()["b12300 and newer (cpu)"])
+
+    @unittest.skipIf(os.name == "nt", "the fake builds here are shell scripts")
+    def test_a_download_with_broken_gpu_code_is_dropped(self):
+        old = self.fake_build(12000)
+        s = {"llama_server": old, "llama_previous": ""}
+        settings = mock.MagicMock()
+        settings.__getitem__.side_effect = lambda k: s[k]
+        settings.update.side_effect = lambda ch: s.update(ch)
+        c = types.SimpleNamespace(settings=settings, data=s)
+        c._install_llama = lambda *a, **k: core.Core._install_llama(c, *a, **k)
+
+        def broken(backend, tag, **k):
+            d = os.path.join(llama.LLAMA_DIR, f"{tag}-{backend}")
+            os.makedirs(d, exist_ok=True)
+            p = os.path.join(d, "llama-server")
+            with open(p, "w") as f:
+                f.write("#!/bin/sh\necho 'E ggml_metal_init: error: failed to initialize the Metal library' >&2\n"
+                        "echo 'version: 12300 (abc1234)'\n")
+            os.chmod(p, 0o755)
+            return p
+        with mock.patch.object(llama, "download_release", side_effect=broken):
+            with self.assertRaises(RuntimeError) as e:
+                c._install_llama("vulkan", "b12300")
+        self.assertIn("cannot use the GPU", str(e.exception))
+        self.assertEqual(s["llama_server"], old)
+        self.assertEqual(llamaup.too_new()["vulkan"]["tag"], "b12001")
+        self.assertFalse(os.path.exists(os.path.join(llama.LLAMA_DIR, "b12300-vulkan")))
+
+    @unittest.skipIf(os.name == "nt", "the fake builds here are shell scripts")
+    def test_goes_back_and_skips_it(self):
+        old, new = self.fake_build(12000), self.fake_build(12100)
+        s = {"llama_server": new, "llama_previous": old}
+        settings = mock.MagicMock()
+        settings.__getitem__.side_effect = lambda k: s[k]
+        settings.update.side_effect = lambda ch: s.update(ch)
+        server = types.SimpleNamespace(port=1, notice=None, started=[])
+        server.start = lambda p: server.started.append((p, s["llama_server"]))
+        server._changed = lambda: None
+        c = types.SimpleNamespace(settings=settings, server=server, data=s, hardware=lambda: {"backend": "vulkan"})
+        c._install_llama = lambda *a, **k: core.Core._install_llama(c, *a, **k)
+        c._revert_llama = lambda b: core.Core._revert_llama(c, b)
+        with mock.patch.object(llama, "find_server", side_effect=lambda st: st["llama_server"]):
+            core.Core._gpu_broken(c, {"id": "p1", "name": "Tiny"})
+        self.assertEqual(s["llama_server"], old)
+        self.assertEqual(server.started, [({"id": "p1", "name": "Tiny"}, old)])
+        self.assertIn("cannot use the GPU", server.notice)
+        self.assertIn("a week", server.notice)
+        self.assertEqual(llamaup.too_new()["vulkan"]["tag"], "b12100")
+        self.assertEqual(llamaup._load()["too_new"]["vulkan"]["days"], 7)
+        # a build you made yourself is left alone
+        server.started.clear()
+        own = os.path.join(self.tmp, "own", "llama-server")
+        os.makedirs(os.path.dirname(own))
+        with open(own, "w") as f:
+            f.write("#!/bin/sh\necho 'version: 12500 (abc1234)'\n")
+        os.chmod(own, 0o755)
+        s["llama_server"] = own
+        with mock.patch.object(llama, "find_server", side_effect=lambda st: st["llama_server"]):
+            core.Core._gpu_broken(c, {"id": "p1"})
+        self.assertEqual(server.started, [])
+        self.assertEqual(s["llama_server"], own)
 
 
 class TestWeekBehind(_Dirs):

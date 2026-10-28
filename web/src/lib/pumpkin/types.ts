@@ -292,6 +292,7 @@ export interface LlamaInfo {
 		backends: string[];
 		error: string | null;
 		flags: string[];
+		gpu_error?: string | null;
 		ok: boolean;
 		path: string;
 		version: string | null;

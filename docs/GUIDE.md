@@ -434,7 +434,9 @@ button at the top of Pumpkin's pages switches it too. It's kept per device.
   most once a day, while no model runs). **Which builds**: the latest release that has been out for a day, or the
   newest build for brand-new models. The build before stays on disk, with **Go back**. The first time a new build
   runs, Pumpkin checks it still answers the way the chat expects; if it doesn't, it goes back by itself and skips
-  that build. A llama-server you built yourself is never replaced: Pumpkin only says when the one it downloaded
+  that build. A build whose GPU code does not compile on your system (a Mac with an older macOS, say) is undone the
+  same way and skipped, with newer ones, for a week; one that needs a newer Linux or macOS to start is skipped for a
+  month. A llama-server you built yourself is never replaced: Pumpkin only says when the one it downloaded
   is newer.
 - **Updates**: Pumpkin checks GitHub twice a day and updates in one click.
 - **Privacy**: the full list of what Pumpkin sends over the network and when. No accounts, analytics or

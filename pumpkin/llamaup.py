@@ -183,13 +183,14 @@ def mark_bad(tag, why):
     _save(st)
 
 
-def mark_too_new(backend, tag, why):
+def mark_too_new(backend, tag, why, days=30, kind="system"):
     """A build that does not start on this computer because the system is older than it needs (glibc on Linux,
     the macOS version on a Mac): every build from this one on will need it too, so they are not downloaded again."""
     st = _load()
-    cur = (st.get("too_new") or {}).get(backend)
+    cur = too_new().get(backend)                        # one that ran out of time does not hold the new one back
     if not cur or build_number(tag) < build_number(cur.get("tag")):
-        st.setdefault("too_new", {})[backend] = {"tag": tag, "why": why[:300], "at": time.time()}
+        st.setdefault("too_new", {})[backend] = {"tag": tag, "why": why[:300], "at": time.time(), "days": days,
+                                                 "kind": kind}
     st["latest"] = {}                                   # look again, below that build
     _save(st)
 
@@ -205,8 +206,10 @@ def system_hint(err):
 
 
 def too_new():
-    """Per backend, the first build too new for this system. Forgotten after a month, in case the system was updated."""
-    return {b: v for b, v in (_load().get("too_new") or {}).items() if time.time() - v.get("at", 0) < 30 * 86400}
+    """Per backend, the first build too new for this system. Forgotten after a month (a week when only the GPU code
+    failed), in case the system was updated."""
+    return {b: v for b, v in (_load().get("too_new") or {}).items()
+            if time.time() - v.get("at", 0) < v.get("days", 30) * 86400}
 
 
 SYSTEM_TOO_OLD = r"GLIBC_\d|GLIBCXX_\d|built for macOS|was built for newer|Symbol not found|minimum.*macOS|LC_BUILD_VERSION"
@@ -215,7 +218,9 @@ SYSTEM_TOO_OLD = r"GLIBC_\d|GLIBCXX_\d|built for macOS|was built for newer|Symbo
 def bad_tags():
     out = dict(_load().get("bad") or {})
     for backend, v in too_new().items():
-        out[f"{v['tag']} and newer ({backend})"] = f"need a newer system than this one: {v['why']}"
+        out[f"{v['tag']} and newer ({backend})"] = (f"their GPU code does not work on this computer: {v['why']}"
+                                                    if v.get("kind") == "gpu" else
+                                                    f"need a newer system than this one: {v['why']}")
     return out
 
 

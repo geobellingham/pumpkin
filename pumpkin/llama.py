@@ -173,6 +173,15 @@ def split_args(text, windows=None):
     return out
 
 
+# the GPU code of a build that the system's graphics compiler refuses (Metal on a Mac whose macOS is older than the
+# build needs): llama-server then cannot start any model, and one of its lines says "failed to allocate context"
+GPU_BROKEN = (r"failed to build '[^']*' library|failed to initialize the Metal library|ggml_metal_device_init: error"
+              r"|failed to initialize MTL\d* backend")
+# a real shortage of memory (the allocation of a context is not one)
+OUT_OF_MEMORY = (r"out of memory|ErrorOutOfDeviceMemory|failed to allocate(?! context)|cudaMalloc failed|"
+                 r"unable to allocate|not enough memory")
+
+
 def probe(binary):
     """Version, backends and supported options of a llama-server binary."""
     if not binary:
@@ -184,7 +193,7 @@ def probe(binary):
     if key in _probe_cache:
         return _probe_cache[key]
     info = {"path": binary, "version": None, "build": None, "commit": None, "flags": [], "backends": [], "ok": False,
-            "error": None}
+            "error": None, "gpu_error": None}
     try:
         r = subprocess.run([binary, "--version"], capture_output=True, text=True, timeout=30, env=_env_for(binary),
                            creationflags=hardware.NO_WINDOW)
@@ -205,6 +214,9 @@ def probe(binary):
         htxt = (h.stdout or "") + (h.stderr or "")
         info["flags"] = [f for f in KNOWN_FLAGS if re.search(rf"(^|[\s,]){re.escape(f)}([\s,=]|$)", htxt, re.M)]
         info["ok"] = r.returncode == 0 or bool(info["version"])
+        g = re.search(GPU_BROKEN, txt + htxt)
+        if g:
+            info["gpu_error"] = "its GPU code does not compile with this system's graphics compiler"
         if not info["ok"]:
             info["error"] = txt.strip()[-400:]
     except (OSError, subprocess.SubprocessError) as e:
@@ -700,6 +712,7 @@ class ServerManager:
             pass
 
     on_ready = None                # the app checks a llama-server it has not seen before
+    on_gpu_broken = None           # a model could not start because the build's GPU code does not compile here
 
     def _after_ready(self, preset):
         if self.on_ready:
@@ -804,7 +817,10 @@ class ServerManager:
             return ("The system stopped llama-server, almost always because the device ran out of memory. "
                     "Pick a smaller model or quant, or a shorter context.")
         hints = [
-            (r"out of memory|ErrorOutOfDeviceMemory|failed to allocate|cudaMalloc failed",
+            (GPU_BROKEN, "This llama.cpp build cannot use the GPU on this computer: its GPU code does not compile "
+             "with this system's graphics compiler (a newer macOS is usually what it needs). Go back to the build "
+             "before in Settings, or update the system. The model itself is fine."),
+            (OUT_OF_MEMORY,
              "The model did not fit in memory. Use a smaller quant, a shorter context, or a smaller KV cache type."),
             (r"failed to load multimodal model|mtmd_init", "The vision file (mmproj) does not work with this model. "
              "Clear the Vision file in the preset, or download the one made for this model."),
@@ -831,6 +847,7 @@ class ServerManager:
         while True:
             try:
                 changed = False
+                broken = None
                 with self.lock:
                     p = self.proc
                     if p is not None and p.poll() is not None:
@@ -839,6 +856,8 @@ class ServerManager:
                         was = self.state
                         if was in ("loading", "ready"):
                             err = self._explain_failure()
+                            if was == "loading" and re.search(GPU_BROKEN, "".join(self.log_tail(120))):
+                                broken = dict(self.preset or {})
                             if not self._recover(was, err):   # retrying shows as loading, never as an error
                                 self.state, self.error = "error", err
                             changed = True
@@ -863,6 +882,8 @@ class ServerManager:
                         self.state, changed = "off", True
                 if changed:
                     self._changed()
+                if broken and self.on_gpu_broken:
+                    threading.Thread(target=self.on_gpu_broken, args=(broken,), daemon=True).start()
             except Exception:  # noqa: BLE001 - the watcher must never die
                 pass
             time.sleep(1.0)
@@ -871,8 +892,9 @@ class ServerManager:
         if getattr(self, "exit_code", None) == -getattr(signal, "SIGKILL", 9):
             return True
         tail = "".join(self.log_tail(120))
-        return bool(re.search(r"out of memory|ErrorOutOfDeviceMemory|failed to allocate|cudaMalloc failed|"
-                              r"unable to allocate|not enough memory", tail, re.I))
+        if re.search(GPU_BROKEN, tail):
+            return False                                   # the GPU code is broken: less context would not help
+        return bool(re.search(OUT_OF_MEMORY, tail, re.I))
 
     def _recover(self, was, err=None):
         """Fixes the common failures without asking: a model that runs out of memory while loading starts again

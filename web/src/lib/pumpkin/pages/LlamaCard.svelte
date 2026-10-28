@@ -147,6 +147,11 @@
 							{/if}
 						</div>
 					{/if}
+					{#if info.info.gpu_error}
+						<div class="mt-1 text-xs text-amber-600 dark:text-amber-400">
+							This build cannot use the GPU here: {info.info.gpu_error}. Models would not start. Go back to the build before, or update the system.
+						</div>
+					{/if}
 					{#if !info.info.flags.includes('--agent')}
 						<div class="mt-1 text-xs text-amber-600 dark:text-amber-400">This build has no agent tools. Update it below.</div>
 					{/if}
