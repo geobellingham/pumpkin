@@ -1,5 +1,5 @@
 <script lang="ts">
-	// Browser: Pumpkin working in your own Chrome or Edge. The chat itself is in the extension's side panel (that is
+	// Teammate: Pumpkin working alongside you in your own Chrome or Edge. The chat itself is in the extension's side panel (that is
 	// where the pages are); this page sets it up, shows who is paired and which sites are allowed, and keeps the
 	// record of what past browser chats did.
 	import { ChevronDown, ChevronRight, LoaderCircle, Trash2 } from '@lucide/svelte';
@@ -107,8 +107,8 @@
 
 <div class="flex flex-col gap-4">
 	<Card
-		description="The model on your computer reads pages, clicks and types in your own browser, with your logins and your say-so."
-		title="Pumpkin in your browser"
+		description="Pumpkin works in your own browser next to you: it reads pages, clicks and types with your logins, and asks first."
+		title="Teammate"
 	>
 		<ol class="list-decimal space-y-1 pl-5 text-sm text-muted-foreground">
 			<li>Set up the extension below (once), then click its icon in the toolbar to open the Pumpkin panel.</li>
@@ -119,7 +119,7 @@
 
 	<BrowserCard />
 
-	<Card description="What past browser chats did, step by step. They stay on this computer." title="Recent browser chats">
+	<Card description="What past browser chats did, step by step. They stay on this computer." title="Recent teammate chats">
 		{#if chats === null}
 			<div class="flex justify-center py-4"><LoaderCircle class="h-5 w-5 animate-spin text-muted-foreground" /></div>
 		{:else if !chats.length}

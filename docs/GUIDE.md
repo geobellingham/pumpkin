@@ -22,7 +22,7 @@ Reports, Voice, Devices, Phone, Doctor and Settings.
 - [Short videos](#short-videos)
 - [Pumpkin Code](#pumpkin-code)
 - [Workspaces](#workspaces)
-- [Working in your browser](#working-in-your-browser)
+- [Teammate: working in your browser](#teammate-working-in-your-browser)
 - [Skills](#skills)
 - [Connectors](#connectors)
 - [Memory](#memory)
@@ -309,14 +309,14 @@ The helper starts with an empty context, can only read and search, and returns a
 *Helper* lines in the session. A helper uses the same model, one request at a time, so it saves context
 rather than time.
 
-## Working in your browser
+## Teammate: working in your browser
 
 The Pumpkin extension (Chrome, Edge and other Chromium browsers) lets the model on your computer use your own
 browser: open pages, read them, click, type, scroll. It uses your logins and your tabs. Nothing leaves your
 computer except what the pages themselves send.
 
-**Set it up:** the Browser page (left menu). Download the zip, unzip it, open `chrome://extensions`, turn on
-Developer mode, **Load unpacked**, pick the folder. Click the Pumpkin icon, make a pairing code on the Browser
+**Set it up:** the Teammate page (left menu). Download the zip, unzip it, open `chrome://extensions`, turn on
+Developer mode, **Load unpacked**, pick the folder. Click the Pumpkin icon, make a pairing code on the Teammate
 page (it works once, for ten minutes) and type it in the panel.
 
 **Use it:** keep the panel open (it is how Pumpkin reaches the browser) and tell it what to do: "find the
@@ -327,7 +327,7 @@ you are looking at; the tabs it opens are its tabs too. It cannot see your other
 
 - The first time it wants a site you are asked: *Allow this chat*, *Always allow* or *No*. Chrome asks you
   as well, once per site. Banks, mail, password managers and anything on your own computer or home network
-  (your router, a NAS, `.local` names) are always asked about and never kept. Manage kept sites on the Browser
+  (your router, a NAS, `.local` names) are always asked about and never kept. Manage kept sites on the Teammate
   page.
 - Pumpkin's own page (and its model server) can never be used from the browser, even if you say yes.
 - *Approval* in the panel's settings: **Ask before each action** (you see what it is about to click or type),
@@ -342,7 +342,7 @@ you are looking at; the tabs it opens are its tabs too. It cannot see your other
 - A browser chat only has the browser tools: it cannot read or change your files or run commands, whatever a
   page tells it.
 - The paired browser's key only opens the browser endpoints, not your files, chats or settings. Remove a
-  browser on the Browser page and it stops working at once.
+  browser on the Teammate page and it stops working at once.
 
 Tips: a model that is good at tool calls works best, and pages with lots of text need a larger context.
 Pages inside frames, canvas apps (maps, design tools) and the browser's own pages (`chrome://`) cannot be read.

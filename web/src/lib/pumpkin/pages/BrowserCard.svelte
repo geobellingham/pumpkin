@@ -75,7 +75,7 @@
 
 <Card
 	description="Let Pumpkin work in your own Chrome or Edge: read pages, click, type. It asks you first, and the model stays on your computer."
-	title="Browser extension"
+	title="Browser extension for Teammate"
 >
 	{#if !status}
 		<div class="flex justify-center py-6"><LoaderCircle class="h-5 w-5 animate-spin text-muted-foreground" /></div>
