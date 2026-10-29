@@ -519,7 +519,7 @@ $('preset').addEventListener('change', async () => {
   if (S.session) { try { await api('browser/sessions/' + S.session + '/model', 'POST', { preset: S.preset || null }); } catch (e) { notice(e.message); } }
 });
 $('unpair').addEventListener('click', async () => {
-  await lost('Disconnected. You can remove this browser on Pumpkin\'s Devices page too.');
+  await lost('Disconnected. You can remove this browser on Pumpkin\'s Browser page too.');
 });
 $('stop').addEventListener('click', async () => {
   try { await api('browser/sessions/' + S.session + '/stop', 'POST', {}); } catch (e) { notice(e.message); }
