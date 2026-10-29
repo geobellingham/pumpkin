@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -7,7 +7,8 @@ name = "pumpkin-agents"
 dynamic = ["version"]
 description = "Run local AI models and agents with llama.cpp: one-click models, tools, web search, schedules, voice and phone access."
 readme = "README.md"
-license = "MIT"
+license = "LicenseRef-MIT-Commons-Clause"
+license-files = ["LICENSE", "NOTICE"]
 requires-python = ">=3.10"
 dependencies = []
 classifiers = [

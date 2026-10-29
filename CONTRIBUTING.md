@@ -37,3 +37,10 @@ search and downloads at another server. `tests/fake_hf.py` is a small fake Huggi
 - UI: reuse the llama.cpp components (`$lib/components/ui`), keep Pumpkin code inside
   `web/src/lib/pumpkin`, and keep upstream hooks to one or two lines.
 - Words: plain and specific. Buttons say what happens ("Install", "Save preset").
+
+## License of contributions
+
+Pumpkin is MIT with the Commons Clause (see [LICENSE](LICENSE)): free to use and change, not to sell. By sending a
+pull request you confirm that you wrote the change (or may share it), and you agree that it is licensed under the
+same terms and that the author may change the license of Pumpkin later. You keep your copyright. Add
+`Signed-off-by: Your Name <you@example.com>` to your commits (`git commit -s`) to say so.

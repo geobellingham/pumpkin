@@ -237,7 +237,7 @@
 		<SignIns />
 
 		<Card title="Pumpkin">
-			<p class="text-sm text-muted-foreground">Free and open source under the MIT license.</p>
+			<p class="text-sm text-muted-foreground">Free to use and change under the MIT license with the Commons Clause: you may not sell it.</p>
 			<div class="mt-3 flex flex-wrap gap-2">
 				<Button class="rounded-full" href="#/pumpkin/setup" size="sm" variant="secondary">Run setup again</Button>
 				{#if pumpkin.state?.platform !== 'android'}

@@ -330,4 +330,10 @@ estimates and Doctor checks. See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 
-MIT. The web interface builds on the llama.cpp UI (MIT, the ggml authors); see [NOTICE](NOTICE).
+Pumpkin is free to use, change and share, for yourself, your team and your company. What you may not do is
+**sell it**: it is MIT with the [Commons Clause](https://commonsclause.com), so selling Pumpkin, or a product or
+service (hosting, support, consulting included) whose value comes mostly from Pumpkin, needs the author's
+permission. The source is open to read, but under this condition it is source-available rather than open source by
+the official definition. Versions up to 0.10.1 were released under plain MIT and stay that way. The name and logo
+are not part of the license. The web interface builds on the llama.cpp UI (MIT, the ggml authors); see
+[NOTICE](NOTICE). Want to use Pumpkin commercially? Open an issue and ask.
