@@ -1,6 +1,7 @@
 [
   {
     "id": "github",
+    "private": true,
     "name": "GitHub",
     "blurb": "Read and search your repositories, issues, pull requests and Actions runs. GitHub's own server.",
     "needs": "docker",
@@ -19,6 +20,7 @@
   },
   {
     "id": "notion",
+    "private": true,
     "name": "Notion",
     "blurb": "Search, read and update pages and databases in your Notion workspace. Notion's own server.",
     "needs": "npx",
@@ -31,7 +33,186 @@
     ]
   },
   {
+    "id": "google",
+    "name": "Google Drive, Docs and Sheets",
+    "blurb": "Search and read your Google Drive files, Docs and Sheets (and Slides). Read only unless you allow changes. Made by the community (workspace-mcp), pinned to the version Pumpkin was tested with.",
+    "needs": "uvx",
+    "command": "uvx",
+    "args": [
+      "workspace-mcp@2.2.1"
+    ],
+    "docs": "https://github.com/taylorwilsdon/google_workspace_mcp",
+    "private": true,
+    "env": {
+      "WORKSPACE_MCP_PORT": "8757"
+    },
+    "data_dir_env": "WORKSPACE_MCP_CREDENTIALS_DIR",
+    "login": {
+      "how": "tool",
+      "tool": "start_google_auth",
+      "hosts": [
+        "accounts.google.com"
+      ],
+      "hint": "Pumpkin opens Google's own sign-in page. Pick your account and allow access. Pumpkin never sees your password."
+    },
+    "fields": [
+      {
+        "id": "client_id",
+        "label": "OAuth client ID",
+        "kind": "text",
+        "env": "GOOGLE_OAUTH_CLIENT_ID",
+        "required": true,
+        "help": "Google asks every app to have its own key, and this one is yours. In console.cloud.google.com: make a project, turn on the Drive, Docs and Sheets APIs, then APIs & Services > Credentials > Create credentials > OAuth client ID, type Desktop app. Copy the client ID and secret here. (Consent screen: External, add yourself as a test user.)"
+      },
+      {
+        "id": "client_secret",
+        "label": "OAuth client secret",
+        "kind": "secret",
+        "env": "GOOGLE_OAUTH_CLIENT_SECRET",
+        "required": true,
+        "help": "From the same page."
+      },
+      {
+        "id": "email",
+        "label": "Your Google account",
+        "kind": "text",
+        "env": "USER_GOOGLE_EMAIL",
+        "required": true,
+        "placeholder": "you@gmail.com",
+        "help": "The account to read. Sign in below after saving."
+      },
+      {
+        "id": "services",
+        "label": "What it can use",
+        "kind": "words",
+        "flag": "--tools",
+        "default": "drive docs sheets",
+        "help": "Words separated by spaces: drive, docs, sheets, slides, calendar, gmail, contacts, tasks, forms. Fewer services means fewer tools for the model to wade through. Add gmail only if you want it to read your mail."
+      },
+      {
+        "id": "read_only",
+        "label": "Read only",
+        "kind": "toggle",
+        "default": true,
+        "on_args": [
+          "--read-only"
+        ],
+        "help": "On: it can look but never create, change, share or delete anything, and Google is only asked for read access. Changing this means signing in again."
+      }
+    ]
+  },
+  {
+    "id": "microsoft365",
+    "name": "Microsoft 365",
+    "blurb": "Read your OneDrive files, Excel, calendar, and (if you choose) mail, Teams and SharePoint. Read only unless you allow changes. Made by the community (Softeria), pinned to the version Pumpkin was tested with.",
+    "needs": "npx",
+    "command": "npx",
+    "args": [
+      "-y",
+      "@softeria/ms-365-mcp-server@0.176.1"
+    ],
+    "docs": "https://github.com/Softeria/ms-365-mcp-server",
+    "private": true,
+    "login": {
+      "how": "device",
+      "args": [
+        "--login"
+      ],
+      "hosts": [
+        "microsoft.com",
+        "microsoftonline.com",
+        "aka.ms",
+        "live.com"
+      ],
+      "hint": "Open the page below and type the code. Pumpkin never sees your password."
+    },
+    "fields": [
+      {
+        "id": "preset",
+        "label": "What it can use",
+        "kind": "words",
+        "flag": "--preset",
+        "join": ",",
+        "default": "files,calendar",
+        "help": "Words separated by spaces: files, excel, calendar, contacts, tasks, onenote, mail, teams, search, users. Start small: every extra area adds tools for the model to wade through and more for Microsoft to ask your permission for. Add mail only if you want it to read your email."
+      },
+      {
+        "id": "read_only",
+        "label": "Read only",
+        "kind": "toggle",
+        "default": true,
+        "on_args": [
+          "--read-only"
+        ],
+        "help": "On: it can look but never create, change, send or delete anything. Changing this means signing in again."
+      },
+      {
+        "id": "org",
+        "label": "Work or school account features (Teams, SharePoint)",
+        "kind": "toggle",
+        "default": false,
+        "on_args": [
+          "--org-mode"
+        ],
+        "help": "Needed for Teams and SharePoint. Many companies make an administrator approve these first."
+      },
+      {
+        "id": "client_id",
+        "label": "Your own app ID (optional)",
+        "kind": "text",
+        "env": "MS365_MCP_CLIENT_ID",
+        "help": "Leave empty to use the server's own app. A company that wants control makes an app registration in Entra ID and puts its application (client) ID here."
+      },
+      {
+        "id": "tenant",
+        "label": "Tenant ID (optional)",
+        "kind": "text",
+        "env": "MS365_MCP_TENANT_ID",
+        "help": "Leave empty for any account. A company can limit sign-in to its own tenant."
+      }
+    ]
+  },
+  {
+    "id": "slack",
+    "name": "Slack",
+    "blurb": "Search and read Slack channels, threads and direct messages. Read only unless you allow posting. Made by the community (slack-mcp-server), pinned to the version Pumpkin was tested with.",
+    "needs": "npx",
+    "command": "npx",
+    "args": [
+      "-y",
+      "slack-mcp-server@1.3.0",
+      "--transport",
+      "stdio"
+    ],
+    "docs": "https://github.com/korotovsky/slack-mcp-server",
+    "private": true,
+    "fields": [
+      {
+        "id": "token",
+        "label": "User token (xoxp-...)",
+        "kind": "secret",
+        "env": "SLACK_MCP_XOXP_TOKEN",
+        "required": true,
+        "help": "api.slack.com/apps > Create New App > From scratch > OAuth & Permissions > User Token Scopes: channels:read, channels:history, groups:read, groups:history, im:read, im:history, mpim:read, mpim:history, users:read, search:read. Install to your workspace and copy the User OAuth Token. It reads what you can read. Some workspaces need an administrator to approve the app."
+      },
+      {
+        "id": "write",
+        "label": "Allow posting and reactions",
+        "kind": "toggle",
+        "default": false,
+        "on_args": [
+          "--enabled-tools=conversations_history,conversations_replies,conversations_search_messages,channels_list,conversations_add_message,reactions_add,reactions_remove"
+        ],
+        "off_args": [
+          "--enabled-tools=conversations_history,conversations_replies,conversations_search_messages,channels_list"
+        ],
+        "help": "Off: it can read and search only. On: it can post and react as you, anywhere you can. Leave it off unless you need it: a message someone sent you could try to talk the model into posting."
+      }
+    ]
+  },
+  {
     "id": "browser",
+    "outbound": true,
     "name": "Browser",
     "blurb": "Opens web pages in a real browser, clicks, types and fills in forms. For sites the plain web search cannot read. Playwright's server.",
     "needs": "npx",
@@ -60,6 +241,7 @@
   },
   {
     "id": "folders",
+    "private": true,
     "name": "Folders",
     "blurb": "Read, search and write files in folders you choose on this computer, beyond Pumpkin's own Files folder.",
     "needs": "npx",
@@ -73,6 +255,7 @@
   },
   {
     "id": "git",
+    "private": true,
     "name": "Git",
     "blurb": "Status, log, diffs, branches and commits of a Git repository on this computer.",
     "needs": "uvx",
@@ -98,6 +281,7 @@
   },
   {
     "id": "atlassian",
+    "private": true,
     "name": "Jira and Confluence",
     "blurb": "Search and read Jira issues and Confluence pages, and create or update them. Atlassian Cloud or Server.",
     "needs": "uvx",
@@ -117,6 +301,7 @@
   },
   {
     "id": "postgres",
+    "private": true,
     "name": "PostgreSQL",
     "blurb": "Look at the tables of a PostgreSQL database, run queries and check their speed.",
     "needs": "uvx",
@@ -133,6 +318,7 @@
   },
   {
     "id": "sqlite",
+    "private": true,
     "name": "SQLite",
     "blurb": "Query and change an SQLite database file on this computer.",
     "needs": "uvx",

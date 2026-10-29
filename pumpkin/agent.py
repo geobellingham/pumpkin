@@ -10,7 +10,7 @@ import sys
 import threading
 import time
 
-from . import APP_NAME, config, llama
+from . import APP_NAME, config, connectors, llama
 
 TASK_SUFFIX = ("\n\nYou are running an autonomous task. Use your tools to do the work. Read pages when you need "
                "details, do not repeat identical calls, and finish with a clear Markdown answer that includes "
@@ -47,6 +47,7 @@ def run_agent(port, prompt, system, say, settings, cancelled=lambda: False):
         say("This preset has no tools, so the model answers from what it knows.")
     messages = [{"role": "system", "content": system}, {"role": "user", "content": prompt}]
     seen = set()
+    private_from = None                                    # the connector this run has read private data from
     for step in range(1, max_steps + 1):
         if cancelled():
             return "(cancelled)"
@@ -76,10 +77,17 @@ def run_agent(port, prompt, system, say, settings, cancelled=lambda: False):
             say(f"  {name} {str(raw)[:160]}")
             if args is None:
                 text = "Error: tool arguments were not valid JSON."
+            elif private_from and connectors.outbound_tool(name):
+                # nobody is watching this run, and what it read from a private source could be carried out through
+                # a web address. So once it has read private data, the web is closed for the rest of the run.
+                text = (f"Blocked: this run already read private data from {private_from}, so it may not use the web "
+                        f"or a browser for the rest of the run. Write your answer with what you have.")
+                say(f"    blocked {name}: private data was read from {private_from}")
             elif key in seen:
                 text = "You already ran this exact call. Use the earlier result instead of repeating it."
             else:
                 seen.add(key)
+                private_from = private_from or connectors.private_tool(name)
                 out = llama.http(port, "/tools", {"tool": name, "params": args}, timeout=600)
                 text = out.get("plain_text_response") or out.get("error") or json.dumps(out)
                 if not isinstance(text, str):
@@ -156,6 +164,26 @@ def _ntfy(server, topic, title, body):
         pass
 
 
+def ensure_model(core, preset_id, say, cancelled=lambda: False):
+    """Makes sure a model is running (the preset asked for, or the default) and waits for it. Returns True when it
+    had to start one (so the caller may stop it afterwards), False when one was already running, None if cancelled."""
+    srv = core.server
+    want = core.presets.get(preset_id) if preset_id else None
+    running = srv.preset if srv.state == "ready" else None
+    if srv.state in ("ready", "external") and not (want and running and running.get("id") != want.get("id")):
+        return False
+    p = want or core.default_preset()
+    if not p:
+        raise RuntimeError("There is no preset to start. Create one under Models.")
+    say(f"Starting {p['name']}. Loading a model takes a minute.")
+    srv.start(p)
+    if not srv.wait_ready(900, cancelled):
+        if cancelled():
+            return None
+        raise RuntimeError(srv.error or "The model did not become ready in 15 minutes.")
+    return True
+
+
 class Runner:
     """Runs one agent job at a time (a task or a prompt) and keeps its live log."""
 
@@ -179,7 +207,7 @@ class Runner:
     def start(self, job):
         """job: {name, prompt, preset (id or name), stop_after, task_id}"""
         with self.lock:
-            if self.busy:
+            if self.busy or getattr(self.core, "research", None) and self.core.research.busy:
                 raise RuntimeError("An agent run is already in progress.")
             self.busy, self.cancel, self.current = True, False, job
             self.log = []
@@ -194,19 +222,9 @@ class Runner:
         started = False
         try:
             self.say(f"{job['name']}")
-            want = core.presets.get(job.get("preset")) if job.get("preset") else None
-            running = srv.preset if srv.state == "ready" else None
-            if srv.state not in ("ready", "external") or (want and running and running.get("id") != want.get("id")):
-                p = want or core.default_preset()
-                if not p:
-                    raise RuntimeError("There is no preset to start. Create one under Models.")
-                self.say(f"Starting {p['name']}. Loading a model takes a minute.")
-                srv.start(p)
-                started = True
-                if not srv.wait_ready(900, lambda: self.cancel):
-                    if self.cancel:
-                        return
-                    raise RuntimeError(srv.error or "The model did not become ready in 15 minutes.")
+            started = ensure_model(core, job.get("preset"), self.say, lambda: self.cancel)
+            if started is None:
+                return
             system = core.persona_prompt() + TASK_SUFFIX
             result = run_agent(srv.port, job["prompt"], system, self.say, core.settings, lambda: self.cancel)
             if self.cancel:

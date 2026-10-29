@@ -10,6 +10,7 @@ it for its tools and stops it again, which also gets the download done before a 
 import json
 import os
 import queue
+import re
 import shutil
 import subprocess
 import sys
@@ -122,6 +123,8 @@ def public():
             shown[f["id"]] = ("set" if _filled(v) else "") if f["kind"] == "secret" else v
         need = NEEDS.get(s["needs"], (s["needs"], ""))
         out.append({**{k: s[k] for k in ("id", "name", "blurb", "needs", "docs", "fields")},
+                    "login": bool(s.get("login")), "private": bool(s.get("private")),
+                    "login_hint": (s.get("login") or {}).get("hint", ""), "signed_in": mine.get("signed_in"),
                     "needs_name": need[0], "needs_url": need[1], "values": shown,
                     "enabled": bool(mine.get("enabled")), "added": s["id"] in data,
                     "missing": missing(s["id"], vals), "available": available(s["id"]),
@@ -159,10 +162,15 @@ def save(cid, new_values=None, enabled=None):
 
 
 def remove(cid):
+    s = spec(cid)
+    login_cancel(cid)
     with _lock:
         data = load()
         data.pop(cid, None)
         _save(data)
+    if s.get("data_dir_env"):                               # the sign-in it kept goes too
+        shutil.rmtree(os.path.join(config.CONFIG_DIR, "connector-data", cid), ignore_errors=True)
+    _logins.pop(cid, None)
 
 
 # ---------------------------------------------------------------- starting one
@@ -172,7 +180,9 @@ def entry(cid):
     vals = values(cid)
     if missing(cid, vals):
         raise ValueError(f"{s['name']} needs {', '.join(missing(cid, vals))}.")
-    args, env = list(s.get("args") or []), {}
+    args, env = list(s.get("args") or []), dict(s.get("env") or {})
+    if s.get("data_dir_env"):
+        env[s["data_dir_env"]] = data_dir(cid)            # its sign-in lives in Pumpkin's folder, private to you
     for f in s["fields"]:
         v = vals.get(f["id"])
         if f["kind"] == "toggle":
@@ -182,6 +192,12 @@ def entry(cid):
             continue
         if f["kind"] == "paths":
             args += [os.path.expanduser(str(x)) for x in v]
+            continue
+        if f["kind"] == "words":
+            # several words after one flag: only plain words, so nothing typed here can become another option
+            words = [w for w in re.split(r"[\s,]+", str(v)) if re.fullmatch(r"[A-Za-z0-9_][\w.:-]*", w)]
+            if words:
+                args += [f["flag"]] + ([f["join"].join(words)] if f.get("join") else words)
             continue
         v = os.path.expanduser(str(v)) if f["kind"] == "path" else str(v)
         if f.get("env"):
@@ -195,6 +211,282 @@ def entry(cid):
         # Windows starts .cmd programs (npx is one) only through cmd.exe
         return {"command": "cmd", "args": ["/c", cmd] + args, "env": env}
     return {"command": found or cmd, "args": args, "env": env}
+
+
+def data_dir(cid):
+    """A folder only you can open, for what a connector keeps about your sign-in."""
+    d = os.path.join(config.CONFIG_DIR, "connector-data", cid)
+    os.makedirs(d, mode=0o700, exist_ok=True)
+    try:
+        os.chmod(d, 0o700)
+    except OSError:
+        pass
+    return d
+
+
+def _norm(name):
+    return re.sub(r"[^a-z0-9]+", "_", str(name).lower()).strip("_")
+
+
+def _tool_of(cid, name, mine):
+    n = _norm(name)
+    if n == _norm(cid) or n.startswith(_norm(cid) + "_"):
+        return True
+    for t in (mine.get("test") or {}).get("tools") or []:
+        tn = _norm(t)
+        if tn and (n == tn or n.endswith("_" + tn)):
+            return True
+    return False
+
+
+def private_tool(name):
+    """The connector's name when this tool belongs to one that is on and holds private data (Drive, Slack, mail...)."""
+    for cid, mine in load().items():
+        if not mine.get("enabled"):
+            continue
+        try:
+            s = spec(cid)
+        except LookupError:
+            continue
+        if s.get("private") and _tool_of(cid, name, mine):
+            return s["name"]
+    return None
+
+
+def outbound_tool(name):
+    """A tool that can send something to the internet: the web tools and connectors that browse."""
+    n = _norm(name)
+    if n.endswith(("web_search", "read_webpage")):
+        return True
+    for cid, mine in load().items():
+        try:
+            if mine.get("enabled") and spec(cid).get("outbound") and _tool_of(cid, name, mine):
+                return True
+        except LookupError:
+            continue
+    return False
+
+
+# ---------------------------------------------------------------- signing in
+# Some connectors sign in with a page in your own browser (Microsoft: a code you type; Google: its usual consent page).
+# Pumpkin starts the connector's own sign-in, shows you the link, and waits. It never sees your password, and it only
+# shows links to the company's own sites.
+_logins = {}
+LOGIN_SECONDS = 900
+URL_RE = re.compile(r"https://[^\s<>\"')]+")
+CODE_RE = re.compile(r"\bcode\s+([A-Z0-9]{6,12})\b")
+
+
+def _host_ok(url, hosts):
+    h = (re.match(r"https://([^/:?#]+)", url) or [None, ""])[1].lower()
+    return any(h == x or h.endswith("." + x) for x in hosts)
+
+
+def login_status(cid):
+    st = _logins.get(cid)
+    if not st:
+        return {"state": "idle"}
+    return {**{k: st[k] for k in ("state", "url", "code", "message", "error")}, "lines": st["lines"][-6:]}
+
+
+def login_start(cid):
+    s = spec(cid)
+    lg = s.get("login")
+    if not lg:
+        raise ValueError(f"{s['name']} has no sign-in step.")
+    if not available(cid):
+        raise ValueError(f"{NEEDS.get(s['needs'], (s['needs'],))[0]} is not installed on this computer.")
+    e = entry(cid)
+    login_cancel(cid)
+    st = {"state": "starting", "url": "", "code": "", "message": lg.get("hint", ""), "error": "", "lines": [],
+          "proc": None, "cancel": False}
+    _logins[cid] = st
+    threading.Thread(target=_login_run, args=(cid, e, lg, st), daemon=True).start()
+    return login_status(cid)
+
+
+def login_cancel(cid):
+    st = _logins.get(cid)
+    if st and st["state"] in ("starting", "waiting"):
+        st["cancel"] = True
+        _kill(st.get("proc"))
+        st["state"], st["error"] = "cancelled", "Stopped."
+    return login_status(cid)
+
+
+def _kill(p):
+    if not p:
+        return
+    try:
+        if WINDOWS:
+            subprocess.run(["taskkill", "/PID", str(p.pid), "/T", "/F"], capture_output=True,
+                           creationflags=hardware.NO_WINDOW)
+        p.terminate()
+        p.wait(5)
+    except (OSError, subprocess.SubprocessError):
+        try:
+            p.kill()
+        except OSError:
+            pass
+
+
+def _login_run(cid, e, lg, st):
+    env = dict(os.environ)
+    env.update(e.get("env") or {})
+    hosts = lg.get("hosts") or []
+    try:
+        if lg["how"] == "device":
+            _login_device(e, env, lg, st, hosts)
+        else:
+            _login_tool(cid, e, env, lg, st, hosts)
+    except Exception as ex:  # noqa: BLE001 - whatever failed is shown next to the button
+        if st["state"] != "cancelled":
+            st["state"], st["error"] = "error", str(ex)[:400]
+    finally:
+        _kill(st.get("proc"))
+        if st["state"] in ("starting", "waiting"):
+            st["state"], st["error"] = "error", "It stopped before you finished."
+        if st["state"] == "done":
+            login_done(cid)
+
+
+def _login_device(e, env, lg, st, hosts):
+    p = subprocess.Popen([e["command"]] + list(e.get("args") or []) + list(lg.get("args") or []), env=env,
+                         stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+                         errors="replace", creationflags=hardware.NO_WINDOW if WINDOWS else 0)
+    st["proc"], st["state"] = p, "waiting"
+    timer = threading.Timer(LOGIN_SECONDS, _kill, args=(p,))
+    timer.daemon = True
+    timer.start()
+    for line in p.stdout:
+        line = line.strip()
+        if not line:
+            continue
+        st["lines"].append(line[:300])
+        m = URL_RE.search(line)
+        if m and not st["url"] and _host_ok(m.group(0).rstrip(".,"), hosts):
+            st["url"] = m.group(0).rstrip(".,")
+        c = CODE_RE.search(line)
+        if c and not st["code"]:
+            st["code"] = c.group(1)
+    code = p.wait()
+    if st["cancel"]:
+        return
+    if code == 0:
+        st["state"] = "done"
+    else:
+        tail = " ".join(st["lines"][-3:])
+        raise RuntimeError(f"Sign-in did not finish. {tail[-300:]}")
+
+
+def _login_tool(cid, e, env, lg, st, hosts):
+    """Starts the connector's server and asks it for its sign-in link (Google), then waits for the sign-in to land."""
+    vals = values(cid)
+    email = str(vals.get("email") or "").strip()
+    if not email:
+        raise ValueError("Fill in your account first.")
+    p = subprocess.Popen([e["command"]] + list(e.get("args") or []), env=env, stdin=subprocess.PIPE,
+                         stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, errors="replace",
+                         creationflags=hardware.NO_WINDOW if WINDOWS else 0)
+    st["proc"] = p
+    out = queue.Queue()
+
+    def pump():
+        for line in p.stdout:
+            out.put(line)
+        out.put(None)
+
+    threading.Thread(target=pump, daemon=True).start()
+
+    def send(msg):
+        p.stdin.write(json.dumps(msg) + "\n")
+        p.stdin.flush()
+
+    def wait(mid, seconds=120):
+        end = time.time() + seconds
+        while time.time() < end:
+            if st["cancel"]:
+                raise RuntimeError("Stopped.")
+            try:
+                line = out.get(timeout=1)
+            except queue.Empty:
+                continue
+            if line is None:
+                raise RuntimeError("The connector stopped.")
+            try:
+                m = json.loads(line)
+            except ValueError:
+                continue
+            if isinstance(m, dict) and m.get("id") == mid:
+                if m.get("error"):
+                    raise RuntimeError(str(m["error"].get("message", m["error"]))[:300])
+                return m.get("result") or {}
+        raise RuntimeError("No answer. The first start downloads it, which can take a minute or two: try again.")
+
+    send({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {
+        "protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": {"name": "pumpkin", "version": "1"}}})
+    wait(1, 240)
+    send({"jsonrpc": "2.0", "method": "notifications/initialized"})
+    service = (re.findall(r"[a-z]+", str(vals.get("services") or "drive")) or ["drive"])[0]
+    send({"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {
+        "name": lg["tool"], "arguments": {"user_google_email": email, "service_name": service}}})
+    r = wait(2)
+    text = " ".join(c.get("text", "") for c in r.get("content") or [] if isinstance(c, dict))
+    m = re.search(r"https://\S+", text)
+    if not m:
+        if re.search(r"already|authenticated|valid credentials", text, re.I):
+            st["state"] = "done"
+            return
+        raise RuntimeError(text.strip()[:300] or "It did not give a sign-in link.")
+    url = m.group(0).rstrip(".,)")
+    if not _host_ok(url, hosts):
+        raise RuntimeError("It gave a link that is not Google's, so Pumpkin did not show it.")
+    st["url"], st["state"] = url, "waiting"
+    cred = os.path.join(data_dir(cid), email + ".json")
+    end = time.time() + LOGIN_SECONDS
+    while time.time() < end:
+        if st["cancel"]:
+            return
+        if os.path.isfile(cred):
+            st["state"] = "done"
+            return
+        if p.poll() is not None:
+            raise RuntimeError("The connector stopped before you finished.")
+        time.sleep(1)
+    raise RuntimeError("Nobody signed in within 15 minutes.")
+
+
+def login_done(cid):
+    """Remembers that the sign-in finished (the Connectors page shows it)."""
+    with _lock:
+        data = load()
+        if cid in data:
+            data[cid]["signed_in"] = time.time()
+            _save(data)
+
+
+def signout(cid):
+    """Forgets the sign-in: the connector's saved credentials go."""
+    s = spec(cid)
+    lg = s.get("login") or {}
+    login_cancel(cid)
+    if lg.get("how") == "tool":
+        shutil.rmtree(data_dir(cid), ignore_errors=True)
+    elif lg.get("how") == "device" and available(cid):
+        try:
+            e = entry(cid)
+            env = dict(os.environ, **(e.get("env") or {}))
+            subprocess.run([e["command"]] + list(e.get("args") or []) + ["--logout"], env=env, timeout=120,
+                           capture_output=True, stdin=subprocess.DEVNULL,
+                           creationflags=hardware.NO_WINDOW if WINDOWS else 0)
+        except (OSError, subprocess.SubprocessError, ValueError):
+            pass
+    with _lock:
+        data = load()
+        if cid in data:
+            data[cid].pop("signed_in", None)
+            _save(data)
+    _logins.pop(cid, None)
 
 
 def servers_for(preset):

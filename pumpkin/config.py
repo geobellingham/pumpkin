@@ -61,6 +61,8 @@ DEFAULT_SETTINGS = {
     "share_parallel": 2,               # requests from other devices at once; more get "busy, try later"
     "share_per_hour": 60,              # requests from other devices per hour
     "memory": True,                    # remember facts about you across chats (Memory page), kept on this device
+    "artifacts": True,                 # the model may build things in the side panel (Artifacts page)
+    "web_private": False,              # the model may read pages on this computer and your private network (off: public web only)
     "doc_index": True,                 # keep your documents searchable for the model (Files page)
     "doc_folders": [],                 # more folders to make searchable, besides the work folder
     "vision_model": "",                # the vision model that reads scans and describes pictures; empty = the smallest one you have

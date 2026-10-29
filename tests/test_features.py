@@ -608,7 +608,7 @@ class TestConnectors(unittest.TestCase):
                 self.assertIn(k, s, s["id"])
             self.assertIn(s["needs"], self.c.NEEDS)
             for f in s["fields"]:
-                self.assertIn(f["kind"], ("secret", "text", "path", "paths", "toggle"), s["id"])
+                self.assertIn(f["kind"], ("secret", "text", "path", "paths", "toggle", "words"), s["id"])
 
     def test_github_is_started_with_the_token_outside_its_arguments(self):
         with self.assertRaises(ValueError):

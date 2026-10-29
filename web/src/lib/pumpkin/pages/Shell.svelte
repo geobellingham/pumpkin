@@ -9,6 +9,7 @@
 		FileText,
 		FolderOpen,
 		Users,
+		Layers,
 		House,
 		Image as ImageIcon,
 		MonitorSmartphone,
@@ -19,13 +20,16 @@
 		SlidersHorizontal,
 		Smartphone,
 		SquareTerminal,
-		Stethoscope
+		Stethoscope,
+		Telescope
 	} from '@lucide/svelte';
 	import PumpkinLogo from '../components/PumpkinLogo.svelte';
 	import StatusDot from '../components/StatusDot.svelte';
 	import ThemeToggle from '../components/ThemeToggle.svelte';
 	import { pumpkin } from '../store.svelte';
 	import Agent from './Agent.svelte';
+	import Research from './Research.svelte';
+	import Artifacts from './Artifacts.svelte';
 	import Browser from './Browser.svelte';
 	import Code from './Code.svelte';
 	import Connectors from './Connectors.svelte';
@@ -56,8 +60,10 @@
 		{ icon: Boxes, id: 'models', label: 'Models', page: Models },
 		{ icon: SlidersHorizontal, id: 'presets', label: 'Presets', page: Presets },
 		{ icon: Bot, id: 'agent', label: 'Agent', page: Agent },
+		{ icon: Telescope, id: 'research', label: 'Research', page: Research },
 		{ icon: SquareTerminal, id: 'code', label: 'Code', page: Code },
 		{ icon: Users, id: 'browser', label: 'Teammate', page: Browser },
+		{ icon: Layers, id: 'artifacts', label: 'Artifacts', page: Artifacts },
 		{ icon: Sparkles, id: 'skills', label: 'Skills', page: Skills },
 		{ icon: Plug, id: 'connectors', label: 'Connectors', page: Connectors },
 		{ icon: Clock, id: 'tasks', label: 'Tasks', page: Tasks },

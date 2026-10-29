@@ -27,6 +27,13 @@ The [guide](docs/GUIDE.md) explains every feature and how to use it.
   says where each fact came from, like *(lease.pdf, p. 4)*, so even a small model answers from your papers
   instead of guessing. Everything is read on your computer. Scans and photos of paper are read too once
   you have a model with vision: press *Read scans* on the Files page.
+- **Research.** Ask a question and get back a report with numbered sources. Pumpkin does the searching and
+  reading itself and the model only reads and writes, so a hostile web page has nothing to steer. Every source in
+  the report is a page that was really opened.
+- **Artifacts.** The model builds a page, document, diagram or piece of code in a panel next to the chat. You edit
+  it too, every change is a version, and pages run in a frame with no internet.
+- **Google Drive, Microsoft 365 and Slack.** Connectors that start read only, sign in through the company's own
+  page, and keep your sign-in on your computer.
 - **Every model can look at pictures.** Attach a picture to a chat with a text-only model and a small
   vision model you have installed (Gemma 3 4B, say) looks at it first and tells the chat model what is
   there, text included. It loads only when needed, and if both models do not fit in memory together the
@@ -262,7 +269,7 @@ pumpkin stop                stop Pumpkin and the model
   search index of your documents is `~/.local/share/pumpkin/documents.sqlite`. On Windows these are under
   `%APPDATA%\pumpkin` and `%LOCALAPPDATA%\pumpkin`.
 - The model's own tools are small MCP servers that come with Pumpkin: web search (`mcp_web`), your
-  documents and saved files (`mcp_files`), memory (`mcp_memory`) and paired devices (`mcp_devices`).
+  documents and saved files (`mcp_files`), memory (`mcp_memory`), artifacts (`mcp_artifacts`) and paired devices (`mcp_devices`).
   PDFs are read with [pypdf](https://github.com/py-pdf/pypdf), included in `pumpkin/vendor`.
 - Everything is behind a private key, stored in `~/.config/pumpkin/token`. The server only listens on
   127.0.0.1 unless you turn on home-network access.
@@ -304,6 +311,17 @@ pumpkin stop                stop Pumpkin and the model
   and only write into `~/Pumpkin/files/outputs`; they never change your own files. Memory is one file
   readable only by you, and the model is told not to save passwords or card numbers. Like web pages, a
   document can try to steer the model, so a model reading an untrusted file is like one reading the web.
+- **Web pages cannot send the model inside.** The page reader refuses addresses on your computer or private
+  network, on the first request and on every redirect, and connects only to the address it checked, so a page
+  cannot point the model at Pumpkin, your router or a cloud metadata address. Settings can allow private
+  addresses if you want that.
+- **Artifacts run with no network.** A page the model made is shown in a sandboxed frame whose policy forbids
+  every request, form and frame, and which cannot reach Pumpkin, your files or your settings.
+- **Research is closed in.** The research model gets no tools. Its reports contain no pictures and no links except
+  to pages it read, and the source list is written by Pumpkin.
+- **Private connectors.** Drive, Microsoft 365 and Slack start read only, show only the areas you pick, and are
+  pinned to a tested version. A task or other unattended run that has read from one cannot use the web or a
+  browser for the rest of that run, because a web address can carry data out.
 - **Home-network mode is unencrypted.** Use it only on a network you trust. Tailscale mode is encrypted.
 
 Found a problem? See [SECURITY.md](SECURITY.md) and open a private security advisory on GitHub instead of a

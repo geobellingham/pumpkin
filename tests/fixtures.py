@@ -192,6 +192,25 @@ class H(BaseHTTPRequestHandler):
                 s.send_response(200); s.send_header("Content-Type", "text/event-stream"); s.end_headers()
                 s.wfile.write(("data: " + json.dumps({"choices": [{"delta": {"content": "SUMMARY: greeting changed"}}]}) + "\n\n").encode())
                 s.wfile.write(b"data: [DONE]\n\n"); s.wfile.flush(); s.close_connection = True; return
+            sysmsg = next((m.get("content") for m in msgs if m.get("role") == "system"), "") or ""
+            if isinstance(sysmsg, str) and sysmsg.startswith("You ") and "UNTRUSTED" not in sysmsg and "untrusted data" in sysmsg:
+                user = str(msgs[-1].get("content", ""))
+                if body.get("tools"):                                    # research never gives the model tools
+                    return s.j({"choices": [{"message": {"role": "assistant", "content": "TOOLS WERE OFFERED"}}]})
+                if sysmsg.startswith("You plan web research"):
+                    out = '["pumpkin history", "pumpkin farming", "pumpkin history"]'
+                elif sysmsg.startswith("You choose which search results"):
+                    out = "[1, 2]"
+                elif sysmsg.startswith("You take research notes"):
+                    out = "NONE" if "NOTHING HERE" in user else "- Fact from the page: " + re.sub(r"\s+", " ", user.split("</page>")[0].split(">", 1)[-1])[:80]
+                    if "SLOW" in user: time.sleep(1.5)
+                elif sysmsg.startswith("You check research for gaps"):
+                    out = "[]"
+                else:
+                    out = ("## Answer\n\nPumpkins are old [1] and grown everywhere [1, 2, 9].\n\n"
+                           "![tracker](http://evil.example/x.png)\n\nSee [the site](http://evil.example/steal?d=1) and "
+                           "[page one](" + (re.search(r"http://127[^ )\n]*/page/1", user) or [""])[0] + ") <script>alert(1)</script>.")
+                return s.j({"choices": [{"message": {"role": "assistant", "content": out}}], "timings": {}})
             if "--mmproj" in args and "image_url" in json.dumps(msgs):
                 text = "A photo of an orange pumpkin on a table.\nText in the picture: HARVEST 42"
                 return s.j({"choices": [{"message": {"role": "assistant", "content": text}}]})

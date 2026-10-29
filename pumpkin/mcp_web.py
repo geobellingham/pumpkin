@@ -4,9 +4,12 @@ llama-server starts it as `python3 -m pumpkin.mcp_web` and talks JSON-RPC over s
 Search uses DuckDuckGo's HTML page by default. Set PUMPKIN_SEARXNG to a SearXNG URL, or
 BRAVE_API_KEY, to use those instead."""
 import html
+import http.client
+import ipaddress
 import json
 import os
 import re
+import socket
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -27,11 +30,108 @@ TOOLS = [
 ]
 
 
-def _get(url, headers=None, data=None, timeout=20):
+# ---------------------------------------------------------------- keeping page reads on the public web
+# A page the model reads can be written by anyone, and can send the model to http://127.0.0.1:8090 (Pumpkin itself),
+# a router, or a cloud metadata address. Reading pages therefore refuses private addresses, on the first request and
+# on every redirect, unless the user allowed them (PUMPKIN_WEB_PRIVATE=1, Settings > Tools).
+def private_allowed():
+    return os.environ.get("PUMPKIN_WEB_PRIVATE", "") not in ("", "0")
+
+
+def _public_ip(ip):
+    try:
+        a = ipaddress.ip_address(ip.split("%")[0])
+    except ValueError:
+        return False
+    if getattr(a, "ipv4_mapped", None):
+        a = a.ipv4_mapped
+    return a.is_global and not a.is_multicast
+
+
+def _addresses(host, port):
+    try:
+        infos = socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)
+    except socket.gaierror as e:
+        raise urllib.error.URLError(f"Could not find {host}.") from e
+    return [i[4][0] for i in infos]
+
+
+def check_url(url):
+    """Raises unless the address is on the public internet (or private reads are allowed)."""
+    u = urllib.parse.urlparse(url)
+    if u.scheme not in ("http", "https") or not u.hostname:
+        raise ValueError("Only http and https URLs can be read.")
+    if private_allowed():
+        return
+    if u.username or u.password:
+        raise ValueError("Addresses with a user name or password in them are not read.")
+    ips = _addresses(u.hostname, u.port or (443 if u.scheme == "https" else 80))
+    if not ips or not all(_public_ip(ip) for ip in ips):
+        raise ValueError("That address is on this computer or a private network, so Pumpkin does not read it. "
+                         "(Settings > Tools > Let web search read private addresses changes that.)")
+
+
+def _connect(host, port, timeout):
+    """Connects to one of the host's addresses, and only a public one: the check and the connection use the same
+    answer from DNS, so a name cannot change its address between them."""
+    last = None
+    for ip in _addresses(host, port):
+        if not private_allowed() and not _public_ip(ip):
+            last = ValueError("That address is on this computer or a private network, so Pumpkin does not read it.")
+            continue
+        try:
+            return socket.create_connection((ip, port), timeout)
+        except OSError as e:
+            last = e
+    raise last or OSError(f"Could not connect to {host}.")
+
+
+class _Http(http.client.HTTPConnection):
+    def connect(self):
+        self.sock = _connect(self.host, self.port, self.timeout)
+
+
+class _Https(http.client.HTTPSConnection):
+    def connect(self):
+        sock = _connect(self.host, self.port, self.timeout)
+        self.sock = self._context.wrap_socket(sock, server_hostname=self.host)
+
+
+class _HttpHandler(urllib.request.HTTPHandler):
+    def http_open(self, req):
+        return self.do_open(_Http, req)
+
+
+class _HttpsHandler(urllib.request.HTTPSHandler):
+    def https_open(self, req):
+        return self.do_open(_Https, req, context=self._context)
+
+
+class _Redirects(urllib.request.HTTPRedirectHandler):
+    max_redirections = 5
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        check_url(urllib.parse.urljoin(req.full_url, newurl))
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+def _opener():
+    if any(os.environ.get(k) for k in ("HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy", "ALL_PROXY")):
+        # a proxy the user set up makes the connection for us, so only the address in the URL can be checked
+        return urllib.request.build_opener(_Redirects)
+    return urllib.request.build_opener(_HttpHandler, _HttpsHandler, _Redirects)
+
+
+def _get(url, headers=None, data=None, timeout=20, public_only=False):
     h = {"User-Agent": UA, "Accept-Language": "en-US,en;q=0.8"}
     h.update(headers or {})
     req = urllib.request.Request(url, headers=h, data=data)
-    with urllib.request.urlopen(req, timeout=timeout) as r:
+    if public_only:
+        check_url(url)
+        opener = _opener().open
+    else:
+        opener = urllib.request.urlopen
+    with opener(req, timeout=timeout) as r:
         raw = r.read(4_000_000)
         ctype = r.headers.get("Content-Type", "")
         m = re.search(r"charset=([\w-]+)", ctype)
@@ -144,7 +244,7 @@ class _Text(HTMLParser):
 def read(url, start=0):
     if not re.match(r"https?://", url or ""):
         raise ValueError("Only http and https URLs can be read.")
-    body, ctype, final = _get(url)
+    body, ctype, final = _get(url, public_only=True)
     if "html" not in ctype and "<html" not in body[:2000].lower():
         text, title = body, ""
     else:

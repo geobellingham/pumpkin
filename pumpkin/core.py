@@ -10,7 +10,7 @@ import threading
 import time
 
 from . import (__version__, agent, browser, coder, config, connectors, devices, docs, hardware, images, llama, llamaup, mcp_local, memory, migrate, models,
-               recommend, remote, skills, updates, vision, workspace)
+               recommend, remote, research, skills, updates, vision, workspace)
 
 # which setting holds the chosen model for each kind of image model
 IMAGE_KEYS = {"draw": "image_model", "edit": "edit_model", "video": "video_model"}
@@ -67,6 +67,7 @@ class Core:
         self.server.on_recover = self._keep_working_ctx
         self.reports = agent.Reports(self.settings)
         self.runner = agent.Runner(self)
+        self.research = research.Research(self)
         self.helper = devices.Helper(self)
         self.indexer = docs.Indexer(self.settings)
         self.image_server = images.ImageServer(self.settings)
@@ -169,6 +170,10 @@ class Core:
                      "you write")
             text += (", memory_save for lasting facts they tell you about themselves." if self.settings["memory"]
                      else ".")
+            if self.settings["artifacts"]:
+                text += (" For a page, app, document, diagram or code the user will keep changing, call "
+                         "artifacts_create (it opens in a side panel; do not paste it into the reply) and change it "
+                         "later with artifacts_edit. Run artifacts_read first: the user may have changed it.")
             if self.images_ready():
                 text += " image_generate draws a picture when the user asks for one."
             if self.edit_ready():
@@ -342,6 +347,8 @@ class Core:
         if preset.get("web", True):
             servers.setdefault("web", h.command("web"))
         servers.setdefault("files", h.command("files", 300_000))
+        if self.settings["artifacts"]:
+            servers.setdefault("artifacts", h.command("artifacts"))
         if self.settings["memory"]:
             servers.setdefault("memory", h.command("memory"))
         if self.skills_on():
@@ -357,9 +364,13 @@ class Core:
             for k in ("PUMPKIN_SEARXNG", "BRAVE_API_KEY"):
                 if os.environ.get(k):
                     env[k] = os.environ[k]
+            if self.settings["web_private"]:
+                env["PUMPKIN_WEB_PRIVATE"] = "1"
             servers.setdefault("web", {"command": _python(), "args": ["-m", "pumpkin.mcp_web"], "env": env})
         # your documents and files the model saves for you, and what it remembers about you
         servers.setdefault("files", self._builtin("pumpkin.mcp_files", 300_000))
+        if self.settings["artifacts"]:
+            servers.setdefault("artifacts", self._builtin("pumpkin.mcp_artifacts"))
         if self.settings["memory"]:
             servers.setdefault("memory", self._builtin("pumpkin.mcp_memory"))
         if self.skills_on():

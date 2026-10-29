@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { page } from '$app/state';
+	import ArtifactDock from './ArtifactDock.svelte';
 	import StatusChip from './StatusChip.svelte';
 	import VoiceBar from './VoiceBar.svelte';
 	import { pumpkin } from '../store.svelte';
@@ -66,6 +67,8 @@
 		<StatusChip />
 
 		<VoiceBar />
+
+		<ArtifactDock />
 	{/if}
 
 	{#if pumpkin.toast}

@@ -18,12 +18,13 @@ KEY_ENV = "PUMPKIN_MCP_KEY"
 
 def _servers():
     """name -> (server name, tools, call, errors). Imported late: each pulls in its own parts of Pumpkin."""
-    from . import mcp_devices, mcp_files, mcp_memory, mcp_skills, mcp_web
+    from . import mcp_artifacts, mcp_devices, mcp_files, mcp_memory, mcp_skills, mcp_web
     return {
         "skills": ("pumpkin-skills", mcp_skills.TOOLS, mcp_skills.call, mcp_base.ERRORS),
         "web": ("pumpkin-web", mcp_web.TOOLS, mcp_web.call, mcp_web.ERRORS),
         "files": ("pumpkin-files", mcp_files.TOOLS, mcp_files.call, mcp_base.ERRORS),
         "memory": ("pumpkin-memory", mcp_memory.TOOLS, mcp_memory.call, mcp_base.ERRORS),
+        "artifacts": ("pumpkin-artifacts", mcp_artifacts.TOOLS, mcp_artifacts.call, mcp_base.ERRORS),
         "devices": ("pumpkin-devices", mcp_devices.TOOLS, mcp_devices.call, Exception),
     }
 

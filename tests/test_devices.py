@@ -41,13 +41,14 @@ def free_port():
 
 
 class Instance:
-    def __init__(self, name, with_model):
+    def __init__(self, name, with_model, env=None):
         self.home = tempfile.mkdtemp(prefix=f"pumpkin-{name}-")
         self.env = {k: v for k, v in os.environ.items() if not k.startswith(("XDG_", "PUMPKIN_"))}
         self.env.update(HOME=self.home, USERPROFILE=self.home, XDG_CONFIG_HOME=f"{self.home}/.config",
                         XDG_DATA_HOME=f"{self.home}/.local/share", XDG_STATE_HOME=f"{self.home}/.local/state",
                         PATH=f"{self.home}/bin" + os.pathsep + os.environ["PATH"], PYTHONPATH=ROOT, FAKE_LLAMA_LOAD="0.3",
                         PUMPKIN_FAKE_HARDWARE=f"{self.home}/hw.json")
+        self.env.update(env or {})
         os.makedirs(f"{self.home}/bin")
         os.makedirs(f"{self.home}/.config/pumpkin")
         fixtures.make_fake_server(f"{self.home}/bin/llama-server")

@@ -17,7 +17,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, quote, unquote, urlparse
 
 from . import (APP_NAME, __version__, agent, config, devices, discover, docs, doctor, hardware, llama, memory, models,
-               remote, sessions, connectors, skills, updates, workspace, workspaces, browser)
+               remote, sessions, connectors, skills, updates, workspace, workspaces, browser, artifacts, research)
 
 COOKIE = "pumpkin_key"
 KILL_SW = """self.addEventListener('install', () => self.skipWaiting());
@@ -851,6 +851,16 @@ class Web:
                 if ident and method == "POST" and what == "remove":
                     connectors.remove(ident)
                     return {"ok": True, "restart_needed": running}
+                if ident and what == "login" and method == "POST":
+                    return connectors.login_start(ident)
+                if ident and what == "login" and method == "GET":
+                    connectors.spec(ident)
+                    return connectors.login_status(ident)
+                if ident and what == "login-cancel" and method == "POST":
+                    return connectors.login_cancel(ident)
+                if ident and what == "signout" and method == "POST":
+                    connectors.signout(ident)
+                    return {"ok": True, "restart_needed": running}
                 if ident and method == "POST" and not what:
                     c = connectors.save(ident, body.get("values"), body.get("enabled"))
                     return {"item": c, "restart_needed": running}
@@ -1141,6 +1151,49 @@ class Web:
             if method == "DELETE" and ident:
                 memory.remove(ident)
                 return {"ok": True}
+
+        # ---- deep research
+        if head == "research":
+            r = core.research
+            try:
+                if method == "GET" and not ident:
+                    return {"busy": r.busy, "current": r.current(), "items": research.listing(
+                        r.job["id"] if r.busy and r.job else None)}
+                if method == "POST" and not ident:
+                    return r.start(body.get("question"), body.get("depth") or "normal", body.get("preset") or None,
+                                   bool(body.get("stop_after")))
+                if method == "POST" and ident == "cancel":
+                    r.stop()
+                    return {"ok": True}
+                if method == "GET" and ident:
+                    return r.get(ident)
+                if method == "DELETE" and ident:
+                    if r.busy and r.job and r.job["id"] == ident:
+                        raise ApiError("Stop it first.", 409)
+                    research.delete(ident)
+                    return {"ok": True}
+            except LookupError as e:
+                raise ApiError(str(e), 404) from e
+
+        # ---- artifacts: what the model builds in the side panel
+        if head == "artifacts":
+            try:
+                if method == "GET" and not ident:
+                    return {"enabled": bool(core.settings["artifacts"]), "items": artifacts.all_()}
+                if method == "POST" and not ident:
+                    return artifacts.create(body.get("title"), body.get("content"), body.get("kind"), by="you")
+                if method == "GET" and ident:
+                    return artifacts.get(ident, arg("version"))
+                if method == "PUT" and ident:
+                    return artifacts.update(ident, body.get("content"), body.get("title"), by="you",
+                                            note=body.get("note") or "Edited by you")
+                if method == "POST" and ident and len(parts) > 2 and parts[2] == "restore":
+                    return artifacts.restore(ident, body.get("version"))
+                if method == "DELETE" and ident:
+                    artifacts.delete(ident)
+                    return {"ok": True}
+            except LookupError as e:
+                raise ApiError(str(e), 404) from e
 
         # ---- your documents, searchable by the model
         if head == "docs":

@@ -270,6 +270,8 @@ export interface Settings {
 	memory: boolean;
 	models_dirs: string[];
 	notifications: boolean;
+	web_private: boolean;
+	artifacts: boolean;
 	ntfy_server: string;
 	ntfy_topic: string;
 	persona: string;
@@ -342,7 +344,7 @@ export interface ConnectorField {
 	default?: unknown;
 	help?: string;
 	id: string;
-	kind: 'secret' | 'text' | 'path' | 'paths' | 'toggle';
+	kind: 'secret' | 'text' | 'path' | 'paths' | 'toggle' | 'words';
 	label: string;
 	placeholder?: string;
 	required?: boolean;
@@ -356,11 +358,24 @@ export interface Connector {
 	enabled: boolean;
 	fields: ConnectorField[];
 	id: string;
+	login: boolean;
+	login_hint: string;
 	missing: string[];
 	name: string;
 	needs: string;
 	needs_name: string;
 	needs_url: string;
+	private: boolean;
+	signed_in: number | null;
 	test: { at: number; error: string | null; ok: boolean; tools: string[] } | null;
 	values: Record<string, unknown>;
+}
+
+export interface ConnectorLogin {
+	code: string;
+	error: string;
+	lines: string[];
+	message: string;
+	state: 'idle' | 'starting' | 'waiting' | 'done' | 'error' | 'cancelled';
+	url: string;
 }

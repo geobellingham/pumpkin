@@ -361,13 +361,13 @@ class TestAndroidRelay(Base):
         with open(bridge, "w") as f:
             f.write("relay")
         c = core_mod.Core.__new__(core_mod.Core)
-        c.settings = {"memory": True}
+        c.settings = {"memory": True, "artifacts": True}
         c.mcp_host = self.host(bridge)
         with mock.patch.object(hardware, "ANDROID", True), mock.patch.object(devices, "load", return_value=[]):
             self.assertTrue(c.tools_here())
             with open(c.mcp_config({"web": True})) as f:
                 servers = json.load(f)["mcpServers"]
-            self.assertEqual(sorted(servers), ["files", "memory", "web"])
+            self.assertEqual(sorted(servers), ["artifacts", "files", "memory", "web"])
             for name, s in servers.items():
                 self.assertEqual(s["command"], bridge)
                 self.assertEqual(s["args"], [str(c.mcp_host.port), name])
