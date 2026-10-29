@@ -210,10 +210,43 @@ def cmd_open(args):
         print(f"Open this in your browser: {login_url()}")
 
 
+def running_version():
+    """The version of the Pumpkin answering on this computer's port: None when nothing answers, "?" when it
+    answers but does not say."""
+    req = urllib.request.Request(base_url() + "/pumpkin/api/state", headers={"Authorization": f"Bearer {config.token()}"})
+    try:
+        with config.local_open(req, timeout=3) as r:
+            return str(json.loads(r.read().decode()).get("version") or "?")
+    except urllib.error.HTTPError:
+        return "?"
+    except (urllib.error.URLError, OSError, ValueError):
+        return None
+
+
+def start_new(wait=150, pause=1.0):
+    """Start Pumpkin, and make sure it is this version that runs. After an update the old Pumpkin may still be
+    shutting down (stopping a loaded model takes a while); starting then would find the port busy and do nothing,
+    and the old one would end up gone with nothing in its place. So: wait for it, ask it again to quit now and
+    then, and start the new one once the port is free."""
+    end = time.time() + wait
+    asked = 0.0
+    while time.time() < end:
+        v = running_version()
+        if v in (__version__, "?"):
+            return True
+        if v is None:
+            start_background()
+        elif time.time() - asked > 20:
+            asked = time.time()
+            urllib_post("quit")
+        time.sleep(pause)
+    return running_version() in (__version__, "?")
+
+
 def cmd_up(args):
     """Start in the background without opening anything (used after an update)."""
     config.ensure_dirs()
-    sys.exit(0 if start_background() else 1)
+    sys.exit(0 if start_new() else 1)
 
 
 def mac_window():

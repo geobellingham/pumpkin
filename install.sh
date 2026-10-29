@@ -105,8 +105,12 @@ if [ -z "$UNDER_SERVICE" ]; then
   # make sure it really stopped: older versions could miss it (a proxy in the environment, or no PATH)
   CONF="${XDG_CONFIG_HOME:-$HOME/.config}/pumpkin"
   PORT="$("$PY" -c 'import json,sys; print(json.load(open(sys.argv[1])).get("port", 8090))' "$CONF/settings.json" 2>/dev/null || echo 8090)"
-  for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
+  # a loaded model takes a while to unload, so give it up to a minute
+  N=0
+  while [ "$N" -lt 120 ]; do
+    N=$((N + 1))
     curl -s --noproxy '*' -o /dev/null -m 2 "http://127.0.0.1:$PORT/" 2>/dev/null || break
+    [ $((N % 8)) -eq 1 ] || { sleep 0.5; continue; }
     if [ -f "$CONF/token" ]; then
       curl -s --noproxy '*' -o /dev/null -m 3 -X POST -H "Authorization: Bearer $(cat "$CONF/token")" -H "X-Pumpkin: 1" \
         -H "Content-Type: application/json" -d '{}' "http://127.0.0.1:$PORT/pumpkin/api/quit" 2>/dev/null || true

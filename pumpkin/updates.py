@@ -113,9 +113,12 @@ def _apply_windows(tag):
                      creationflags=subprocess.CREATE_NO_WINDOW | subprocess.CREATE_NEW_PROCESS_GROUP)
 
 
+_ANSI = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]|\x1b\][^\x07]*\x07|\[[0-9;]{1,8}m")
+
+
 def log_tail(n=40):
     try:
         with open(_log(), errors="replace") as f:
-            return "".join(f.readlines()[-n:])
+            return _ANSI.sub("", "".join(f.readlines()[-n:]))
     except OSError:
         return ""
