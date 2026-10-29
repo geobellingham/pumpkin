@@ -558,16 +558,32 @@ class TestRealChromium(Boot, unittest.TestCase):
                 panel = ctx.new_page()
                 errors = []
                 panel.on("pageerror", lambda e: errors.append(str(e)))
+                panel.set_viewport_size({"width": 400, "height": 700})
                 panel.goto(f"chrome-extension://{ext_id}/sidepanel.html")
                 panel.wait_for_selector("#pair:not([hidden])")
+                self.assertTrue(panel.is_visible("#pair"))
+                self.assertFalse(panel.is_visible("#chat"))
                 st, c = self.call("POST", "browser/code", {})
                 panel.fill("#base", self.base)
                 panel.fill("#code", c["code"])
                 panel.click("#connect")
                 panel.wait_for_selector("#chat:not([hidden])", timeout=15000)
                 panel.wait_for_selector("#dot.on", timeout=15000)
+                # what the user sees: the chat alone, with the message box in view and the rest folded away
+                for hidden in ("#pair", "#settings", "#stop"):
+                    self.assertFalse(panel.is_visible(hidden), hidden)
+                for shown in ("#chat", "#text", "#send", "#new"):
+                    self.assertTrue(panel.is_visible(shown), shown)
+                self.assertTrue(panel.evaluate("""() => { const r = document.getElementById('text').getBoundingClientRect();
+                    return r.bottom <= innerHeight && r.top >= 0; }"""))
+                panel.click("#menu")
+                self.assertTrue(panel.is_visible("#settings"))
+                panel.click("#menu")
+                self.assertFalse(panel.is_visible("#settings"))
+                panel.click("#menu")
                 panel.select_option("#mode", "ask")
                 panel.select_option("#preset", p["id"])
+                panel.click("#menu")
                 panel.fill("#text", "Open http://127.0.0.1:18624/ and greet Pumpkin")
                 panel.click("#send")
                 deadline = time.time() + 90
