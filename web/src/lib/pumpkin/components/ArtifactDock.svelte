@@ -76,21 +76,21 @@
 	{#if !open}
 		<button
 			aria-label="Open artifacts"
-			class="fixed right-3 bottom-24 z-30 flex items-center gap-1.5 rounded-full border border-border bg-background px-3 py-2 text-xs shadow-md hover:bg-muted"
+			class="pk-glass fixed right-3 bottom-24 z-30 flex items-center gap-1.5 rounded-full px-3.5 py-2 text-xs font-medium transition-transform duration-500 [transition-timing-function:var(--pk-spring)] hover:scale-105 active:scale-95"
 			onclick={() => (open = true)}
 		>
 			<Layers class="h-4 w-4" />Artifacts
 		</button>
 	{:else}
 		<aside
-			class="fixed top-0 right-0 z-40 flex h-dvh w-full flex-col gap-2 border-l border-border bg-background p-3 shadow-xl md:w-[var(--pumpkin-dock-w)]"
+			class="pk-glass fixed top-0 right-0 z-40 flex h-dvh w-full flex-col gap-2 p-3 md:top-2 md:right-2 md:h-[calc(100dvh-1rem)] md:w-[var(--pumpkin-dock-w)] md:rounded-[24px]"
 			transition:fly={{ duration: 160, x: 40 }}
 		>
 			<div class="flex items-center gap-2">
 				<select
 					aria-label="Artifact"
 					bind:value={current}
-					class="h-8 min-w-0 flex-1 rounded-lg border border-input bg-transparent px-2 text-sm dark:bg-input/30"
+					class="pk-input h-8 min-w-0 flex-1 rounded-xl px-2 text-sm"
 				>
 					{#each items as it (it.id)}
 						<option class="bg-popover text-popover-foreground" value={it.id}>{it.title}</option>

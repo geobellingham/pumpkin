@@ -149,7 +149,7 @@
 			<div class="grid gap-3 sm:grid-cols-2">
 				{#each GOALS as g (g.id)}
 					<button
-						class="flex items-start gap-3 rounded-xl border border-border/60 p-3.5 text-left transition-colors hover:bg-muted/50 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+						class="pk-option flex items-start gap-3 p-3.5 text-left focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
 						onclick={() => chooseGoal(g.id)}
 						type="button"
 					>
@@ -218,7 +218,7 @@
 						: 'Chosen for your computer and what you want to do.'}
 					title={mine ? 'Or install one' : 'Pick a model'}
 				>
-					<div class="flex flex-col divide-y divide-border/60">
+					<div class="pk-list">
 						{#each picks as p, i (p.id)}
 							<div class="flex items-center gap-3 py-3">
 								<div class="min-w-0 flex-1">

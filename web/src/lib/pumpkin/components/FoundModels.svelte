@@ -38,7 +38,7 @@
 
 {#if found.length}
 	<Card description="Pumpkin can use these where they are. Nothing is copied or moved." title="Models you already have">
-		<div class="flex flex-col divide-y divide-border/60">
+		<div class="pk-list">
 			{#each found as f (f.id)}
 				<label class="flex cursor-pointer items-center gap-3 py-2.5">
 					<input bind:checked={picked[f.id]} class="size-4 accent-orange-600" type="checkbox" />

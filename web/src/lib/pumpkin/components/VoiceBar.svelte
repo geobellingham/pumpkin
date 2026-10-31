@@ -25,7 +25,7 @@
 	>
 		<div
 			aria-live="polite"
-			class="pointer-events-auto flex max-w-[min(36rem,100%)] items-center gap-2.5 rounded-full bg-muted/80 py-1.5 pr-1.5 pl-4 text-sm shadow-sm backdrop-blur-xl"
+			class="pointer-events-auto flex max-w-[min(36rem,100%)] items-center gap-2.5 pk-glass rounded-full py-1.5 pr-1.5 pl-4 text-sm"
 		>
 			{#if voice.problem}
 				<span class="text-destructive">{voice.problem}</span>

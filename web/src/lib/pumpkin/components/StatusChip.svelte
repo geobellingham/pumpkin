@@ -28,7 +28,7 @@
 
 <a
 	aria-label="Open Pumpkin, {label}"
-	class="fixed top-4 right-3 z-20 flex h-10 items-center gap-2 rounded-full bg-muted/60 pr-3.5 pl-2.5 text-sm font-medium tabular-nums shadow-sm backdrop-blur-xl transition-colors hover:bg-muted md:right-4 md:h-9"
+	class="fixed top-4 right-3 z-20 flex h-10 items-center gap-2 pk-glass rounded-full pr-3.5 pl-2.5 text-sm font-medium tabular-nums transition-[transform,background-color] duration-500 [transition-timing-function:var(--pk-spring)] hover:scale-[1.03] active:scale-95 md:right-4 md:h-9"
 	href="#/pumpkin"
 >
 	<PumpkinLogo class="size-5" />

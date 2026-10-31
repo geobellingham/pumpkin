@@ -56,7 +56,7 @@ LG=src/lib/components/app/misc/Logo.svelte
 sed -i "s#^\timport logoMark from '\$lib/assets/logo.svg?raw';#\timport plainMark from '\$lib/assets/logo.svg?raw';\n\timport jackMark from '\$lib/assets/logo-halloween.svg?raw';\n\timport { isHalloween } from '\$lib/pumpkin/season';\n\tconst logoMark = isHalloween() ? jackMark : plainMark;#" "$LG"
 grep -q "isHalloween() ? jackMark : plainMark" "$LG"
 npm ci --no-audit --no-fund
-npm install --no-save --no-audit --no-fund qrcode-generator@1.4.4
+npm install --no-save --no-audit --no-fund qrcode-generator@1.4.4 @fontsource-variable/geist@5.3.0 @fontsource-variable/geist-mono@5.3.0
 npm run build
 rm -rf "$OUT"
 cp -r dist "$OUT"

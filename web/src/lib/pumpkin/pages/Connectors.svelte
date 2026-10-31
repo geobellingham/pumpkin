@@ -136,7 +136,7 @@
 </script>
 
 <div class="flex flex-col gap-4">
-	<Card description="Ready-made tool servers for apps and services. Fill in what one needs, test it, then switch it on. A model gets the tools of the connectors that are on when it starts, and the chat asks you before each tool call." title="Connectors">
+	<Card description="Ready-made tool servers for apps and services. Fill in what one needs, test it, then switch it on. A model gets the tools of the connectors that are on when it starts, and the chat asks you before each tool call." title="Available connectors">
 		{#if restart && pumpkin.state?.server.preset}
 			<div class="mb-3 flex flex-wrap items-center gap-2 rounded-xl bg-muted/60 p-3 text-sm">
 				<span class="min-w-0 flex-1">Restart the model to give it the new tools.</span>
@@ -147,7 +147,7 @@
 		{#if items === null}
 			<div class="flex justify-center py-6"><LoaderCircle class="h-5 w-5 animate-spin text-muted-foreground" /></div>
 		{:else}
-			<ul class="flex flex-col divide-y divide-border/60">
+			<ul class="pk-list">
 				{#each sorted as c (c.id)}
 					<li class="py-3">
 						<div class="flex items-start gap-3">

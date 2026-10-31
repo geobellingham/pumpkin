@@ -40,7 +40,7 @@
 </script>
 
 {#if steps && (left > 0 || skipped.length)}
-	<section class="rounded-2xl border border-border/60 p-4 md:p-5">
+	<section class="pk-glass pk-lift pk-sheen pk-rise rounded-[24px] p-4 md:p-6">
 		<div class="flex items-start justify-between gap-3">
 			<div class="min-w-0">
 				<h2 class="text-base font-semibold">{left ? 'Set up Pumpkin' : 'Setup is done'}</h2>

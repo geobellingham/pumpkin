@@ -50,7 +50,7 @@
 			<span>No video: {section.toolResult?.replace(/^Error:\s*/, '')}</span>
 		</div>
 	{:else}
-		<div class="flex aspect-video w-full max-w-md flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-border p-4 text-center text-sm text-muted-foreground">
+		<div class="flex aspect-video w-full max-w-md flex-col items-center justify-center gap-2 pk-option rounded-[16px] p-4 text-center text-sm text-muted-foreground">
 			<LoaderCircle class="h-5 w-5 animate-spin" />
 			<span>Video{args.prompt ? `: ${args.prompt.slice(0, 120)}` : ''}</span>
 			<span class="text-xs">This takes a few minutes ({Math.floor(waited / 60)}:{String(waited % 60).padStart(2, '0')} so far). The chat model may pause meanwhile and comes back by itself.</span>

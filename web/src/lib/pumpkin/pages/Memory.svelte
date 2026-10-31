@@ -114,7 +114,7 @@
 			{#if items.length > 8}
 				<Input bind:value={filter} class="mt-3" placeholder="Find a memory" />
 			{/if}
-			<ul class="mt-2 flex flex-col divide-y divide-border/60">
+			<ul class="mt-2 pk-list">
 				{#each shown as it (it.id)}
 					<li class="flex items-start gap-2 py-2">
 						{#if editing === it.id}

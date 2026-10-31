@@ -401,7 +401,7 @@
 					{#if info?.recent?.length}
 						<div class="flex flex-wrap gap-1.5">
 							{#each info.recent.slice(0, 6) as r (r)}
-								<button class={['rounded-full border px-3 py-1 text-xs', r === root ? 'border-foreground' : 'border-border/60 text-muted-foreground hover:text-foreground']} onclick={() => (root = r)} type="button">{short(r)}</button>
+								<button class={['pk-option rounded-full px-3 py-1 text-xs', r === root ? 'pk-option-on' : 'text-muted-foreground hover:text-foreground']} onclick={() => (root = r)} type="button">{short(r)}</button>
 							{/each}
 						</div>
 					{/if}
@@ -456,7 +456,7 @@
 		{/if}
 	</div>
 {:else}
-	<div class="flex h-[calc(100dvh-8rem)] min-h-[28rem] flex-col overflow-hidden rounded-2xl border border-border/60">
+	<div class="pk-glass pk-rise flex h-[calc(100dvh-8rem)] min-h-[28rem] flex-col overflow-hidden rounded-[24px]">
 		<header class="border-b border-border/60 px-3 py-2.5 md:px-4">
 			<div class="flex items-center gap-2">
 				<button aria-label="All sessions" class="shrink-0 rounded-full p-1.5 hover:bg-muted" onclick={closeSession} type="button"><ArrowLeft class="h-4 w-4" /></button>
@@ -512,7 +512,7 @@
 			<div class="mx-auto flex max-w-4xl flex-col gap-3">
 				{#each events as e (e.n)}
 					{#if e.kind === 'user'}
-						<div class="ml-auto max-w-[85%] rounded-2xl bg-muted px-4 py-2.5 text-sm whitespace-pre-wrap">{e.text}</div>
+						<div class="pk-bubble-me ml-auto max-w-[85%] rounded-[16px_16px_4px_16px] px-4 py-2.5 text-sm whitespace-pre-wrap">{e.text}</div>
 					{:else if e.kind === 'assistant'}
 						{#if e.thinking}
 							<details class="text-xs text-muted-foreground">
@@ -554,7 +554,7 @@
 					{:else if e.kind === 'info' || e.kind === 'compact'}
 						<p class="text-center text-xs text-muted-foreground">{e.kind === 'compact' ? 'Summarised the earlier part to fit the model’s context.' : e.text}</p>
 					{:else if e.kind === 'answer' && e.allow === 'no' && e.note}
-						<p class="ml-auto max-w-[85%] rounded-2xl bg-muted px-4 py-2 text-sm">No: {e.note}</p>
+						<p class="pk-bubble-me ml-auto max-w-[85%] rounded-[16px_16px_4px_16px] px-4 py-2 text-sm">No: {e.note}</p>
 					{/if}
 				{/each}
 
@@ -572,7 +572,7 @@
 				{/if}
 
 				{#if view.pending}
-					<div class="rounded-2xl border-2 border-orange-500/70 p-3">
+					<div class="rounded-[20px] bg-[var(--pk-accent-soft)] p-3 shadow-[inset_0_0_0_1.5px_color-mix(in_srgb,var(--pk-accent)_55%,transparent),0_10px_30px_-12px_rgba(255,120,40,0.5)]">
 						{#if view.pending.kind === 'edit'}
 							<p class="mb-2 text-sm font-medium">{view.pending.new_file ? 'Create' : 'Change'} <code>{view.pending.path}</code>?</p>
 							{@render diffView(view.pending.diff ?? '')}

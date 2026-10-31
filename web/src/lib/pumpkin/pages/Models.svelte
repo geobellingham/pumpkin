@@ -176,7 +176,7 @@
 					<p class="text-sm text-muted-foreground">No GGUF files in this repository.</p>
 				{:else}
 					{@const hasProj = files.some((f) => f.kind === 'mmproj')}
-					<div class="flex flex-col divide-y divide-border/60">
+					<div class="pk-list">
 						{#each files.filter((f) => f.kind === 'model') as f (f.name)}
 							<div class="flex items-center gap-3 py-2.5">
 								<div class="min-w-0 flex-1">
@@ -196,7 +196,7 @@
 				{#if !results.length}
 					<p class="mt-3 text-sm text-muted-foreground">Nothing found. Try fewer words, like just the model family.</p>
 				{:else}
-					<div class="mt-3 flex flex-col divide-y divide-border/60">
+					<div class="mt-3 pk-list">
 						{#each results as r (r.repo)}
 							<button class="flex items-center gap-3 py-2.5 text-left hover:bg-muted/40" onclick={() => openRepo(r.repo)} type="button">
 								<span class="min-w-0 flex-1 truncate text-sm">{r.repo}</span>
@@ -224,7 +224,7 @@
 					<Button class="rounded-full" onclick={() => (tab = 'install')} size="sm">Install a model</Button>
 				</Empty>
 			{:else}
-				<div class="flex flex-col divide-y divide-border/60">
+				<div class="pk-list">
 					{#each local.filter((m) => m.kind === 'model') as m (m.path)}
 						<div class="flex flex-wrap items-center gap-x-3 gap-y-2 py-3">
 							<div class="min-w-0 flex-1 basis-56">

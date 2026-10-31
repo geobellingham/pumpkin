@@ -146,7 +146,7 @@
 </script>
 
 <div class="flex flex-col gap-4">
-	<Card description="A preset is a model plus how to run it: context size, memory settings and tools." title="Presets">
+	<Card description="A preset is a model plus how to run it: context size, memory settings and tools." title="Your presets">
 		{#snippet actions()}
 			<Button class="rounded-full" disabled={!modelList.length} onclick={() => edit()} size="sm">
 				<Plus class="h-4 w-4" /> New
@@ -160,7 +160,7 @@
 				<Button class="rounded-full" href="#/pumpkin/models" size="sm">Install a model</Button>
 			</Empty>
 		{:else}
-			<div class="flex flex-col divide-y divide-border/60">
+			<div class="pk-list">
 				{#each presets as p (p.id)}
 					<div class="flex flex-wrap items-center gap-x-3 gap-y-2 py-3">
 						<div class="min-w-0 flex-1 basis-56">

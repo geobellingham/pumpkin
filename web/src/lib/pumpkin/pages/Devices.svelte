@@ -221,7 +221,7 @@
 				<div class="flex justify-center py-6"><LoaderCircle class="h-5 w-5 animate-spin text-muted-foreground" /></div>
 			{:else}
 				{#if list.length}
-					<ul class="flex flex-col divide-y divide-border/60 rounded-xl border border-border/60">
+					<ul class="pk-list pk-well px-3 py-1.5">
 						{#each list as d (d.id)}
 							<li class="flex flex-col gap-2 p-3">
 								<div class="flex items-center gap-3">

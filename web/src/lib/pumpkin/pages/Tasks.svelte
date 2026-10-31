@@ -142,7 +142,7 @@
 		</Card>
 	{/if}
 
-	<Card description="Agent jobs that run on a schedule. Each one saves a report and can notify your phone." title="Tasks">
+	<Card description="Agent jobs that run on a schedule. Each one saves a report and can notify your phone." title="Your tasks">
 		{#snippet actions()}
 			<Button class="rounded-full" onclick={() => edit()} size="sm"><Plus class="h-4 w-4" /> New</Button>
 		{/snippet}
@@ -152,7 +152,7 @@
 		{:else if !tasks.length}
 			<Empty text="No tasks yet. A task is a prompt that runs by itself, like a morning news briefing." />
 		{:else}
-			<div class="flex flex-col divide-y divide-border/60">
+			<div class="pk-list">
 				{#each tasks as t (t.id)}
 					<div class="flex flex-wrap items-center gap-x-3 gap-y-2 py-3">
 						<div class="min-w-0 flex-1 basis-56">
@@ -183,7 +183,7 @@
 		<div class="grid gap-3 sm:grid-cols-2">
 			{#each TASK_TEMPLATES as tpl (tpl.name)}
 				<button
-					class="flex flex-col gap-0.5 rounded-xl border border-border/60 p-3 text-left transition-colors hover:bg-muted/50 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+					class="pk-option flex flex-col gap-0.5 p-3.5 text-left focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
 					onclick={() => edit(undefined, tpl)}
 					type="button"
 				>

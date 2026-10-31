@@ -64,7 +64,7 @@
 	{:else if !list.length}
 		<p class="text-sm text-muted-foreground">Nothing signed in yet besides this computer's own window.</p>
 	{:else}
-		<ul class="flex flex-col divide-y divide-border/60 rounded-xl border border-border/60">
+		<ul class="pk-list pk-well px-3 py-1.5">
 			{#each list as x (x.id)}
 				<li class="flex items-center gap-3 px-3 py-2.5">
 					<div class="min-w-0 flex-1">

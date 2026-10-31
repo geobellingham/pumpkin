@@ -72,8 +72,8 @@
 					{@const on = inside(p)}
 					<button
 						class={[
-							'flex items-center gap-3 rounded-xl border p-3 text-left transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none',
-							on ? 'border-foreground/40 bg-muted/60' : 'border-border/60 hover:bg-muted/40'
+							'pk-option flex items-center gap-3 p-3 text-left focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none',
+							on && 'pk-option-on'
 						]}
 						disabled={saving}
 						onclick={() => use(p.path)}

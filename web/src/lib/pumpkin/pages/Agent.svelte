@@ -104,7 +104,7 @@
 				{#if editing?.id === p.id}
 					{@render editor()}
 				{:else}
-					<div class={['flex items-start gap-3 rounded-xl border px-3 py-3', active ? 'border-foreground/30 bg-muted/40' : 'border-border/60']}>
+					<div class={['pk-option flex items-start gap-3 px-3.5 py-3', active && 'pk-option-on']}>
 						<button class="min-w-0 flex-1 text-left" onclick={() => choose(p)} type="button">
 							<div class="flex items-center gap-2 font-medium">
 								{p.name}
@@ -156,7 +156,7 @@
 
 {#snippet editor()}
 	{#if editing}
-		<div class="flex flex-col gap-3 rounded-xl border border-foreground/25 p-3">
+		<div class="pk-well flex flex-col gap-3 p-3.5">
 			<Field label="Name"><Input bind:value={editing.name} placeholder="e.g. Travel planner" /></Field>
 			<Field label="Instructions"><Textarea bind:value={editing.prompt} class="min-h-28" placeholder="You are…" /></Field>
 			<div class="flex justify-end gap-2">

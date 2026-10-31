@@ -1,24 +1,23 @@
 <script lang="ts">
-	import { CircleAlert, ListChecks, LoaderCircle, MessageSquareText, Play, RefreshCw } from '@lucide/svelte';
+	import { CircleAlert, Download, ListChecks, LoaderCircle, Plus, RefreshCw } from '@lucide/svelte';
 	import { Button } from '$lib/components/ui/button';
 	import Activity from '../components/Activity.svelte';
 	import Card from '../components/Card.svelte';
 	import Checklist from '../components/Checklist.svelte';
-	import Meter from '../components/Meter.svelte';
 	import Progress from '../components/Progress.svelte';
-	import Sparkline from '../components/Sparkline.svelte';
-	import StatusDot from '../components/StatusDot.svelte';
 	import { useSpeed } from '../speed.svelte';
 	import { api, pumpkin } from '../store.svelte';
-	import type { Preset, Settings } from '../types';
+	import type { LocalModel, Preset, Settings } from '../types';
 	import { onMount } from 'svelte';
 
 	const speed = useSpeed();
 	const s = $derived(pumpkin.state);
 	let presets = $state<Preset[] | null>(null);
+	let models = $state<LocalModel[]>([]);
 
 	async function load() {
 		presets = (await pumpkin.run(() => api<{ items: Preset[] }>('presets')))?.items ?? [];
+		models = (await api<{ models: LocalModel[] }>('models').catch(() => null))?.models ?? [];
 	}
 
 	onMount(load);
@@ -34,24 +33,8 @@
 		seen = key;
 	});
 
-	const statusText = $derived.by(() => {
-		switch (pumpkin.status) {
-			case 'ready':
-				return 'Ready';
-			case 'busy':
-				return `Running “${s?.agent.job}”`;
-			case 'loading':
-				return 'Loading the model';
-			case 'error':
-				return 'The model stopped';
-			case 'offline':
-				return "Can't reach Pumpkin";
-			default:
-				return 'No model running';
-		}
-	});
-
 	const running = $derived(s?.server.preset?.id);
+	const up = $derived(s?.server.state === 'ready' || s?.server.state === 'external');
 	let checklistHidden = $state<boolean | null>(null);
 
 	onMount(async () => {
@@ -91,7 +74,56 @@
 
 	const hist = $derived(pumpkin.history);
 	const live = $derived(s?.live);
-	const gpuMemLabel = $derived(s?.platform === 'android' ? 'For models' : live?.unified ? 'GPU memory' : 'Video memory');
+
+	// ---- the greeting
+
+	const hour = new Date().getHours();
+	const greeting = hour < 5 ? 'Good night' : hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening';
+
+	const subtitle = $derived.by(() => {
+		const name = pumpkin.modelName;
+
+		switch (pumpkin.status) {
+			case 'ready':
+				return `${name} is loaded, everything running on this computer.`;
+			case 'busy':
+				return `${name} is working on “${s?.agent.job}”.`;
+			case 'loading':
+				return `Loading ${name ?? 'the model'}…`;
+			case 'error':
+				return 'The model stopped. The details are below.';
+			case 'offline':
+				return "Can't reach Pumpkin right now.";
+			default:
+				return 'No model running. Start one from your library.';
+		}
+	});
+
+	// ---- the active model
+
+	const preset = $derived(s?.server.preset ?? null);
+	const modelOf = (p: Preset | null) => (p ? models.find((m) => m.path === p.model) : undefined);
+	const activeModel = $derived(modelOf(preset));
+
+	function quantOf(p: Preset): string | null {
+		const m = modelOf(p);
+
+		if (m?.quant) return m.quant;
+
+		return p.model.match(/(?:^|[-_.])((?:I?Q\d+_[A-Z0-9_]+|Q\d+_\d|BF16|F16|F32|MXFP4))(?:[-_.]|$)/i)?.[1]?.toUpperCase() ?? null;
+	}
+
+	function sizeOf(p: Preset): string | null {
+		const m = modelOf(p);
+
+		return m?.size_gb ? `${m.size_gb.toFixed(1)} GB` : null;
+	}
+
+	function k(n?: number | null): string {
+		if (!n) return '–';
+
+		return n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${(n / 1e3).toFixed(1)}k` : String(Math.round(n));
+	}
 
 	function span(sec: number | null | undefined): string {
 		if (sec == null) return '–';
@@ -105,14 +137,76 @@
 		return h < 48 ? `${h} h ${m % 60} min` : `${Math.floor(h / 24)} days`;
 	}
 
-	function count(n?: number | null): string {
-		if (!n) return '–';
+	// the last 40 speed samples as bars; older ones are dimmer
+	const BARS = 40;
+	const bars = $derived.by(() => {
+		const vals = hist.map((h) => h.speed ?? 0).slice(-BARS);
+		const pad = Array(Math.max(0, BARS - vals.length)).fill(0);
+		const all = [...pad, ...vals];
+		const max = Math.max(1, ...all) * 1.15;
 
-		return n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${(n / 1e3).toFixed(1)}k` : String(Math.round(n));
-	}
+		return all.map((v, i) => ({ h: Math.max(4, Math.round((v / max) * 100)), o: (0.35 + (i / BARS) * 0.65).toFixed(2) }));
+	});
+
+	// ---- resources
+
+	const RING = 2 * Math.PI * 52;
+	const ringUsed = $derived(live?.vram_total ? live.vram_used ?? 0 : live?.ram_used ?? 0);
+	const ringTotal = $derived(live?.vram_total || live?.ram_total || 0);
+	const ringOff = $derived(ringTotal ? RING * (1 - Math.min(1, ringUsed / ringTotal)) : RING);
+	const ringLabel = $derived(
+		s?.platform === 'android' ? 'for models' : live?.vram_total ? (live.unified ? 'GPU memory' : 'VRAM') : 'RAM'
+	);
+
+	const meters = $derived.by(() => {
+		const out: { label: string; val: string; w: number; bg: string }[] = [];
+
+		if (live?.gpu_busy != null) {
+			out.push({ label: 'GPU load', val: `${Math.round(live.gpu_busy)}%`, w: live.gpu_busy, bg: 'linear-gradient(90deg,#ff7f2a,#ffc08f)' });
+		}
+
+		if (live?.ram_total) {
+			out.push({
+				label: 'System RAM',
+				val: `${(live.ram_used ?? 0).toFixed(1)} / ${live.ram_total.toFixed(0)} GB`,
+				w: ((live.ram_used ?? 0) / live.ram_total) * 100,
+				bg: 'linear-gradient(90deg,#6d7df0,#b9c8ff)'
+			});
+		}
+
+		if (preset?.ctx) {
+			const used = s?.metrics.n_tokens_max ?? 0;
+
+			out.push({
+				label: 'Longest chat',
+				val: `${k(used)} / ${k(preset.ctx)}`,
+				w: Math.min(100, (used / preset.ctx) * 100),
+				bg: 'linear-gradient(90deg,#2fbf8f,#a8f0d4)'
+			});
+		}
+
+		return out;
+	});
+
 </script>
 
 <div class="flex flex-col gap-4">
+	<!-- greeting -->
+	<div class="pk-rise flex flex-wrap items-end justify-between gap-3 px-1.5 pt-1">
+		<div class="min-w-0">
+			<h1 class="text-[30px] leading-tight font-semibold tracking-[-0.025em]">{greeting}</h1>
+			<p class="mt-1 text-[13px] text-muted-foreground">{subtitle}</p>
+		</div>
+		<div class="flex gap-2">
+			<Button class="h-[38px] px-4 text-[13px] font-semibold" href="#/pumpkin/models" variant="secondary">
+				<Download class="size-[15px]" /> Get models
+			</Button>
+			<Button class="h-[38px] px-4 text-[13px] font-semibold" href="#/">
+				<Plus class="size-[15px]" /> New chat
+			</Button>
+		</div>
+	</div>
+
 	{#each s?.installs ?? [] as inst (inst.id)}
 		<Card title="Installing {inst.model}">
 			{#if inst.state === 'error'}
@@ -127,13 +221,13 @@
 
 	{#if s?.update?.available}
 		<Card description="Open Settings to see what changed and update." title="Pumpkin {s.update.latest} is out">
-			<Button class="rounded-full" href="#/pumpkin/settings" size="sm">See the update</Button>
+			<Button href="#/pumpkin/settings" size="sm">See the update</Button>
 		</Card>
 	{/if}
 
 	{#if s?.llama_update?.available}
 		<Card description="New models often need a newer llama.cpp. Yours is {s.llama_update.current}." title="llama.cpp {s.llama_update.latest} is out">
-			<Button class="rounded-full" href="#/pumpkin/settings" size="sm">Update in Settings</Button>
+			<Button href="#/pumpkin/settings" size="sm">Update in Settings</Button>
 		</Card>
 	{/if}
 
@@ -141,59 +235,45 @@
 		<Card description="Brought over from LLM Studio: {s.migrated.join(', ')}." title="Welcome to Pumpkin" />
 	{/if}
 
-	<div class="grid gap-4 lg:grid-cols-3">
-		<section class="rounded-2xl bg-muted/50 p-4 md:p-5 lg:col-span-2">
-			<div class="flex flex-wrap items-start justify-between gap-x-3 gap-y-1">
+	<div class="flex flex-wrap gap-4">
+		<!-- the active model -->
+		<section aria-label="Active model" class="pk-glass pk-lift pk-sheen pk-rise min-w-0 flex-[1.7_1_440px] rounded-[24px] p-[22px]">
+			<div class="relative flex flex-wrap items-start justify-between gap-3">
 				<div class="min-w-0">
-					<h2 class="truncate text-lg leading-tight font-semibold">{pumpkin.modelName ?? 'No model running'}</h2>
-					<p class="mt-0.5 truncate text-sm text-muted-foreground">
-						{#if s?.server.preset}
-							{Math.round(s.server.preset.ctx / 1024)}k context{s.server.preset.tools ? ', tools' : ''}{s.server.preset.web ? ', web search' : ''}{s.server.preset.mmproj ? ', sees pictures' : ''}
-						{:else}
-							Pick a preset below to start one.
-						{/if}
-					</p>
+					<div class="flex items-center gap-2 text-xs text-muted-foreground">
+						{#if up}<span aria-hidden="true" class="pk-live"></span>{:else if pumpkin.status === 'loading'}<LoaderCircle class="size-3.5 animate-spin" />{:else}<span aria-hidden="true" class="size-2 rounded-full bg-muted-foreground/50"></span>{/if}
+						{up ? 'Active model' : pumpkin.status === 'loading' ? 'Loading' : pumpkin.status === 'error' ? 'Stopped' : 'Nothing loaded'}
+					</div>
+					<h2 class="mt-2 truncate text-[22px] font-semibold tracking-[-0.015em]">{pumpkin.modelName ?? 'No model running'}</h2>
+					{#if preset}
+						<div class="mt-1.5 flex flex-wrap gap-1.5">
+							{#if quantOf(preset)}<span class="pk-chip pk-chip-hot">{quantOf(preset)}</span>{/if}
+							{#if activeModel?.size_gb}<span class="pk-chip">{activeModel.size_gb.toFixed(1)} GB</span>{/if}
+							<span class="pk-chip">ctx {k(preset.ctx)}</span>
+							{#if preset.tools}<span class="pk-chip">tools</span>{/if}
+							{#if preset.web}<span class="pk-chip">web</span>{/if}
+							{#if preset.mmproj}<span class="pk-chip">vision</span>{/if}
+						</div>
+					{:else}
+						<p class="mt-1.5 text-[13px] text-muted-foreground">Pick a preset from the library to start one.</p>
+					{/if}
 				</div>
-
-				<div class="flex shrink-0 items-center gap-1.5 pt-1 text-xs font-medium">
-					<StatusDot />
-					{statusText}
+				<div class="text-right">
+					<div class={['text-[44px] leading-none font-semibold tracking-[-0.03em] tabular-nums', speed.value == null && 'text-muted-foreground/50']}>
+						{speed.value != null ? Math.round(speed.value) : 0}
+					</div>
+					<div class="mt-1 text-xs text-muted-foreground">tokens / sec</div>
 				</div>
 			</div>
 
-			<div class="mt-4 grid items-end gap-x-6 gap-y-3 sm:grid-cols-[auto_minmax(0,1fr)]">
-				<div class="flex items-baseline gap-1.5">
-					<span class={['text-5xl leading-none font-semibold tracking-tight tabular-nums', speed.value == null && 'text-muted-foreground/50']}>
-						{speed.value != null ? speed.value.toFixed(1) : '0.0'}
-					</span>
-					<span class="text-sm text-muted-foreground">tokens a second</span>
-				</div>
-				<div class="min-w-0">
-					<Sparkline label="Speed over the last few minutes" values={hist.map((h) => h.speed)} />
-				</div>
+			<div aria-label="Generation speed over the last few minutes" class="relative mt-5 flex h-24 items-end gap-[3px]" role="img">
+				{#each bars as b, i (i)}
+					<div class="spark" style="height: {b.h}%; opacity: {up ? b.o : 0.25}"></div>
+				{/each}
 			</div>
-
-			<dl class="mt-4 grid grid-cols-2 gap-x-4 gap-y-3 border-t border-border/60 pt-4 text-sm sm:grid-cols-4">
-				<div>
-					<dt class="text-xs text-muted-foreground">Reading speed</dt>
-					<dd class="font-medium tabular-nums">{s?.metrics.prompt_tokens_seconds ? `${Math.round(s.metrics.prompt_tokens_seconds)} a second` : '–'}</dd>
-				</div>
-				<div>
-					<dt class="text-xs text-muted-foreground">Written so far</dt>
-					<dd class="font-medium tabular-nums">{count(s?.metrics.tokens_predicted_total)}</dd>
-				</div>
-				<div>
-					<dt class="text-xs text-muted-foreground">Longest chat held</dt>
-					<dd class="font-medium tabular-nums">{count(s?.metrics.n_tokens_max)}</dd>
-				</div>
-				<div>
-					<dt class="text-xs text-muted-foreground">Running for</dt>
-					<dd class="font-medium tabular-nums">{span(s?.server.uptime)}</dd>
-				</div>
-			</dl>
 
 			{#if s?.server.state === 'error' && s.server.error}
-				<div class="mt-4 rounded-xl bg-destructive/10 p-3 text-sm text-destructive">
+				<div class="relative mt-4 rounded-[14px] bg-destructive/10 p-3 text-sm text-destructive">
 					<p class="flex flex-wrap gap-2">
 						<CircleAlert class="mt-0.5 h-4 w-4 shrink-0" />
 						<span class="min-w-0 flex-1 break-words">{s.server.error}</span>
@@ -201,7 +281,7 @@
 					</p>
 					{#if s.server.fix === 'update_llama'}
 						<div class="mt-3 flex flex-wrap items-center gap-2">
-							<Button class="rounded-full" disabled={updating} onclick={updateAndRetry} size="sm">
+							<Button disabled={updating} onclick={updateAndRetry} size="sm">
 								{#if updating}<LoaderCircle class="h-4 w-4 animate-spin" />{:else}<RefreshCw class="h-4 w-4" />{/if}
 								Update llama.cpp and try again
 							</Button>
@@ -210,94 +290,152 @@
 					{/if}
 				</div>
 			{:else if s?.memory_note}
-				<p class="mt-4 flex gap-2 rounded-xl bg-amber-500/10 p-3 text-sm text-amber-700 dark:text-amber-400">
+				<p class="relative mt-4 flex gap-2 rounded-[14px] bg-amber-500/10 p-3 text-sm text-amber-700 dark:text-amber-400">
 					<CircleAlert class="mt-0.5 h-4 w-4 shrink-0" />
 					<span class="min-w-0 flex-1">{s.memory_note.text}</span>
 				</p>
 			{:else if s?.server.notice && (s.server.state === 'ready' || s.server.state === 'loading')}
-				<p class="mt-4 rounded-xl bg-background/60 p-3 text-sm text-muted-foreground">{s.server.notice}</p>
+				<p class="relative mt-4 rounded-[14px] bg-[var(--pk-soft)] p-3 text-sm text-muted-foreground">{s.server.notice}</p>
 			{/if}
 
-			{#if s?.server.state === 'ready' || s?.server.state === 'loading'}
-				<div class="mt-4 flex flex-wrap gap-2">
-					<Button class="rounded-full" href="#/" size="sm">
-						<MessageSquareText class="h-4 w-4" /> Chat
-					</Button>
-					<Button class="rounded-full" onclick={() => pumpkin.stopModel()} size="sm" variant="outline">
-						Stop model
-					</Button>
+			<div class="relative mt-4 flex flex-wrap items-center justify-between gap-2.5">
+				<div class="font-mono text-[11px] text-muted-foreground tabular-nums">
+					prompt {s?.metrics.prompt_tokens_seconds ? Math.round(s.metrics.prompt_tokens_seconds).toLocaleString() : '–'} t/s · {k(s?.metrics.tokens_predicted_total)} written · up {span(s?.server.uptime)}
 				</div>
-			{/if}
-		</section>
-
-		<Card title="Memory">
-			<div class="flex flex-col gap-4">
-				<div class="flex flex-col gap-1.5">
-					<Meter label={gpuMemLabel} total={live?.vram_total} used={live?.vram_used} />
-					{#if live?.vram_total}<Sparkline class="h-6" label="Video memory over the last few minutes" max={live.vram_total} values={hist.map((h) => h.vram)} />{/if}
-				</div>
-				<div class="flex flex-col gap-1.5">
-					<Meter cached={live?.model_ram} label="RAM" total={live?.ram_total} used={live?.ram_used} />
-					{#if live?.ram_total}<Sparkline class="h-6" label="RAM over the last few minutes" max={live.ram_total} values={hist.map((h) => h.ram)} />{/if}
-				</div>
-				{#if live?.gpu_busy != null}
-					<div class="flex items-baseline justify-between border-t border-border/60 pt-3 text-xs text-muted-foreground">
-						<span>Graphics card busy</span>
-						<span class="text-sm font-medium text-foreground tabular-nums">{Math.round(live.gpu_busy)}%</span>
+				{#if s?.server.state === 'ready' || s?.server.state === 'loading'}
+					<div class="flex gap-2">
+						<Button class="h-[34px] px-4 text-xs" onclick={() => pumpkin.stopModel()} variant="secondary">Eject</Button>
+						<Button class="h-[34px] px-4 text-xs" href="#/pumpkin/settings" variant="secondary">Server logs</Button>
 					</div>
 				{/if}
 			</div>
-		</Card>
-	</div>
+		</section>
 
-	<Card description="Everything Pumpkin is working on, live." title="Right now">
-		<Activity />
-	</Card>
-
-	{#if checklistHidden === false}
-		<Checklist onhide={() => setHidden(true)} />
-	{:else if checklistHidden}
-		<button class="flex items-center gap-2 self-start text-xs text-muted-foreground underline underline-offset-2" onclick={() => setHidden(false)} type="button">
-			<ListChecks class="size-4" /> Show the setup list
-		</button>
-	{/if}
-
-	<Card title="Presets">
-		{#snippet actions()}
-			<Button class="rounded-full" href="#/pumpkin/presets" size="sm" variant="ghost">Edit</Button>
-		{/snippet}
-
-		{#if presets === null}
-			<div class="flex justify-center py-6"><LoaderCircle class="h-5 w-5 animate-spin text-muted-foreground" /></div>
-		{:else if !presets.length}
-			<p class="text-sm text-muted-foreground">
-				No presets yet. <a class="underline" href="#/pumpkin/models">Install a model</a> and Pumpkin makes one for you.
-			</p>
-		{:else}
-			<div class="flex flex-col divide-y divide-border/60">
-				{#each presets as p (p.id)}
-					{@const active = running === p.id}
-					<div class="flex items-center gap-3 py-2.5">
-						<div class="min-w-0 flex-1">
-							<div class="truncate font-medium">{p.name}</div>
-							<div class="truncate text-xs text-muted-foreground">
-								{Math.round(p.ctx / 1024)}k context{p.tools ? ' · tools' : ''}{p.web ? ' · web search' : ''}
+		<!-- resources -->
+		<section aria-label="Resources" class="pk-glass pk-lift pk-rise min-w-0 flex-[1_1_280px] rounded-[24px] p-[22px]">
+			<h2 class="text-sm font-semibold">Resources</h2>
+			<div class="mt-3.5 flex items-center gap-5">
+				<div aria-label="{ringLabel} {ringTotal ? Math.round((ringUsed / ringTotal) * 100) : 0}% used" class="relative size-[124px] shrink-0" role="img">
+					<svg aria-hidden="true" class="-rotate-90" fill="none" height="124" viewBox="0 0 124 124" width="124">
+						<defs>
+							<linearGradient id="pk-ring" x1="0" x2="1" y1="0" y2="1">
+								<stop offset="0" stop-color="#ffc08f" />
+								<stop offset="1" stop-color="#ff6a1a" />
+							</linearGradient>
+						</defs>
+						<circle cx="62" cy="62" r="52" stroke="var(--pk-track)" stroke-width="10" />
+						<circle class="pk-ring ring-in" cx="62" cy="62" r="52" stroke="url(#pk-ring)" stroke-dasharray={RING} stroke-dashoffset={ringOff} stroke-linecap="round" stroke-width="10" />
+					</svg>
+					<div class="absolute inset-0 flex flex-col items-center justify-center">
+						<span class="text-[22px] font-semibold tabular-nums">{ringTotal ? `${ringUsed.toFixed(1)} GB` : '–'}</span>
+						<span class="text-[11px] text-muted-foreground">{ringTotal ? `of ${ringTotal.toFixed(0)} GB ${ringLabel}` : ringLabel}</span>
+					</div>
+				</div>
+				<div class="flex min-w-0 flex-1 flex-col gap-3.5">
+					{#each meters as m (m.label)}
+						<div>
+							<div class="flex justify-between gap-2 text-xs">
+								<span class="text-muted-foreground">{m.label}</span>
+								<span class="font-mono text-[11px] tabular-nums">{m.val}</span>
+							</div>
+							<div class="mt-1.5 h-1.5 rounded-full bg-[var(--pk-track)]">
+								<div class="pk-bar h-full rounded-full" style="width: {Math.max(0, Math.min(100, m.w))}%; background: {m.bg}"></div>
 							</div>
 						</div>
+					{:else}
+						<p class="text-xs text-muted-foreground">Memory readings show up once Pumpkin can see them.</p>
+					{/each}
+				</div>
+			</div>
+		</section>
+	</div>
 
-						{#if active && s?.server.state === 'loading'}
-							<span class="flex items-center gap-1.5 text-xs text-muted-foreground"><LoaderCircle class="h-3.5 w-3.5 animate-spin" /> Loading</span>
-						{:else if active}
-							<span class="rounded-full bg-emerald-500/15 px-2 py-0.5 text-[11px] font-medium text-emerald-700 dark:text-emerald-400">Running</span>
+	<div class="flex flex-wrap gap-4">
+		<!-- the library: your presets, ready to load -->
+		<section aria-label="Library" class="pk-glass pk-lift pk-rise min-w-0 flex-[1.3_1_400px] rounded-[24px] p-[18px]">
+			<div class="flex items-center justify-between px-1.5 pb-1.5">
+				<h2 class="text-sm font-semibold">Library</h2>
+				<a class="text-xs text-muted-foreground hover:text-foreground" href="#/pumpkin/presets">
+					{presets ? `${presets.length} preset${presets.length === 1 ? '' : 's'}` : ''} · Edit
+				</a>
+			</div>
+
+			{#if presets === null}
+				<div class="flex justify-center py-6"><LoaderCircle class="h-5 w-5 animate-spin text-muted-foreground" /></div>
+			{:else if !presets.length}
+				<p class="px-1.5 py-3 text-sm text-muted-foreground">
+					Nothing here yet. <a class="underline" href="#/pumpkin/models">Install a model</a> and Pumpkin makes a preset for you.
+				</p>
+			{:else}
+				{#each presets as p (p.id)}
+					{@const active = running === p.id}
+					{@const loading = active && s?.server.state === 'loading'}
+					<div class="pk-row">
+						<div aria-hidden="true" class={['pk-tile', active && 'pk-tile-hot']}>{p.name.trim().charAt(0).toUpperCase()}</div>
+						<div class="min-w-0 flex-1">
+							<div class="truncate text-[13px] font-semibold">{p.name}</div>
+							{#if loading}
+								<div class="mt-[7px] flex items-center gap-2">
+									<div class="pk-load-track flex-1"><div class="pk-load-fill pk-load-busy"></div></div>
+									<span class="font-mono text-[11px] text-[color:var(--pk-accent-text)]">loading</span>
+								</div>
+							{:else}
+								<div class="mt-0.5 truncate font-mono text-[11px] text-muted-foreground">
+									{[quantOf(p), sizeOf(p), `${k(p.ctx)} ctx`].filter(Boolean).join(' · ')}
+								</div>
+							{/if}
+						</div>
+						{#if active && !loading}
+							<span class="flex items-center gap-1.5 rounded-full bg-[rgba(62,224,138,0.12)] px-3 py-1.5 text-xs font-medium text-[color:var(--pk-text)]">
+								<span aria-hidden="true" class="pk-live"></span> Running
+							</span>
 						{:else}
-							<Button class="h-9 rounded-full px-4" onclick={() => pumpkin.startPreset(p.id)} size="sm" variant={running ? 'secondary' : 'default'}>
-								<Play class="h-3.5 w-3.5" />
-								{running ? 'Switch' : 'Start'}
+							<Button aria-label="Load {p.name}" class="h-8 px-3.5 text-xs" disabled={s?.server.state === 'loading'} onclick={() => pumpkin.startPreset(p.id)} variant="secondary">
+								{loading ? 'Loading' : 'Load'}
 							</Button>
 						{/if}
 					</div>
 				{/each}
+			{/if}
+		</section>
+
+		<!-- what Pumpkin is doing right now -->
+		<section aria-label="Right now" class="pk-glass pk-lift pk-rise flex min-w-0 flex-[1_1_320px] flex-col rounded-[24px] p-[18px]">
+			<div class="flex items-center justify-between px-1">
+				<h2 class="text-sm font-semibold">Right now</h2>
+				<span class="text-xs text-muted-foreground">live</span>
 			</div>
-		{/if}
-	</Card>
+			<div class="mt-3 px-1"><Activity /></div>
+		</section>
+	</div>
+
+	{#if checklistHidden === false}
+		<Checklist onhide={() => setHidden(true)} />
+	{:else if checklistHidden}
+		<button class="flex items-center gap-2 self-start px-1.5 text-xs text-muted-foreground underline underline-offset-2" onclick={() => setHidden(false)} type="button">
+			<ListChecks class="size-4" /> Show the setup list
+		</button>
+	{/if}
 </div>
+
+<style>
+	.spark {
+		flex: 1;
+		min-width: 2px;
+		border-radius: 3px 3px 1px 1px;
+		background: linear-gradient(180deg, #ffc08f, #ff7f2a 70%, rgba(255, 127, 42, 0.4));
+		transition:
+			height 0.55s var(--pk-smooth),
+			opacity 0.55s;
+	}
+
+	.ring-in {
+		animation: ring-in 1.8s var(--pk-smooth) 0.3s backwards;
+	}
+
+	@keyframes ring-in {
+		from {
+			stroke-dashoffset: 326.73;
+		}
+	}
+</style>

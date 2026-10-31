@@ -55,11 +55,11 @@
 		{/each}
 	</div>
 {:else}
-	<ul aria-live="polite" class="flex flex-col divide-y divide-border/60">
+	<ul aria-live="polite" class="pk-list">
 		{#each items as a (a.id)}
 			{@const Icon = ICON[a.kind] ?? Bot}
 			<li class="flex items-start gap-3 py-3 first:pt-0 last:pb-0">
-				<span class="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted">
+				<span class="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-[10px] bg-[var(--pk-soft)] shadow-[var(--pk-soft-edge)]">
 					{#if a.state === 'loading'}
 						<LoaderCircle class="size-4 animate-spin text-muted-foreground" />
 					{:else}
@@ -79,8 +79,8 @@
 					</div>
 
 					{#if a.progress != null}
-						<div class="mt-1.5 h-1.5 overflow-hidden rounded-full bg-foreground/10">
-							<div class="h-full rounded-full bg-orange-500 transition-[width] duration-500" style="width: {Math.round(a.progress * 100)}%"></div>
+						<div class="mt-1.5 h-1.5 overflow-hidden rounded-full bg-[var(--pk-track)]">
+							<div class="pk-bar h-full rounded-full bg-[linear-gradient(90deg,var(--pk-hot-2),var(--pk-hot-1))] shadow-[0_0_12px_rgba(255,140,60,0.6)]" style="width: {Math.round(a.progress * 100)}%"></div>
 						</div>
 					{/if}
 
@@ -88,8 +88,8 @@
 						{@const pct = Math.min(100, (a.context.used / a.context.total) * 100)}
 						<div class="mt-1.5 flex items-center gap-2 text-xs text-muted-foreground">
 							<span class="shrink-0">Memory of the chat</span>
-							<div class="h-1.5 min-w-12 flex-1 overflow-hidden rounded-full bg-foreground/10">
-								<div class={['h-full rounded-full transition-[width] duration-500', pct > 80 ? 'bg-amber-500' : 'bg-foreground/70']} style="width: {pct}%"></div>
+							<div class="h-1.5 min-w-12 flex-1 overflow-hidden rounded-full bg-[var(--pk-track)]">
+								<div class={['pk-bar h-full rounded-full', pct > 80 ? 'bg-amber-500' : 'bg-[linear-gradient(90deg,var(--pk-hot-2),var(--pk-hot-1))]']} style="width: {pct}%"></div>
 							</div>
 							<span class="shrink-0 tabular-nums">{tokens(a.context.used)} of {tokens(a.context.total)}</span>
 						</div>

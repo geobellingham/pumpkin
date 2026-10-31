@@ -137,7 +137,7 @@
 </script>
 
 <div class="flex flex-col gap-4">
-	<Card description={data ? `Your files and what the AI makes for you. On this computer: ${data.display}. The AI sees it as ${data.sandbox}.` : ''} title="Files">
+	<Card description={data ? `Your files and what the AI makes for you. On this computer: ${data.display}. The AI sees it as ${data.sandbox}.` : ''} title="Your files">
 		{#snippet actions()}
 			{#if local}
 				<Button class="rounded-full" onclick={() => api('files/reveal', { body: { path: dir } }).catch((e) => pumpkin.say(e.message, 'error'))} size="sm" variant="ghost">
@@ -167,7 +167,7 @@
 					: 'Nothing yet. Ask the AI to save something, for example: “Write a packing list for a weekend trip and save it as packing.md”. You can also add your own files for it to work on.'}
 			/>
 		{:else}
-			<div class="flex flex-col divide-y divide-border/60">
+			<div class="pk-list">
 				{#each data.items as it (it.path)}
 					<div class="flex items-center gap-3 py-2">
 						{#if it.dir}

@@ -1,0 +1,737 @@
+/*
+ * Pumpkin's look: frosted glass over slowly drifting colour, for the chat and Pumpkin's pages.
+ *
+ * The chat UI (llama.cpp's) and Pumpkin's pages both take their colours from the shadcn variables in app.css
+ * (--background, --card, --primary ...). This file sets those for the light and dark themes, and adds a few classes
+ * of its own (pk-*) for glass panels, motion and the backdrop. The selectors are a notch more specific than
+ * app.css (html:root, html.dark), so they win whatever order the stylesheets load in.
+ *
+ * Dark: near-black with orange, violet and teal light behind glass. Light: warm sand with white glass and ink.
+ */
+
+/* Layers rank by where they first appear. This file can load before Tailwind's, so it states Tailwind's own order
+   first; otherwise "components" would rank below Tailwind's base reset and lose its padding and margins. */
+@layer theme, base, components, utilities;
+
+/* ---------- tokens ---------- */
+
+html:root {
+	/* light */
+	--pk-base: #e6dccf;
+	--pk-text: #1f1a16;
+	--pk-muted: rgba(31, 26, 22, 0.64);
+	--pk-accent: #e8661c;
+	--pk-accent-soft: rgba(232, 102, 28, 0.14);
+	--pk-accent-text: #a8460c;
+	--pk-hot-1: #ffb27a;
+	--pk-hot-2: #ff7f2a;
+	--pk-ink: #1a1613;
+	--pk-ok: #1f9d55;
+
+	--pk-glass-1: rgba(255, 255, 255, 0.72);
+	--pk-glass-2: rgba(255, 255, 255, 0.4);
+	--pk-glass-edge: inset 0 1px 0 rgba(255, 255, 255, 0.95), inset 0 0 0 1px rgba(255, 255, 255, 0.35);
+	--pk-glass-shadow: 0 24px 50px -28px rgba(70, 40, 15, 0.5);
+	--pk-glass-shadow-up: 0 34px 60px -28px rgba(70, 40, 15, 0.6);
+	--pk-glass-blur: blur(34px) saturate(1.6);
+	--pk-sheen: rgba(255, 255, 255, 0.6);
+	--pk-sunken: rgba(255, 255, 255, 0.45);
+	--pk-sunken-shadow: inset 0 1px 2px rgba(70, 40, 15, 0.18), inset 0 -1px 0 rgba(255, 255, 255, 0.7);
+	--pk-soft: rgba(255, 255, 255, 0.55);
+	--pk-soft-hover: rgba(255, 255, 255, 0.8);
+	--pk-soft-edge: inset 0 1px 0 rgba(255, 255, 255, 0.9), 0 4px 12px -6px rgba(70, 40, 15, 0.35);
+	--pk-nav-ind: rgba(255, 255, 255, 0.92);
+	--pk-nav-ind-shadow: 0 8px 20px -8px rgba(70, 40, 15, 0.45), inset 0 1px 0 #fff;
+	--pk-nav-active: var(--pk-text);
+	--pk-track: rgba(31, 26, 22, 0.1);
+	--pk-primary-bg: var(--pk-ink);
+	--pk-primary-text: #fff;
+	--pk-primary-glow: 0 10px 22px -10px rgba(26, 22, 19, 0.6);
+
+	--pk-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+	--pk-smooth: cubic-bezier(0.22, 1, 0.36, 1);
+
+	--background: var(--pk-base);
+	--foreground: var(--pk-text);
+	--card: rgba(255, 255, 255, 0.5);
+	--card-foreground: var(--pk-text);
+	--popover: rgba(255, 251, 246, 0.94);
+	--popover-foreground: var(--pk-text);
+	--primary: var(--pk-ink);
+	--primary-foreground: #ffffff;
+	--secondary: rgba(255, 255, 255, 0.55);
+	--secondary-foreground: var(--pk-text);
+	--muted: rgba(255, 255, 255, 0.5);
+	--muted-foreground: var(--pk-muted);
+	--accent: rgba(255, 255, 255, 0.65);
+	--accent-foreground: var(--pk-text);
+	--destructive: #c9341c;
+	--border: rgba(31, 26, 22, 0.07);
+	--input: rgba(31, 26, 22, 0.1);
+	--ring: var(--pk-accent);
+	--sidebar: rgba(255, 255, 255, 0.4);
+	--sidebar-foreground: var(--pk-text);
+	--sidebar-primary: var(--pk-ink);
+	--sidebar-primary-foreground: #ffffff;
+	--sidebar-accent: rgba(255, 255, 255, 0.6);
+	--sidebar-accent-foreground: var(--pk-text);
+	--sidebar-border: rgba(31, 26, 22, 0.07);
+	--sidebar-ring: var(--pk-accent);
+	--code-background: rgba(255, 255, 255, 0.55);
+	--code-foreground: var(--pk-text);
+	--radius: 0.875rem;
+
+	--font-mono: 'Geist Mono Variable', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+	--font-sans: 'Geist Variable', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+}
+
+html.dark {
+	--pk-base: #09080c;
+	--pk-text: #f5f1ec;
+	--pk-muted: rgba(245, 241, 236, 0.66);
+	--pk-accent: #ff8a3d;
+	--pk-accent-soft: rgba(255, 138, 61, 0.16);
+	--pk-accent-text: #ffc49b;
+	--pk-ok: #3ee08a;
+
+	--pk-glass-1: rgba(255, 255, 255, 0.085);
+	--pk-glass-2: rgba(255, 255, 255, 0.03);
+	--pk-glass-edge: inset 0 1px 0 rgba(255, 255, 255, 0.14), inset 0 0 0 1px rgba(255, 255, 255, 0.035);
+	--pk-glass-shadow: 0 30px 60px -30px rgba(0, 0, 0, 0.8);
+	--pk-glass-shadow-up: 0 40px 70px -30px rgba(0, 0, 0, 0.9);
+	--pk-glass-blur: blur(34px) saturate(1.7);
+	--pk-sheen: rgba(255, 255, 255, 0.07);
+	--pk-sunken: rgba(0, 0, 0, 0.28);
+	--pk-sunken-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.4), inset 0 -1px 0 rgba(255, 255, 255, 0.06);
+	--pk-soft: rgba(255, 255, 255, 0.08);
+	--pk-soft-hover: rgba(255, 255, 255, 0.13);
+	--pk-soft-edge: inset 0 1px 0 rgba(255, 255, 255, 0.12);
+	--pk-nav-ind: linear-gradient(135deg, rgba(255, 138, 61, 0.28), rgba(255, 138, 61, 0.08));
+	--pk-nav-ind-shadow: inset 0 1px 0 rgba(255, 200, 160, 0.3), 0 8px 24px -10px rgba(255, 120, 40, 0.6);
+	--pk-nav-active: #ffffff;
+	--pk-track: rgba(255, 255, 255, 0.08);
+	--pk-primary-bg: linear-gradient(180deg, var(--pk-hot-1), var(--pk-hot-2));
+	--pk-primary-text: #1a0d04;
+	--pk-primary-glow: 0 10px 26px -8px rgba(255, 120, 40, 0.75);
+
+	--background: var(--pk-base);
+	--foreground: var(--pk-text);
+	--card: rgba(255, 255, 255, 0.06);
+	--card-foreground: var(--pk-text);
+	--popover: rgba(24, 21, 28, 0.92);
+	--popover-foreground: var(--pk-text);
+	--primary: #ff8a3d;
+	--primary-foreground: #1a0d04;
+	--secondary: rgba(255, 255, 255, 0.08);
+	--secondary-foreground: var(--pk-text);
+	--muted: rgba(255, 255, 255, 0.07);
+	--muted-foreground: var(--pk-muted);
+	--accent: rgba(255, 255, 255, 0.09);
+	--accent-foreground: var(--pk-text);
+	--destructive: #ff6b5b;
+	--border: rgba(255, 255, 255, 0.06);
+	--input: rgba(255, 255, 255, 0.08);
+	--ring: #ffb27a;
+	--sidebar: rgba(255, 255, 255, 0.04);
+	--sidebar-foreground: var(--pk-text);
+	--sidebar-primary: #ff8a3d;
+	--sidebar-primary-foreground: #1a0d04;
+	--sidebar-accent: rgba(255, 255, 255, 0.08);
+	--sidebar-accent-foreground: var(--pk-text);
+	--sidebar-border: rgba(255, 255, 255, 0.06);
+	--sidebar-ring: #ffb27a;
+	--code-background: rgba(0, 0, 0, 0.32);
+	--code-foreground: rgba(245, 241, 236, 0.9);
+}
+
+/* ---------- base ---------- */
+
+html {
+	background: var(--pk-base);
+}
+
+html body {
+	font-family: var(--font-sans);
+	font-weight: 450;
+	background: transparent;
+	color: var(--pk-text);
+}
+
+html:not(.dark) body {
+	background: linear-gradient(180deg, #ebe2d6 0%, #ddcfbd 50%, #c9ae8e 100%) fixed;
+}
+
+code,
+kbd,
+pre,
+samp,
+.font-mono {
+	font-family: var(--font-mono);
+}
+
+::selection {
+	background: rgba(255, 138, 61, 0.35);
+}
+
+:focus-visible {
+	outline-color: var(--ring);
+}
+
+/* The panel classes sit in the components layer, so a Tailwind utility on the same element (sticky, a
+   background, a radius) still wins. The button, input and token rules further down stay outside any layer on
+   purpose: they have to beat the utilities the shared components already carry. */
+@layer components {
+/* ---------- the backdrop (Backdrop.svelte) ---------- */
+
+.pk-backdrop {
+	position: fixed;
+	inset: 0;
+	z-index: -1;
+	overflow: hidden;
+	pointer-events: none;
+}
+
+.pk-blob {
+	position: absolute;
+	border-radius: 50%;
+	filter: blur(90px);
+	will-change: transform;
+	animation: pk-drift 22s ease-in-out infinite alternate;
+}
+
+.pk-vignette {
+	position: absolute;
+	inset: 0;
+	background: radial-gradient(120% 90% at 50% 0%, rgba(9, 8, 12, 0), rgba(9, 8, 12, 0.7));
+}
+
+html:not(.dark) .pk-vignette {
+	background: radial-gradient(120% 90% at 50% 0%, rgba(255, 255, 255, 0.35), rgba(255, 255, 255, 0) 60%);
+}
+
+/* ---------- glass ---------- */
+
+.pk-glass {
+	position: relative;
+	border: 0 !important;
+	background: linear-gradient(160deg, var(--pk-glass-1), var(--pk-glass-2) 60%);
+	-webkit-backdrop-filter: var(--pk-glass-blur);
+	backdrop-filter: var(--pk-glass-blur);
+	box-shadow: var(--pk-glass-edge), var(--pk-glass-shadow);
+}
+
+.pk-lift {
+	transition:
+		transform 0.8s var(--pk-smooth),
+		box-shadow 0.8s var(--pk-smooth);
+}
+
+@media (hover: hover) {
+	.pk-lift:hover {
+		transform: translateY(-3px);
+		box-shadow: var(--pk-glass-edge), var(--pk-glass-shadow-up);
+	}
+}
+
+/* a band of light sweeps across on hover. It moves by background position, so the panel needs no overflow:hidden
+   (that would clip focus rings and anything that pokes out) */
+.pk-sheen::after {
+	content: '';
+	position: absolute;
+	inset: 0;
+	pointer-events: none;
+	border-radius: inherit;
+	background: linear-gradient(110deg, transparent 42%, var(--pk-sheen) 50%, transparent 58%) no-repeat;
+	background-size: 260% 100%;
+	background-position: 135% 0;
+	transition: background-position 1.4s var(--pk-smooth);
+}
+
+@media (hover: hover) {
+	.pk-sheen:hover::after {
+		background-position: -35% 0;
+	}
+}
+
+/* panels rise in on load, one after another */
+.pk-rise {
+	animation: pk-rise 0.9s var(--pk-smooth) backwards;
+}
+
+.pk-rise:nth-child(2) { animation-delay: 0.06s; }
+.pk-rise:nth-child(3) { animation-delay: 0.12s; }
+.pk-rise:nth-child(4) { animation-delay: 0.18s; }
+.pk-rise:nth-child(5) { animation-delay: 0.24s; }
+.pk-rise:nth-child(6) { animation-delay: 0.3s; }
+.pk-rise:nth-child(n + 7) { animation-delay: 0.34s; }
+
+/* a sunken well: inputs, the chat box, code */
+.pk-sunken {
+	background: var(--pk-sunken) !important;
+	box-shadow: var(--pk-sunken-shadow) !important;
+	border-color: transparent !important;
+}
+
+.pk-mono {
+	font-family: var(--font-mono);
+	font-feature-settings: normal;
+}
+
+.pk-num {
+	font-variant-numeric: tabular-nums;
+}
+
+/* a small label chip: quants, sizes, versions */
+.pk-chip {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	padding: 2px 8px;
+	border-radius: 7px;
+	font-family: var(--font-mono);
+	font-size: 11px;
+	background: var(--pk-soft);
+	color: var(--pk-muted);
+}
+
+.pk-chip-hot {
+	background: var(--pk-accent-soft);
+	color: var(--pk-accent-text);
+}
+
+/* a list row: slides a touch right and lights up on hover */
+.pk-row {
+	display: flex;
+	align-items: center;
+	gap: 14px;
+	padding: 12px;
+	border-radius: 16px;
+	transition:
+		background-color 0.4s,
+		transform 0.6s var(--pk-smooth);
+}
+
+@media (hover: hover) {
+	.pk-row:hover {
+		background: var(--pk-soft);
+		transform: translateX(4px);
+	}
+}
+
+/* a list of rows without lines between them: each row lights up and nudges right on hover, like .pk-row.
+   The rows reach a little past the text on both sides, so the text stays where it was */
+.pk-list {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+}
+
+.pk-list > * {
+	margin-inline: -12px;
+	padding-inline: 12px;
+	border-radius: 14px;
+	transition:
+		background-color 0.4s,
+		transform 0.6s var(--pk-smooth);
+}
+
+@media (hover: hover) {
+	.pk-list > *:hover {
+		background: var(--pk-soft);
+		transform: translateX(3px);
+	}
+}
+
+/* a choice you can pick (a folder, a phone access mode, a persona): frosted, and glowing orange once picked */
+.pk-option {
+	position: relative;
+	border: 0 !important;
+	border-radius: 16px;
+	background: var(--pk-soft);
+	box-shadow: var(--pk-soft-edge);
+	transition:
+		background-color 0.35s,
+		box-shadow 0.45s var(--pk-smooth),
+		transform 0.45s var(--pk-spring);
+}
+
+@media (hover: hover) {
+	button.pk-option:not(:disabled):hover,
+	a.pk-option:hover {
+		background: var(--pk-soft-hover);
+		transform: translateY(-1px);
+	}
+}
+
+button.pk-option:not(:disabled):active {
+	transform: scale(0.985);
+}
+
+.pk-option-on {
+	background: var(--pk-nav-ind) !important;
+	box-shadow: var(--pk-nav-ind-shadow) !important;
+}
+
+/* a panel inside a panel, for editing something in place */
+.pk-well {
+	border: 0 !important;
+	border-radius: 18px;
+	background: var(--pk-sunken);
+	box-shadow: var(--pk-sunken-shadow);
+}
+
+/* a tinted square with an initial, at the start of a row */
+.pk-tile {
+	display: grid;
+	place-items: center;
+	flex: 0 0 auto;
+	width: 38px;
+	height: 38px;
+	border-radius: 12px;
+	font-size: 13px;
+	font-weight: 650;
+	color: var(--pk-text);
+	background: var(--pk-soft);
+	box-shadow: var(--pk-soft-edge);
+}
+
+/* the one that is running */
+.pk-tile-hot {
+	color: var(--pk-accent-text);
+	background: var(--pk-accent-soft);
+	box-shadow: inset 0 1px 0 rgba(255, 200, 160, 0.3);
+}
+
+/* a thin glowing bar for loading */
+.pk-load-track {
+	position: relative;
+	height: 4px;
+	border-radius: 999px;
+	background: var(--pk-track);
+	overflow: hidden;
+}
+
+.pk-load-fill {
+	height: 100%;
+	border-radius: 999px;
+	background: linear-gradient(90deg, #ff7f2a, #ffc08f);
+	box-shadow: 0 0 12px rgba(255, 140, 60, 0.8);
+	transition: width 0.25s linear;
+}
+
+/* no percentage to show: a glowing segment runs along the track */
+.pk-load-busy {
+	width: 35%;
+	animation: pk-load 1.4s var(--pk-smooth) infinite;
+}
+
+/* what you wrote, in a chat: the orange bubble */
+.pk-bubble-me {
+	color: #1a0d04;
+	background: linear-gradient(180deg, var(--pk-hot-1), #ff8a3d);
+	box-shadow:
+		inset 0 1px 0 rgba(255, 255, 255, 0.45),
+		0 10px 24px -14px rgba(255, 120, 40, 0.7);
+}
+
+/* the green "running" dot with its ping */
+.pk-live {
+	position: relative;
+	display: inline-block;
+	width: 8px;
+	height: 8px;
+	border-radius: 50%;
+	background: var(--pk-ok);
+}
+
+.pk-live::after {
+	content: '';
+	position: absolute;
+	inset: 0;
+	border-radius: 50%;
+	background: var(--pk-ok);
+	animation: pk-ping 1.8s cubic-bezier(0, 0, 0.2, 1) infinite;
+}
+
+/* values that change glide instead of jumping */
+.pk-bar {
+	transition: width 1.2s var(--pk-smooth);
+}
+
+.pk-ring {
+	transition: stroke-dashoffset 1.4s var(--pk-smooth);
+}
+
+}
+
+/* ---------- buttons ---------- */
+
+/* every button is a pill that springs when pressed */
+[data-slot='button'] {
+	border-radius: 999px;
+	transition:
+		transform 0.45s var(--pk-spring),
+		background-color 0.3s,
+		box-shadow 0.4s,
+		color 0.3s,
+		opacity 0.3s;
+}
+
+[data-slot='button']:not(:disabled):active {
+	transform: scale(0.96);
+}
+
+@media (hover: hover) {
+	[data-slot='button']:not(:disabled):not(.pk-still):hover {
+		transform: scale(1.03);
+	}
+}
+
+/* primary: the orange gradient with a glow (dark), or an ink pill (light) */
+[data-slot='button'].bg-primary,
+.pk-btn-hot {
+	background: var(--pk-primary-bg) !important;
+	color: var(--pk-primary-text) !important;
+	border: 0 !important;
+	box-shadow:
+		inset 0 1px 0 rgba(255, 255, 255, 0.45),
+		var(--pk-primary-glow) !important;
+}
+
+html.dark [data-slot='button'].bg-primary:not(:disabled):hover,
+html.dark .pk-btn-hot:not(:disabled):hover {
+	box-shadow:
+		inset 0 1px 0 rgba(255, 255, 255, 0.5),
+		0 14px 34px -8px rgba(255, 120, 40, 0.95) !important;
+}
+
+/* secondary, outline and tertiary: frosted */
+[data-slot='button']:is(.border, .bg-muted\/30, .bg-muted\/60, .bg-secondary),
+.pk-btn-soft {
+	background: var(--pk-soft) !important;
+	border-color: transparent !important;
+	box-shadow: var(--pk-soft-edge) !important;
+	color: var(--pk-text);
+}
+
+[data-slot='button']:is(.border, .bg-muted\/30, .bg-muted\/60, .bg-secondary):not(:disabled):hover,
+.pk-btn-soft:not(:disabled):hover {
+	background: var(--pk-soft-hover) !important;
+}
+
+/* ---------- inputs ---------- */
+
+/* the shared input components everywhere, and plain fields on Pumpkin's own pages (.pk-scope) */
+[data-slot='input'],
+[data-slot='textarea'],
+[data-slot='select-trigger'],
+.pk-input,
+.pk-scope select,
+.pk-scope input:is([type='text'], [type='search'], [type='password'], [type='email'], [type='url'], [type='number'], :not([type])),
+.pk-scope textarea:not(.pk-bare) {
+	background-color: var(--pk-sunken);
+	border-color: transparent;
+	box-shadow: var(--pk-sunken-shadow);
+	border-radius: 12px;
+}
+
+[data-slot='input']:focus-visible,
+[data-slot='textarea']:focus-visible,
+.pk-input:focus-visible,
+.pk-scope input:focus-visible,
+.pk-scope textarea:focus-visible,
+.pk-scope select:focus-visible {
+	box-shadow:
+		var(--pk-sunken-shadow),
+		0 0 0 2px color-mix(in srgb, var(--ring) 70%, transparent);
+	border-color: transparent;
+}
+
+input::placeholder,
+textarea::placeholder {
+	color: var(--pk-muted);
+	opacity: 1;
+}
+
+/* switches: orange when on, and the knob springs */
+[data-slot='switch'][data-state='checked'] {
+	background: linear-gradient(180deg, var(--pk-hot-1), var(--pk-hot-2)) !important;
+	box-shadow: 0 4px 14px -6px rgba(255, 120, 40, 0.7);
+}
+
+[data-slot='switch'][data-state='unchecked'] {
+	background: var(--pk-track) !important;
+}
+
+[data-slot='switch'] [data-slot='switch-thumb'] {
+	transition: transform 0.5s var(--pk-spring) !important;
+}
+
+/* ---------- the chat (llama.cpp's UI, styled through the hooks it already has) ---------- */
+
+/* what you wrote: the orange bubble, its tail at the bottom right */
+html body .chat-message-user-bubble {
+	color: #1a0d04 !important;
+	background: linear-gradient(180deg, var(--pk-hot-1), #ff8a3d) !important;
+	border-radius: 18px 18px 6px 18px !important;
+	box-shadow:
+		inset 0 1px 0 rgba(255, 255, 255, 0.45),
+		0 12px 28px -16px rgba(255, 120, 40, 0.75) !important;
+	-webkit-backdrop-filter: none;
+	backdrop-filter: none;
+}
+
+html body .chat-message-user-bubble :is(a, code) {
+	color: inherit;
+}
+
+/* the box you type in: a glass panel with the send button glowing at its corner */
+html body [data-slot='input-area'] {
+	border: 0 !important;
+	background: linear-gradient(160deg, var(--pk-glass-1), var(--pk-glass-2) 60%) !important;
+	-webkit-backdrop-filter: var(--pk-glass-blur) !important;
+	backdrop-filter: var(--pk-glass-blur) !important;
+	box-shadow: var(--pk-glass-edge), var(--pk-glass-shadow) !important;
+	border-radius: 24px !important;
+}
+
+html body [data-slot='input-area'] > * {
+	box-shadow: none !important;
+}
+
+/* while you type it glows softly orange from below; no outline */
+html body [data-slot='input-area']:focus-within {
+	box-shadow:
+		var(--pk-glass-edge),
+		0 18px 50px -24px rgba(255, 120, 40, 0.55),
+		var(--pk-glass-shadow) !important;
+}
+
+html body [data-slot='input-area'] textarea {
+	background: transparent !important;
+	box-shadow: none !important;
+}
+
+/* the open sidebar with your conversations */
+html body aside[class*='md:w-72'] {
+	background: linear-gradient(160deg, var(--pk-glass-1), var(--pk-glass-2) 60%) !important;
+	-webkit-backdrop-filter: var(--pk-glass-blur) !important;
+	backdrop-filter: var(--pk-glass-blur) !important;
+	box-shadow: var(--pk-glass-edge), var(--pk-glass-shadow) !important;
+	border-radius: 22px !important;
+}
+
+/* a system prompt shown at the top of a chat: frosted instead of a dashed outline */
+html body .chat-message-user .rounded-\[1\.125rem\].\!border-dashed,
+html body [class*='border-dashed'][class*='bg-muted'][class*='rounded-[1.125rem]'] {
+	border: 0 !important;
+	background: var(--pk-soft) !important;
+	box-shadow: var(--pk-soft-edge);
+	border-radius: 18px !important;
+}
+
+/* code and tool calls inside a reply sit on frosted panels */
+html body .chat-message-assistant pre,
+html body .chat-message-assistant [class*='rounded'][class*='border'][class*='bg-muted'] {
+	border-color: transparent !important;
+	border-radius: 16px;
+	box-shadow: var(--pk-soft-edge);
+}
+
+/* ---------- floating layers: menus, dialogs, popovers, tooltips ---------- */
+
+[data-slot='dropdown-menu-content'],
+[data-slot='dropdown-menu-sub-content'],
+[data-slot='popover-content'],
+[data-slot='select-content'],
+[data-slot='hover-card-content'],
+[data-slot='dialog-content'],
+[data-slot='alert-dialog-content'],
+[data-slot='drawer-content'] {
+	border-color: transparent !important;
+	-webkit-backdrop-filter: blur(30px) saturate(1.6);
+	backdrop-filter: blur(30px) saturate(1.6);
+	box-shadow:
+		var(--pk-glass-edge),
+		0 30px 70px -20px rgba(0, 0, 0, 0.55) !important;
+	border-radius: 20px;
+}
+
+[data-slot='dropdown-menu-item'],
+[data-slot='select-item'] {
+	border-radius: 10px;
+}
+
+[data-slot='dialog-overlay'],
+[data-slot='alert-dialog-overlay'],
+[data-slot='drawer-overlay'] {
+	-webkit-backdrop-filter: blur(6px);
+	backdrop-filter: blur(6px);
+}
+
+/* ---------- keyframes ---------- */
+
+@keyframes pk-rise {
+	from {
+		opacity: 0;
+		transform: translateY(18px) scale(0.98);
+		filter: blur(6px);
+	}
+}
+
+@keyframes pk-drift {
+	0% {
+		transform: translate3d(0, 0, 0) scale(1);
+	}
+	100% {
+		transform: translate3d(6%, 4%, 0) scale(1.15);
+	}
+}
+
+@keyframes pk-load {
+	from {
+		transform: translateX(-110%);
+	}
+	to {
+		transform: translateX(300%);
+	}
+}
+
+@keyframes pk-ping {
+	75%,
+	100% {
+		transform: scale(2.6);
+		opacity: 0;
+	}
+}
+
+/* ---------- phones and slow machines ---------- */
+
+@media (max-width: 640px) {
+	html:root {
+		--pk-glass-blur: blur(20px) saturate(1.5);
+	}
+
+	html.dark {
+		--pk-glass-blur: blur(20px) saturate(1.6);
+	}
+
+	.pk-blob {
+		filter: blur(60px);
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	*,
+	*::before,
+	*::after {
+		animation-duration: 0.01ms !important;
+		animation-delay: 0s !important;
+		animation-iteration-count: 1 !important;
+		transition-duration: 0.01ms !important;
+	}
+
+	.pk-blob {
+		animation: none !important;
+	}
+}

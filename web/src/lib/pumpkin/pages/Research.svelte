@@ -229,7 +229,7 @@
 			<Empty text="Nothing yet. Your research is kept here, and its reports on the Reports page." />
 		{:else}
 			<Card title="Earlier research">
-				<ul class="flex flex-col divide-y divide-border/60">
+				<ul class="pk-list">
 					{#each items.filter((i) => !current || i.id !== current.id) as it (it.id)}
 						<li class="flex items-center gap-2 py-2">
 							<button class="min-w-0 flex-1 text-left" onclick={() => show(it)}>

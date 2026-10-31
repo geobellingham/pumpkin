@@ -94,7 +94,7 @@
 
 {#snippet editor()}
 	{#if editing}
-		<div class="flex flex-col gap-3 rounded-xl border border-foreground/25 p-3">
+		<div class="pk-well flex flex-col gap-3 p-3.5">
 			<Field label="Title"><Input bind:value={editing.title} /></Field>
 			<Field label="Prompt"><Textarea bind:value={editing.prompt} class="min-h-28" /></Field>
 			<div class="flex justify-end gap-2">

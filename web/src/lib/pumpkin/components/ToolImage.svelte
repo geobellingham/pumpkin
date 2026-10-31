@@ -55,7 +55,7 @@
 			<span>No picture: {section.toolResult?.replace(/^Error:\s*/, '')}</span>
 		</div>
 	{:else}
-		<div class="flex aspect-square w-full max-w-sm flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-border p-4 text-center text-sm text-muted-foreground">
+		<div class="flex aspect-square w-full max-w-sm flex-col items-center justify-center gap-2 pk-option rounded-[16px] p-4 text-center text-sm text-muted-foreground">
 			<LoaderCircle class="h-5 w-5 animate-spin" />
 			<span>Picture{prompt ? `: ${prompt.slice(0, 120)}` : ''}</span>
 			<span class="text-xs">While it is drawn the chat model may pause, and it comes back by itself.</span>

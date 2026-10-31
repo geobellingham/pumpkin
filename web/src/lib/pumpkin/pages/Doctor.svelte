@@ -41,7 +41,7 @@
 				{#each areas as area (area)}
 					<div>
 						<h3 class="mb-1 text-xs font-medium text-muted-foreground">{area}</h3>
-						<div class="flex flex-col divide-y divide-border/60">
+						<div class="pk-list">
 							{#each checks.filter((c) => c.area === area) as c (c.title)}
 								<div class="flex gap-3 py-2.5">
 									{#if c.status === 'ok'}

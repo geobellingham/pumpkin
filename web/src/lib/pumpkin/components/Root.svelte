@@ -1,6 +1,10 @@
 <script lang="ts">
+	import '@fontsource-variable/geist';
+	import '@fontsource-variable/geist-mono';
+	import '../theme.css';
 	import { page } from '$app/state';
 	import ArtifactDock from './ArtifactDock.svelte';
+	import Backdrop from './Backdrop.svelte';
 	import StatusChip from './StatusChip.svelte';
 	import VoiceBar from './VoiceBar.svelte';
 	import { pumpkin } from '../store.svelte';
@@ -61,6 +65,8 @@
 		overscroll-behavior-x: none;
 	}
 </style>
+
+<Backdrop />
 
 {#if pumpkin.available}
 	{#if !onPumpkinPage}

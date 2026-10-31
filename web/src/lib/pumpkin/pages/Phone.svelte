@@ -154,13 +154,13 @@
 				{#each MODES as m (m.value)}
 					<button
 						aria-checked={remote.mode === m.value}
-						class={['flex items-start gap-3 rounded-xl border px-3 py-3 text-left', remote.mode === m.value ? 'border-foreground/40 bg-muted/40' : 'border-border/60 hover:bg-muted/30']}
+						class={['pk-option flex items-start gap-3 px-3.5 py-3 text-left', remote.mode === m.value && 'pk-option-on']}
 						disabled={busy}
 						onclick={() => setMode(m.value)}
 						role="radio"
 						type="button"
 					>
-						<span class={['mt-1 size-3.5 shrink-0 rounded-full border-2', remote.mode === m.value ? 'border-foreground bg-foreground' : 'border-muted-foreground/50']}></span>
+						<span class={['mt-1 size-3.5 shrink-0 rounded-full transition-all duration-300', remote.mode === m.value ? 'bg-[var(--pk-accent)] shadow-[0_0_0_3px_var(--pk-accent-soft)]' : 'bg-[var(--pk-track)]']}></span>
 						<span>
 							<span class="block text-sm font-medium">{m.label}</span>
 							<span class="block text-xs text-muted-foreground">{m.desc}</span>

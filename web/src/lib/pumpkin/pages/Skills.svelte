@@ -92,7 +92,7 @@
 </script>
 
 <div class="flex flex-col gap-4">
-	<Card description="Instructions for particular jobs. The model sees each skill's name and its one-line description, and reads the instructions when a request fits. That keeps them cheap, even on a small model." title="Skills">
+	<Card description="Instructions for particular jobs. The model sees each skill's name and its one-line description, and reads the instructions when a request fits. That keeps them cheap, even on a small model." title="Your skills">
 		{#snippet actions()}
 			<Button class="rounded-full" onclick={() => edit()} size="sm"><Plus class="h-4 w-4" /> New</Button>
 		{/snippet}
@@ -102,7 +102,7 @@
 		{#if items === null}
 			<div class="flex justify-center py-6"><LoaderCircle class="h-5 w-5 animate-spin text-muted-foreground" /></div>
 		{:else}
-			<ul class="mt-2 flex flex-col divide-y divide-border/60">
+			<ul class="mt-2 pk-list">
 				{#each items as s (s.name)}
 					<li class="flex items-start gap-3 py-3">
 						<FileText class="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />

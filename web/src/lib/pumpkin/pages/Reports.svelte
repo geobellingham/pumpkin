@@ -94,7 +94,7 @@
 				<Button aria-label="Delete report" class="size-9 rounded-full" onclick={() => remove(open!.name)} size="icon" variant="ghost"><Trash class="h-4 w-4" /></Button>
 			{/if}
 		</div>
-		<article class="rounded-2xl border border-border/60 p-4 md:p-6">
+		<article class="pk-glass pk-lift pk-sheen pk-rise rounded-[24px] p-4 md:p-6">
 			<MarkdownContent content={open.text} />
 		</article>
 	</div>
@@ -155,7 +155,7 @@
 				{:else if !items.length}
 					<Empty text={tab === 'reports' ? 'No reports yet. Every task run saves one here.' : 'No quality benchmark results found.'} />
 				{:else}
-					<div class="flex flex-col divide-y divide-border/60">
+					<div class="pk-list">
 						{#each items as f (f.name)}
 							{@const t = title(f.name)}
 							<button class="flex items-center gap-3 py-3 text-left hover:bg-muted/40" onclick={() => show(f.name)} type="button">

@@ -204,7 +204,7 @@
 			{/if}
 
 			{#if st.text.running && canDraw && !st.text.draws}
-				<div class="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-500/30 bg-amber-500/10 p-3">
+				<div class="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-[16px] bg-amber-500/10 p-3">
 					<p class="text-sm">
 						{st.text.tools
 							? `${st.text.name} was started before it could draw. Restart it once to give it the drawing tool.`
@@ -220,7 +220,7 @@
 
 	{#if st?.supported}
 		<Card description="Each one is a picture model with its text encoder, picked for this computer. Pumpkin chooses the quality that fits your graphics card." title="Image models">
-			<ul class="flex flex-col divide-y divide-border/60">
+			<ul class="pk-list">
 				{#each st.bundles as b (b.id)}
 					<li class="flex flex-col gap-2 py-3 sm:flex-row sm:items-center">
 						<div class="min-w-0 flex-1">
