@@ -364,7 +364,12 @@ class TestBrowserSession(Boot, unittest.TestCase):
             if cond(v):
                 return v
             time.sleep(0.2)
-        self.fail(f"timed out: {json.dumps(v)[-1500:]}")
+        # what every thread is doing, so a stuck run (macOS 15) says where it is stuck
+        import traceback
+        stacks = "\n".join(f"{t.name}: " + " <- ".join(f"{os.path.basename(f.filename)}:{f.lineno}" for f in
+                                                          reversed(traceback.extract_stack(sys._current_frames()[t.ident])[-5:]))
+                            for t in threading.enumerate() if t.ident in sys._current_frames())
+        self.fail(f"timed out: {json.dumps(v)[-900:]}\n{stacks[-1800:]}")
 
     def test_a_session_reads_types_and_clicks_with_the_users_yes(self):
         p = self.start_model()

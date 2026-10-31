@@ -3,8 +3,10 @@ downloads a tiny real model from Hugging Face, starts it and answers a chat thro
 
     python tests/e2e_real.py            # needs the internet; uses a throwaway home folder
 """
+import base64
 import json
 import os
+import signal
 import subprocess
 import sys
 import tempfile
@@ -45,6 +47,10 @@ def call(method, path, body=None, timeout=60):
             return json.loads(r.read() or b"{}")
     except urllib.error.HTTPError as e:
         raise SystemExit(f"{method} {path} -> {e.code}: {e.read()[:500]!r}")
+    except OSError as e:                                       # a timeout says nothing about which call it was
+        if path != "/pumpkin/api/state":
+            print(f"{method} {path} failed: {e!r}", flush=True)
+        raise
 
 
 def wait(cond, what, timeout=900):
@@ -58,7 +64,9 @@ def wait(cond, what, timeout=900):
 
 
 # E2E_PYTHON: run the server with another Python, e.g. the one inside the installed Windows package
-server = subprocess.Popen([os.environ.get("E2E_PYTHON") or sys.executable, "-m", "pumpkin", "serve"], env=ENV, cwd=HOME,
+# -X faulthandler: when a step fails, SIGABRT makes Pumpkin print what each of its threads was doing
+server = subprocess.Popen([os.environ.get("E2E_PYTHON") or sys.executable, "-X", "faulthandler", "-m", "pumpkin", "serve"],
+                          env=ENV, cwd=HOME,
                           stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
 try:
     step("Pumpkin starts")
@@ -124,7 +132,14 @@ try:
     call("POST", "/pumpkin/api/devices/share", {"on": True, "name": "E2E box"})
     time.sleep(1.5)                                            # it re-listens on all addresses
     code = call("GET", "/pumpkin/api/devices/share")["code"]
-    dev = call("POST", "/pumpkin/api/devices", {"code": code})
+    # pair through this computer's own loopback address: a CI Mac (macOS 15) holds back connections to its own
+    # network address until a local network permission is given, which nobody can click there
+    sys.path.insert(0, ROOT)
+    from pumpkin import devices as _devices
+    raw = json.loads(base64.urlsafe_b64decode(code[len(_devices.CODE_PREFIX):] + "==="))
+    raw["u"] = [f"http://127.0.0.1:{PORT}"]
+    body = base64.urlsafe_b64encode(json.dumps(raw, separators=(",", ":")).encode()).decode().rstrip("=")
+    dev = call("POST", "/pumpkin/api/devices", {"code": _devices.CODE_PREFIX + body})
     print("paired:", dev["name"], dev["urls"])
     # the device tools come with the preset's Tools switch and a fresh start
     call("PUT", f"/pumpkin/api/presets/{preset['id']}", {"tools": True, "sandbox": False, "web": False})
@@ -217,9 +232,13 @@ try:
     call("POST", "/pumpkin/api/llama/stop")
     print("\nAll good.")
 finally:
+    failed = sys.exc_info()[0] is not None and not (sys.exc_info()[0] is SystemExit and not sys.exc_info()[1].code)
+    if failed and os.name == "posix":
+        server.send_signal(signal.SIGABRT)                     # faulthandler prints every thread's stack
+        time.sleep(2)
     server.terminate()
     try:
         out, _ = server.communicate(timeout=20)
-        print(out[-3000:])
+        print(out[-6000:])
     except subprocess.TimeoutExpired:
         server.kill()
