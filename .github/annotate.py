@@ -30,5 +30,10 @@ head = lines[tb:tb + 12] if tb is not None and not failures else []
 body = failures[:60] + ([""] if failures else []) + summary
 if not failures:
     body += (["Steps:"] + steps if steps else []) + (["", "Start of the traceback:"] + head if head else []) + ["", "End of the log:"] + lines[-12:]
+# a hung run ends in a faulthandler dump: say which test was running and which of Pumpkin's own lines the threads were in
+if any(l.startswith(("Timeout (", "Thread 0x", "Current thread")) for l in lines):
+    running = [l for l in lines if re.search(r" \.\.\.( |$)", l) and not l.endswith(("ok", "skipped"))][-1:]
+    mine = [l.strip() for l in lines if ("/pumpkin/" in l or "/tests/" in l) and l.lstrip().startswith("File")][:14]
+    body = ["Test running when it hung:"] + running + ["", "Pumpkin's own frames in the dump:"] + mine + [""] + body
 msg = "\n".join(body)[:3800].replace("%", "%25").replace("\r", "").replace("\n", "%0A")
 print(f"::{level} title={title}::{msg}")
