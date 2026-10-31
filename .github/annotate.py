@@ -22,6 +22,13 @@ for l in lines:
     if keep:
         failures.append(l)
 summary = [l for l in lines[-6:] if l.startswith(("Ran ", "FAILED", "OK"))]
-body = failures[:60] + ([""] if failures else []) + summary + (["", "End of the log:"] + lines[-20:] if not failures else [])
+# a script that is not unittest (tests/e2e_real.py) prints "== step" headings: keep the last few, so a failure shows
+# which step it was in, and the start of a traceback, which names the call that failed
+steps = [l for l in lines if l.startswith("== ")][-4:]
+tb = next((i for i, l in enumerate(lines) if l.startswith("Traceback")), None)
+head = lines[tb:tb + 12] if tb is not None and not failures else []
+body = failures[:60] + ([""] if failures else []) + summary
+if not failures:
+    body += (["Steps:"] + steps if steps else []) + (["", "Start of the traceback:"] + head if head else []) + ["", "End of the log:"] + lines[-12:]
 msg = "\n".join(body)[:3800].replace("%", "%25").replace("\r", "").replace("\n", "%0A")
 print(f"::{level} title={title}::{msg}")
