@@ -32,9 +32,9 @@ html:root {
 	--pk-glass-2: rgba(255, 255, 255, 0.4);
 	--pk-glass-edge: inset 0 1px 0 rgba(255, 255, 255, 0.95), inset 0 0 0 1px rgba(255, 255, 255, 0.35);
 	--pk-glass-shadow: 0 24px 50px -28px rgba(70, 40, 15, 0.5);
-	--pk-glass-shadow-up: 0 34px 60px -28px rgba(70, 40, 15, 0.6);
+	--pk-glass-shadow-up: 0 26px 50px -30px rgba(70, 40, 15, 0.4);
 	--pk-glass-blur: blur(34px) saturate(1.6);
-	--pk-sheen: rgba(255, 255, 255, 0.6);
+	--pk-sheen: rgba(255, 255, 255, 0.22);
 	--pk-sunken: rgba(255, 255, 255, 0.45);
 	--pk-sunken-shadow: inset 0 1px 2px rgba(70, 40, 15, 0.18), inset 0 -1px 0 rgba(255, 255, 255, 0.7);
 	--pk-soft: rgba(255, 255, 255, 0.55);
@@ -98,9 +98,9 @@ html.dark {
 	--pk-glass-2: rgba(255, 255, 255, 0.03);
 	--pk-glass-edge: inset 0 1px 0 rgba(255, 255, 255, 0.14), inset 0 0 0 1px rgba(255, 255, 255, 0.035);
 	--pk-glass-shadow: 0 30px 60px -30px rgba(0, 0, 0, 0.8);
-	--pk-glass-shadow-up: 0 40px 70px -30px rgba(0, 0, 0, 0.9);
+	--pk-glass-shadow-up: 0 30px 56px -32px rgba(0, 0, 0, 0.7);
 	--pk-glass-blur: blur(34px) saturate(1.7);
-	--pk-sheen: rgba(255, 255, 255, 0.07);
+	--pk-sheen: rgba(255, 255, 255, 0.03);
 	--pk-sunken: rgba(0, 0, 0, 0.28);
 	--pk-sunken-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.4), inset 0 -1px 0 rgba(255, 255, 255, 0.06);
 	--pk-soft: rgba(255, 255, 255, 0.08);
@@ -228,7 +228,7 @@ html:not(.dark) .pk-vignette {
 
 @media (hover: hover) {
 	.pk-lift:hover {
-		transform: translateY(-3px);
+		transform: translateY(-1.5px);
 		box-shadow: var(--pk-glass-edge), var(--pk-glass-shadow-up);
 	}
 }
@@ -612,6 +612,16 @@ html body [data-slot='input-area'] textarea {
 	box-shadow: none !important;
 }
 
+/* small buttons and badges blur what is behind them. Inside a glass panel Safari and Chrome on a Mac draw that blur as
+   a flat rectangle behind the rounded shape, so they do not blur at all */
+html body button,
+html body a[data-slot='button'],
+html body [data-slot='badge'],
+html body aside * {
+	-webkit-backdrop-filter: none !important;
+	backdrop-filter: none !important;
+}
+
 /* the open sidebar with your conversations */
 html body aside[class*='md:w-72'] {
 	background: linear-gradient(160deg, var(--pk-glass-1), var(--pk-glass-2) 60%) !important;
@@ -734,4 +744,13 @@ html body .chat-message-assistant [class*='rounded'][class*='border'][class*='bg
 	.pk-blob {
 		animation: none !important;
 	}
+}
+
+/* the open chats stop before the model pill at the top right, they never slide under it */
+html body nav[aria-label='Open conversations'][class*='max-w-[calc(100vw-5rem)']  {
+	max-width: calc(100vw - 5rem - 11.5rem) !important;
+}
+
+html body nav[aria-label='Open conversations'][class*='max-w-[calc(100vw-20rem)']  {
+	max-width: calc(100vw - 20rem - 11.5rem) !important;
 }

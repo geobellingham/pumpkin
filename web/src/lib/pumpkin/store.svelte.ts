@@ -64,6 +64,8 @@ class PumpkinStore {
 	/** seconds the server's clock is ahead of this browser's, so "since" times read right on a phone too */
 	skew = 0;
 	/** the last few minutes of speed and memory, for the Overview's small graphs */
+	private lastTotal: number | null = null;
+	private lastAt = 0;
 	history = $state<{ gpu: number | null; ram: number | null; speed: number | null; vram: number | null }[]>([]);
 
 	private started = false;
@@ -158,8 +160,16 @@ class PumpkinStore {
 
 	private sample(s: T.State): void {
 		const on = s.server.state === 'ready' || s.server.state === 'external';
-		const busy = s.activity?.some((a) => a.kind === 'model' && a.state === 'working');
-		const speed = on && busy ? (s.metrics.predicted_tokens_seconds ?? null) : on ? 0 : null;
+		// a reply from any client (the chat, a task, another device) shows up as tokens counted since the last sample
+		const total = s.metrics.tokens_predicted_total ?? null;
+		const grew = total != null && this.lastTotal != null && total > this.lastTotal;
+		const now = Date.now() / 1000;
+		const perSec = grew && this.lastAt ? (total - this.lastTotal!) / Math.max(0.5, now - this.lastAt) : 0;
+
+		this.lastTotal = total;
+		this.lastAt = now;
+
+		const speed = on ? (grew ? ((s.metrics.predicted_tokens_seconds ?? 0) || perSec) : 0) : null;
 		const next = [
 			...this.history,
 			{ gpu: s.live.gpu_busy ?? null, ram: s.live.ram_used ?? null, speed, vram: s.live.vram_used ?? null }

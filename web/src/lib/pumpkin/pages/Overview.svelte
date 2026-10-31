@@ -327,8 +327,8 @@
 						<circle class="pk-ring ring-in" cx="62" cy="62" r="52" stroke="url(#pk-ring)" stroke-dasharray={RING} stroke-dashoffset={ringOff} stroke-linecap="round" stroke-width="10" />
 					</svg>
 					<div class="absolute inset-0 flex flex-col items-center justify-center">
-						<span class="text-[22px] font-semibold tabular-nums">{ringTotal ? `${ringUsed.toFixed(1)} GB` : '–'}</span>
-						<span class="text-[11px] text-muted-foreground">{ringTotal ? `of ${ringTotal.toFixed(0)} GB ${ringLabel}` : ringLabel}</span>
+						<span class="text-xl font-semibold tabular-nums">{ringTotal ? `${ringUsed.toFixed(1)} GB` : '–'}</span>
+						<span class="mt-0.5 max-w-[78px] text-center text-[10.5px] leading-[1.25] text-muted-foreground">{ringTotal ? `of ${ringTotal.toFixed(0)} GB` : ''}<br />{ringLabel}</span>
 					</div>
 				</div>
 				<div class="flex min-w-0 flex-1 flex-col gap-3.5">
