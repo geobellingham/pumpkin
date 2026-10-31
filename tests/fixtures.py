@@ -1,5 +1,17 @@
 """Test helpers: tiny GGUF files and a fake llama-server."""
 import os
+
+# the HTTP servers the tests start would ask for this computer's full name while binding, which hangs on macOS 15
+import http.server as _hs
+import socketserver as _ss
+
+
+def _bind(self):
+    _ss.TCPServer.server_bind(self)
+    self.server_name, self.server_port = self.server_address[:2]
+
+
+_hs.HTTPServer.server_bind = _bind
 import struct
 
 

@@ -13,6 +13,7 @@ import shutil
 import sys
 import threading
 import time
+import socketserver
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, quote, unquote, urlparse
 
@@ -59,6 +60,15 @@ def _eq(given, secret):
 BODY_LIMIT = 512 * 2 ** 20                 # a chat with many pictures is big, but never this big
 BROWSER_BODY_LIMIT = 4 * 2 ** 20           # what the browser extension sends: a page's text, a list of tabs
 
+
+
+class QuickServer(ThreadingHTTPServer):
+    """Python's HTTP server asks for this computer's full name while it binds (socket.getfqdn), which on a Mac
+    goes over Bonjour and can hang for minutes (macOS 15). Pumpkin never uses the name."""
+
+    def server_bind(self):
+        socketserver.TCPServer.server_bind(self)
+        self.server_name, self.server_port = self.server_address[:2]
 
 class BodyError(ValueError):
     """A request body that is malformed or too big."""
@@ -175,7 +185,7 @@ class Web:
 
             do_POST = do_PUT = do_DELETE = do_PATCH = do_HEAD = do_OPTIONS = do_GET
 
-        self.httpd = ThreadingHTTPServer((host, int(self.core.settings["port"])), Handler)
+        self.httpd = QuickServer((host, int(self.core.settings["port"])), Handler)
         self.httpd.daemon_threads = True
         self.host = host
         threading.Thread(target=self.httpd.serve_forever, daemon=True).start()
