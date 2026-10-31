@@ -99,11 +99,7 @@ def _local_ips():
     ip = remote.lan_ip()
     if ip:
         ips.add(ip)
-    try:
-        for info in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET):
-            ips.add(info[4][0])
-    except OSError:
-        pass
+    ips.update(_host_ips())
     try:                                    # the Tailscale address, when Tailscale is running here
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         s.connect(("100.100.100.100", 1))   # no packet is sent
@@ -115,6 +111,30 @@ def _local_ips():
         pass
     ips = {i for i in ips if not i.startswith("127.")}
     return sorted(ips, key=lambda i: (not _is_tailscale(i), i))
+
+
+_host = {"at": 0.0, "ips": [], "busy": False}
+
+
+def _host_ips():
+    """What this computer's own name resolves to. On a Mac the name ends in .local and resolves over Bonjour, which
+    can hang for minutes (macOS 15 holds it back for its local network permission), so the lookup runs on the side,
+    gets two seconds, and its answer is remembered for ten minutes. A slow lookup leaves the list a bit shorter."""
+    if time.time() - _host["at"] < 600 or _host["busy"]:
+        return list(_host["ips"])
+
+    def look():
+        try:
+            found = sorted({i[4][0] for i in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET)})
+        except (OSError, UnicodeError):
+            found = []
+        _host.update(ips=found, at=time.time(), busy=False)
+
+    _host["busy"] = True
+    t = threading.Thread(target=look, daemon=True)
+    t.start()
+    t.join(2)
+    return list(_host["ips"])
 
 
 def _is_tailscale(ip):
