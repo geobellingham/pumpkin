@@ -71,6 +71,12 @@ FAKE_SERVER = r'''#!/usr/bin/env python3
 """Fake llama-server for tests: --version, --help, and a tiny OpenAI-style API with tools."""
 import json, re, sys, time, os
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+class _Quick(ThreadingHTTPServer):
+    def server_bind(self):                       # no full-name lookup while binding (it hangs on macOS 15)
+        import socketserver
+        socketserver.TCPServer.server_bind(self)
+        self.server_name, self.server_port = self.server_address[:2]
+
 args = sys.argv[1:]
 if "--version" in args:
     print("version: %s (abcdef1)\nbuilt with cc for x86_64-linux-gnu\nVulkan backend" % os.environ.get("FAKE_LLAMA_BUILD", "11796")); sys.exit(0)
@@ -259,7 +265,7 @@ class H(BaseHTTPRequestHandler):
                     t["predicted_per_second"] = 74.2          # guessing from the chat pays off when text repeats
             return s.j({"choices": [{"message": msg}], "timings": t})
         s.j({"error": "nf"}, 404)
-ThreadingHTTPServer(("127.0.0.1", port), H).serve_forever()
+_Quick(("127.0.0.1", port), H).serve_forever()
 '''
 
 
@@ -280,6 +286,12 @@ FAKE_SD = r'''#!/usr/bin/env python3
 """Fake sd-server for tests: model status, async img_gen jobs. Writes what it was asked to sd-calls.jsonl."""
 import base64, json, os, sys, time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+class _Quick(ThreadingHTTPServer):
+    def server_bind(self):                       # no full-name lookup while binding (it hangs on macOS 15)
+        import socketserver
+        socketserver.TCPServer.server_bind(self)
+        self.server_name, self.server_port = self.server_address[:2]
+
 args = sys.argv[1:]
 LOG = os.path.join(os.path.dirname(os.path.abspath(__file__)), "sd-calls.jsonl")
 def note(o):
@@ -336,7 +348,7 @@ class H(BaseHTTPRequestHandler):
             note({"vid_gen": {k: v for k, v in body.items() if k != "init_image"}, "init": bool(body.get("init_image"))})
             return s.j({"id": jid, "status": "queued"}, 202)
         s.j({"error": "nf"}, 404)
-ThreadingHTTPServer(("127.0.0.1", port), H).serve_forever()
+_Quick(("127.0.0.1", port), H).serve_forever()
 '''
 
 

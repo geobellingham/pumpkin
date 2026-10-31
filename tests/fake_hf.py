@@ -6,6 +6,12 @@ import sys
 import tempfile
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+class _Quick(ThreadingHTTPServer):
+    def server_bind(self):                       # no full-name lookup while binding (it hangs on macOS 15)
+        import socketserver
+        socketserver.TCPServer.server_bind(self)
+        self.server_name, self.server_port = self.server_address[:2]
+
 from urllib.parse import parse_qs, unquote, urlparse
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -150,4 +156,4 @@ class H(BaseHTTPRequestHandler):
 
 
 if __name__ == "__main__":
-    ThreadingHTTPServer(("127.0.0.1", int(sys.argv[1])), H).serve_forever()
+    _Quick(("127.0.0.1", int(sys.argv[1])), H).serve_forever()
