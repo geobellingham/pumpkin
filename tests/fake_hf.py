@@ -6,16 +6,18 @@ import sys
 import tempfile
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from urllib.parse import parse_qs, unquote, urlparse
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import fixtures  # noqa: E402
+
+
 class _Quick(ThreadingHTTPServer):
     def server_bind(self):                       # no full-name lookup while binding (it hangs on macOS 15)
         import socketserver
         socketserver.TCPServer.server_bind(self)
         self.server_name, self.server_port = self.server_address[:2]
 
-from urllib.parse import parse_qs, unquote, urlparse
-
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import fixtures  # noqa: E402
 
 TMP = tempfile.mkdtemp()
 QUANTS = {"Q3_K_M": 0.43, "Q4_K_M": 0.55, "UD-Q4_K_XL": 0.58, "Q5_K_M": 0.65, "Q6_K": 0.78, "Q8_0": 1.0}

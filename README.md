@@ -115,11 +115,11 @@ The [guide](docs/GUIDE.md) explains every feature and how to use it.
 
 The chat is the llama.cpp web UI you may already know, with Pumpkin's pages added on top.
 
-<p align="center"><img src="docs/models-desktop.png" alt="Models page on a desktop" width="900"></p>
+<p align="center"><img src="docs/overview-desktop.png" alt="The Overview page: the running model, resources, your presets and a setup checklist" width="900"></p>
 
-<p align="center"><img src="docs/setup-desktop.png" alt="First run: Pumpkin finds models from LM Studio and Ollama" width="440"> <img src="docs/switch-model-desktop.png" alt="Switching models from the chat" width="440"></p>
+<p align="center"><img src="docs/models-desktop.png" alt="Models page: models picked for your computer, one click to install" width="440"> <img src="docs/presets-desktop.png" alt="Presets: a model plus how to run it" width="440"></p>
 
-<p align="center"><img src="docs/tasks-desktop.png" alt="Task templates" width="440"> <img src="docs/settings-desktop.png" alt="Updates and privacy" width="440"></p>
+<p align="center"><img src="docs/tasks-desktop.png" alt="Tasks that run on a schedule, with templates" width="440"> <img src="docs/agent-desktop.png" alt="Personas and limits for the agent" width="440"></p>
 
 ## Install
 
