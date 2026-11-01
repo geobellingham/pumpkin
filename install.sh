@@ -46,7 +46,12 @@ fi
 
 # where to install from
 SRC=""
-HERE="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd || true)"
+# only a script that is a real file counts: piped in from curl there is none, and "$0" is just "bash", which would
+# make the folder you happen to be in look like the place to install from
+HERE=""
+if [ -n "${BASH_SOURCE[0]:-}" ] && [ -f "${BASH_SOURCE[0]}" ]; then
+  HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd || true)"
+fi
 if [ -n "$HERE" ] && [ -f "$HERE/pumpkin/__init__.py" ]; then
   SRC="$HERE"
 else
