@@ -23,8 +23,8 @@ html:root {
 	--pk-accent: #e8661c;
 	--pk-accent-soft: rgba(232, 102, 28, 0.14);
 	--pk-accent-text: #a8460c;
-	--pk-hot-1: #ffb27a;
-	--pk-hot-2: #ff7f2a;
+	--pk-hot-1: #f3b88f;
+	--pk-hot-2: #ee8548;
 	--pk-ink: #1a1613;
 	--pk-ok: #1f9d55;
 
@@ -89,8 +89,8 @@ html.dark {
 	--pk-base: #09080c;
 	--pk-text: #f5f1ec;
 	--pk-muted: rgba(245, 241, 236, 0.66);
-	--pk-accent: #ff8a3d;
-	--pk-accent-soft: rgba(255, 138, 61, 0.16);
+	--pk-accent: #ee8f55;
+	--pk-accent-soft: rgba(238, 143, 85, 0.16);
 	--pk-accent-text: #ffc49b;
 	--pk-ok: #3ee08a;
 
@@ -106,7 +106,7 @@ html.dark {
 	--pk-soft: rgba(255, 255, 255, 0.08);
 	--pk-soft-hover: rgba(255, 255, 255, 0.13);
 	--pk-soft-edge: inset 0 1px 0 rgba(255, 255, 255, 0.12);
-	--pk-nav-ind: linear-gradient(135deg, rgba(255, 138, 61, 0.28), rgba(255, 138, 61, 0.08));
+	--pk-nav-ind: linear-gradient(135deg, rgba(238, 143, 85, 0.28), rgba(238, 143, 85, 0.08));
 	--pk-nav-ind-shadow: inset 0 1px 0 rgba(255, 200, 160, 0.3), 0 8px 24px -10px rgba(255, 120, 40, 0.6);
 	--pk-nav-active: #ffffff;
 	--pk-track: rgba(255, 255, 255, 0.08);
@@ -120,7 +120,7 @@ html.dark {
 	--card-foreground: var(--pk-text);
 	--popover: rgba(24, 21, 28, 0.92);
 	--popover-foreground: var(--pk-text);
-	--primary: #ff8a3d;
+	--primary: #ee8f55;
 	--primary-foreground: #1a0d04;
 	--secondary: rgba(255, 255, 255, 0.08);
 	--secondary-foreground: var(--pk-text);
@@ -131,15 +131,15 @@ html.dark {
 	--destructive: #ff6b5b;
 	--border: rgba(255, 255, 255, 0.06);
 	--input: rgba(255, 255, 255, 0.08);
-	--ring: #ffb27a;
+	--ring: #f3b88f;
 	--sidebar: rgba(255, 255, 255, 0.04);
 	--sidebar-foreground: var(--pk-text);
-	--sidebar-primary: #ff8a3d;
+	--sidebar-primary: #ee8f55;
 	--sidebar-primary-foreground: #1a0d04;
 	--sidebar-accent: rgba(255, 255, 255, 0.08);
 	--sidebar-accent-foreground: var(--pk-text);
 	--sidebar-border: rgba(255, 255, 255, 0.06);
-	--sidebar-ring: #ffb27a;
+	--sidebar-ring: #f3b88f;
 	--code-background: rgba(0, 0, 0, 0.32);
 	--code-foreground: rgba(245, 241, 236, 0.9);
 }
@@ -170,7 +170,7 @@ samp,
 }
 
 ::selection {
-	background: rgba(255, 138, 61, 0.35);
+	background: rgba(238, 143, 85, 0.35);
 }
 
 :focus-visible {
@@ -233,24 +233,9 @@ html:not(.dark) .pk-vignette {
 	}
 }
 
-/* a band of light sweeps across on hover. It moves by background position, so the panel needs no overflow:hidden
-   (that would clip focus rings and anything that pokes out) */
-.pk-sheen::after {
-	content: '';
-	position: absolute;
-	inset: 0;
-	pointer-events: none;
-	border-radius: inherit;
-	background: linear-gradient(110deg, transparent 42%, var(--pk-sheen) 50%, transparent 58%) no-repeat;
-	background-size: 260% 100%;
-	background-position: 135% 0;
-	transition: background-position 1.4s var(--pk-smooth);
-}
-
-@media (hover: hover) {
-	.pk-sheen:hover::after {
-		background-position: -35% 0;
-	}
+/* (the sweep of light on hover is gone: it wore thin quickly. .pk-sheen stays as a no-op so the markup needs no change) */
+.pk-sheen {
+	position: relative;
 }
 
 /* panels rise in on load, one after another */
@@ -414,7 +399,7 @@ button.pk-option:not(:disabled):active {
 .pk-load-fill {
 	height: 100%;
 	border-radius: 999px;
-	background: linear-gradient(90deg, #ff7f2a, #ffc08f);
+	background: linear-gradient(90deg, #ee8548, #f4c3a0);
 	box-shadow: 0 0 12px rgba(255, 140, 60, 0.8);
 	transition: width 0.25s linear;
 }
@@ -428,7 +413,7 @@ button.pk-option:not(:disabled):active {
 /* what you wrote, in a chat: the orange bubble */
 .pk-bubble-me {
 	color: #1a0d04;
-	background: linear-gradient(180deg, var(--pk-hot-1), #ff8a3d);
+	background: linear-gradient(180deg, var(--pk-hot-1), #ee8f55);
 	box-shadow:
 		inset 0 1px 0 rgba(255, 255, 255, 0.45),
 		0 10px 24px -14px rgba(255, 120, 40, 0.7);
@@ -572,7 +557,7 @@ textarea::placeholder {
 /* what you wrote: the orange bubble, its tail at the bottom right */
 html body .chat-message-user-bubble {
 	color: #1a0d04 !important;
-	background: linear-gradient(180deg, var(--pk-hot-1), #ff8a3d) !important;
+	background: linear-gradient(180deg, var(--pk-hot-1), #ee8f55) !important;
 	border-radius: 18px 18px 6px 18px !important;
 	box-shadow:
 		inset 0 1px 0 rgba(255, 255, 255, 0.45),
@@ -753,4 +738,18 @@ html body nav[aria-label='Open conversations'][class*='max-w-[calc(100vw-5rem)']
 
 html body nav[aria-label='Open conversations'][class*='max-w-[calc(100vw-20rem)']  {
 	max-width: calc(100vw - 20rem - 11.5rem) !important;
+}
+
+/* the chat's own solid fills would cut rectangles out of the light behind: the strip behind the open chats and the
+   block behind the open sidebar */
+html body nav[aria-label='Open conversations'] {
+	background: none !important;
+}
+
+html body nav[aria-label='Open conversations'] [class*='from-background'] {
+	display: none;
+}
+
+html body aside.is-expanded::before {
+	display: none !important;
 }

@@ -162,7 +162,7 @@
 		const out: { label: string; val: string; w: number; bg: string }[] = [];
 
 		if (live?.gpu_busy != null) {
-			out.push({ label: 'GPU load', val: `${Math.round(live.gpu_busy)}%`, w: live.gpu_busy, bg: 'linear-gradient(90deg,#ff7f2a,#ffc08f)' });
+			out.push({ label: 'GPU load', val: `${Math.round(live.gpu_busy)}%`, w: live.gpu_busy, bg: 'linear-gradient(90deg,#ee8548,#f4c3a0)' });
 		}
 
 		if (live?.ram_total) {
@@ -319,8 +319,8 @@
 					<svg aria-hidden="true" class="-rotate-90" fill="none" height="124" viewBox="0 0 124 124" width="124">
 						<defs>
 							<linearGradient id="pk-ring" x1="0" x2="1" y1="0" y2="1">
-								<stop offset="0" stop-color="#ffc08f" />
-								<stop offset="1" stop-color="#ff6a1a" />
+								<stop offset="0" stop-color="#f4c3a0" />
+								<stop offset="1" stop-color="#e8743a" />
 							</linearGradient>
 						</defs>
 						<circle cx="62" cy="62" r="52" stroke="var(--pk-track)" stroke-width="10" />
@@ -423,7 +423,7 @@
 		flex: 1;
 		min-width: 2px;
 		border-radius: 3px 3px 1px 1px;
-		background: linear-gradient(180deg, #ffc08f, #ff7f2a 70%, rgba(255, 127, 42, 0.4));
+		background: linear-gradient(180deg, #f4c3a0, #ee8548 70%, rgba(238, 133, 72, 0.4));
 		transition:
 			height 0.55s var(--pk-smooth),
 			opacity 0.55s;

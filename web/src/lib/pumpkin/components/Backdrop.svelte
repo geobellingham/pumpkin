@@ -12,8 +12,8 @@
 		top: -18%;
 		width: 52%;
 		height: 62%;
-		background: #ff7a1a;
-		opacity: 0.3;
+		background: #d98250;
+		opacity: 0.24;
 	}
 
 	.pk-blob-2 {
@@ -21,8 +21,8 @@
 		top: 6%;
 		width: 46%;
 		height: 56%;
-		background: #6d3df0;
-		opacity: 0.28;
+		background: #5f52a6;
+		opacity: 0.22;
 		animation-delay: -7s;
 	}
 
@@ -31,14 +31,14 @@
 		bottom: -26%;
 		width: 50%;
 		height: 56%;
-		background: #0f9c94;
-		opacity: 0.2;
+		background: #418a86;
+		opacity: 0.16;
 		animation-delay: -13s;
 	}
 
 	/* light: warm earth tones under white glass */
 	:global(html:not(.dark)) .pk-blob-1 {
-		background: #ff9a52;
+		background: #e8a678;
 		opacity: 0.38;
 	}
 
