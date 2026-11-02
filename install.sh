@@ -31,7 +31,10 @@ PY=""
 if [ "$MAC" = 1 ]; then
   CANDS="python3.14 python3.13 python3.12 python3.11 python3.10 /opt/homebrew/bin/python3 /usr/local/bin/python3 python3"
 else
-  CANDS="python3 python3.14 python3.13 python3.12 python3.11 python3.10"   # the system one has GTK for the window
+  # the system Python comes first: it is the one that has GTK and WebKit for Pumpkin's own window. A plain "python3"
+  # would be the one of a virtual environment you happen to have switched on (no GTK there, so the window would
+  # silently turn into a browser tab).
+  CANDS="/usr/bin/python3 python3 python3.14 python3.13 python3.12 python3.11 python3.10"
 fi
 for c in $CANDS; do
   p="$(command -v "$c" 2>/dev/null || true)"
