@@ -89,6 +89,11 @@ try:
         print("as expected on this older Mac:", job["error"])
         print("\nAll good (this Mac is too old for the image engine).")
         raise SystemExit(0)
+    if job["state"] != "done" and sys.platform.startswith("linux") and "newer system library" in (job["error"] or ""):
+        # stable-diffusion.cpp builds its Linux release on a very new system; an older Linux is told so up front
+        print("as expected on this older Linux:", job["error"])
+        print("\nAll good (this Linux is too old for the image engine's builds).")
+        raise SystemExit(0)
     if job["state"] != "done":
         raise SystemExit(f"image engine download failed: {job['error']}")
     st = call("GET", "/pumpkin/api/images")

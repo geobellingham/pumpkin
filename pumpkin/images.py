@@ -198,7 +198,7 @@ def download_engine(backend, progress=None, cancelled=lambda: False):
     linux = sys.platform.startswith("linux")
     linux_skipped = 0
     newest_need = 0
-    for rel, asset in builds[:8]:
+    for rel, asset in builds[:(20 if linux else 8)]:
         need = mac_needs(asset["name"]) if mac else 0
         newest_need = newest_need or need
         if need and 0 < mac_version() < need:
