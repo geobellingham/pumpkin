@@ -119,6 +119,58 @@ class TestMacEngineChoice(unittest.TestCase):
         self.assertEqual(len(installed), 3)
 
 
+class TestLinuxEngineChoice(unittest.TestCase):
+    """A Linux build made on a newer system than this one (it asks for a newer glibc) is replaced by an older release."""
+
+    def rels(self):
+        return [{"tag_name": f"master-{n}", "assets": [{"name": f"sd-master-{n}-bin-Linux-Ubuntu-24.04-x86_64.zip"}]}
+                for n in (3, 2, 1)]
+
+    def run_download(self, needs_newer):
+        from unittest import mock
+        installed = []
+
+        def install(backend, rel, asset, progress, cancelled):
+            installed.append(rel["tag_name"])
+            return os.path.join(images.SD_DIR, f"{rel['tag_name']}-cpu", "sd-server")
+
+        with mock.patch.object(images, "_github", lambda path: self.rels()), \
+                mock.patch.object(images, "_install_engine", install), \
+                mock.patch.object(images, "_needs_newer_linux", lambda path: any(t in path for t in needs_newer)), \
+                mock.patch.object(images.shutil, "rmtree", lambda *a, **k: None), \
+                mock.patch.object(images, "asset_pattern", lambda b, s=None, a=None: images.re.compile(r"^sd-.*-bin-Linux-.*-x86_64\.zip$")), \
+                mock.patch.object(images.sys, "platform", "linux"):
+            try:
+                return images.download_engine("cpu"), installed
+            except RuntimeError as e:
+                return str(e), installed
+
+    def test_the_older_release_is_used_when_the_newest_needs_a_newer_glibc(self):
+        path, installed = self.run_download(["master-3"])
+        self.assertEqual(installed, ["master-3", "master-2"])
+        self.assertIn("master-2", path)
+
+    def test_the_newest_is_kept_when_it_runs(self):
+        self.assertEqual(self.run_download([])[1], ["master-3"])
+
+    def test_when_none_runs_the_user_is_told_why(self):
+        msg, installed = self.run_download(["master"])
+        self.assertIn("glibc", msg)
+        self.assertEqual(len(installed), 3)
+
+    def test_the_glibc_complaint_is_recognised(self):
+        import tempfile, stat
+        d = tempfile.mkdtemp()
+        exe = os.path.join(d, "sd-server")
+        with open(exe, "w") as f:
+            f.write("#!/bin/sh\necho \"sd-server: libm.so.6: version \\`GLIBC_2.43' not found\" >&2\nexit 1\n")
+        os.chmod(exe, 0o755)
+        self.assertTrue(images._needs_newer_linux(exe))
+        with open(exe, "w") as f:
+            f.write("#!/bin/sh\nexit 0\n")
+        self.assertFalse(images._needs_newer_linux(exe))
+
+
 class TestBundles(unittest.TestCase):
     Z = next(b for b in images.catalog() if b["id"] == "z-image-turbo")
     TREES = {

@@ -169,6 +169,17 @@ def _too_new_for_this_mac(path):
     return r.returncode != 0 and ("newer than running OS" in out or "Symbol not found" in out)
 
 
+def _needs_newer_linux(path):
+    """A Linux build made on a newer system than this one stops at start with "version `GLIBC_2.43' not found" (or
+    "GLIBCXX"). Starts it once to find out."""
+    try:
+        r = subprocess.run([path, "--help"], capture_output=True, text=True, timeout=60)
+    except (OSError, subprocess.SubprocessError):
+        return False
+    out = (r.stdout or "") + (r.stderr or "")
+    return r.returncode != 0 and bool(re.search(r"GLIBC(?:XX)?_\d|CXXABI_\d", out))
+
+
 def download_engine(backend, progress=None, cancelled=lambda: False):
     """Downloads sd-server for this backend and returns its path. Falls back to the CPU build when a release has
     none for the GPU. On a Mac the newest release that runs on this macOS is used: its Mac builds follow the newest
@@ -184,6 +195,8 @@ def download_engine(backend, progress=None, cancelled=lambda: False):
     if not builds:
         raise RuntimeError("No stable-diffusion.cpp build for this computer was found in its recent releases.")
     mac = sys.platform == "darwin"
+    linux = sys.platform.startswith("linux")
+    linux_skipped = 0
     newest_need = 0
     for rel, asset in builds[:8]:
         need = mac_needs(asset["name"]) if mac else 0
@@ -198,7 +211,18 @@ def download_engine(backend, progress=None, cancelled=lambda: False):
             except OSError:
                 pass
             continue                                            # built for a newer macOS than its name says
+        if linux and _needs_newer_linux(path):
+            shutil.rmtree(os.path.join(SD_DIR, os.path.relpath(path, SD_DIR).split(os.sep)[0]), ignore_errors=True)
+            try:
+                os.remove(os.path.join(SD_DIR, "installed.json"))
+            except OSError:
+                pass
+            linux_skipped += 1
+            continue                                            # made on a newer Linux than this one: try the release before
         return path
+    if linux and linux_skipped:
+        raise RuntimeError("stable-diffusion.cpp's recent Linux builds need a newer system library (glibc) than this "
+                           "computer has. Update the system, or let a paired PC draw.")
     raise RuntimeError(f"stable-diffusion.cpp's recent Mac builds need a newer macOS than this Mac has "
                        f"(macOS {mac_version()}). Update macOS to make pictures here, or let a paired PC draw.")
 
