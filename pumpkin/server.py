@@ -1150,7 +1150,8 @@ class Web:
         # ---- what Pumpkin remembers about you
         if head == "memory":
             if method == "GET" and not ident:
-                return {"enabled": bool(core.settings["memory"]), "items": memory.load()}
+                return {"enabled": bool(core.settings["memory"]), "auto": bool(core.settings.get("memory_auto", True)),
+                        "items": memory.load()}
             if method == "POST" and ident == "clear":
                 memory.clear()
                 return {"items": []}
@@ -1321,6 +1322,7 @@ class Web:
 
     def proxy(self, h):
         port = int(self.core.settings["llama_port"])
+        remember = None
         try:
             try:
                 body = _read_body(h)
@@ -1388,6 +1390,8 @@ class Web:
                     body = self.core.relay_images(body)     # a text-only model gets what the vision model saw
                 if self.core.server.state == "ready" and not peer and path in ("/v1/chat/completions", "/chat/completions"):
                     body = self.core.prepare_chat(body)     # a chat that fills the model's memory is summarised
+                    self.core.chat_started()
+                    remember = (body, self.core._chat_seq)
             fwd = {}
             for k, v in h.headers.items():
                 kl = k.lower()
@@ -1409,6 +1413,8 @@ class Web:
             code = 503 if st == "loading" else 502
             return self.json(h, {"error": {"code": code, "message": msg, "type": "unavailable_error"}}, code)
         self.relay(h, resp, conn)
+        if remember:                                         # the answer is out: now see if the message held anything to remember
+            threading.Thread(target=self.core.auto_remember, args=remember, daemon=True).start()
 
     @staticmethod
     def relay(h, resp, conn=None):

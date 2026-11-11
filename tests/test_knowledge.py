@@ -5,6 +5,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 import zipfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -248,6 +249,78 @@ class TestMemory(Base):
     def test_mcp_tools(self):
         self.assertIn("Saved to memory", mcp_memory.call("save", {"fact": "Lives in Plovdiv"}))
         self.assertIn("Forgot: Lives in Plovdiv", mcp_memory.call("forget", {"what": "lives in plovdiv"}))
+
+
+class TestAutoMemory(Base):
+    """Memory that fills itself: the model reads each message and the lasting facts are saved."""
+
+    def test_only_messages_about_the_person_are_checked(self):
+        self.assertTrue(memory.worth_checking("I'm a nurse and I live in Plovdiv"))
+        self.assertTrue(memory.worth_checking("Remember that my cat is called Luna"))
+        self.assertTrue(memory.worth_checking("Живея в Пловдив и работя като инженер"))      # other languages always pass
+        self.assertFalse(memory.worth_checking("What is the capital of France?"))
+        self.assertFalse(memory.worth_checking("hi"))
+        self.assertFalse(memory.worth_checking("my notes: " + "word " * 1000))              # a pasted document
+
+    def test_the_answer_is_read_carefully(self):
+        save, forget = memory.parse_extraction('<think>hm</think>```json\n{"save": ["Lives in Plovdiv", "Password is hunter2", '
+                                               '"x"], "forget": ["Has a cat called Luna"]}\n```')
+        self.assertEqual(save, ["Lives in Plovdiv"])                        # no secrets, no scraps
+        self.assertEqual(forget, ["Has a cat called Luna"])
+        self.assertEqual(memory.parse_extraction("I could not tell."), ([], []))
+        self.assertEqual(memory.parse_extraction('{"save": "oops"}'), ([], []))
+
+    def test_save_and_forget_by_exact_text(self):
+        memory.add("Has a cat called Luna")
+        memory.add("Likes tea")
+        saved, gone = memory.apply_extraction(["Works as a nurse"], ["has a cat called luna", "Likes tea and coffee"])
+        self.assertEqual((saved, gone), (["Works as a nurse"], ["Has a cat called Luna"]))   # a loose match forgets nothing
+        self.assertEqual(sorted(i["text"] for i in memory.load()), ["Likes tea", "Works as a nurse"])
+        self.assertEqual(memory.load()[-1]["source"], "auto")
+
+
+class TestAutoMemoryInChat(Base):
+    def core(self, **settings):
+        from types import SimpleNamespace
+        from pumpkin.core import Core
+        c = SimpleNamespace(settings={"memory": True, "memory_auto": True, "llama_port": 1, **settings},
+                            server=SimpleNamespace(state="ready"), _auto_seen="", _chat_seq=1, memory_note_auto=None)
+        c.run = lambda body, seq=1: Core.auto_remember(c, json.dumps(body).encode(), seq)
+        return c
+
+    def ask(self, c, text, answer, role="user"):
+        calls = []
+
+        def fake(port, path, payload=None, timeout=60, method=None):
+            calls.append(payload)
+            return {"choices": [{"message": {"content": answer}}]}
+        with mock.patch("pumpkin.core.llama.http", fake):
+            return c.run({"messages": [{"role": "system", "content": "s"}, {"role": role, "content": text}]}), calls
+
+    def test_a_chat_message_is_remembered(self):
+        c = self.core()
+        saved, calls = self.ask(c, "I'm Georgi and I live in Plovdiv", '{"save": ["Name is Georgi", "Lives in Plovdiv"], "forget": []}')
+        self.assertEqual(saved, ["Name is Georgi", "Lives in Plovdiv"])
+        self.assertEqual(len(calls), 1)
+        self.assertIn("I'm Georgi", calls[0]["messages"][1]["content"])
+        saved, calls = self.ask(c, "I'm Georgi and I live in Plovdiv", '{"save": ["Again"], "forget": []}')
+        self.assertEqual((saved, calls), ([], []))                              # the same message is read once
+        self.assertEqual(len(memory.load()), 2)
+
+    def test_small_talk_tool_answers_and_the_off_switch_cost_nothing(self):
+        for c, text, role in ((self.core(), "What is the capital of France?", "user"),
+                              (self.core(), "I live in Rome", "tool"),
+                              (self.core(memory_auto=False), "I live in Rome", "user"),
+                              (self.core(memory=False), "I live in Rome", "user")):
+            saved, calls = self.ask(c, text, '{"save": ["Lives in Rome"]}', role)
+            self.assertEqual((saved, calls), ([], []))
+        self.assertEqual(memory.load(), [])
+
+    def test_a_newer_message_cancels_the_check(self):
+        c = self.core()
+        c._chat_seq = 2
+        saved, calls = self.ask(c, "I live in Rome", '{"save": ["Lives in Rome"]}')
+        self.assertEqual((saved, calls), ([], []))
 
 
 class TestServersOverStdio(Base):

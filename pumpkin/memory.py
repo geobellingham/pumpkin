@@ -139,3 +139,84 @@ def prompt_block(limit=PROMPT_CHARS):
         used += len(line) + 1
     lines.reverse()
     return "About the user (use when relevant):\n" + "\n".join(lines)
+
+
+# ---- remembering without being asked: after a chat message, a short question to the model finds the lasting facts in it
+_SELF = re.compile(
+    r"\b(i am|i'm|im|i’m|i've|i’ve|ive|i have|i live|i work|i like|i love|i hate|i prefer|i usually|i always|i never|"
+    r"i speak|i use|i study|i own|i was born|my|mine|we live|our|call me|remember|forget|don't forget|do not forget|"
+    r"from now on|going forward|always|never|stop)\b", re.I)
+_SECRET = re.compile(
+    r"(pass(word|code|phrase)|api[\s_-]?key|secret|token|private key|\bpin\b|\bcvv\b|\biban\b|\bssn\b|\b\d{9,}\b|"
+    r"\b[A-Za-z0-9_\-]{32,}\b|sk-[A-Za-z0-9]{8,}|-----BEGIN)", re.I)
+MAX_SCAN = 1500                 # characters of the message the model reads; a pasted document is not about you
+
+
+def worth_checking(text):
+    """A cheap look before asking the model: does this message say anything about the person who wrote it?
+    Messages in other languages always pass, since the words above are English."""
+    text = str(text or "").strip()
+    if len(text) < 6 or len(text) > 4000:
+        return False
+    if any(ord(c) > 0x24F for c in text):
+        return True
+    return bool(_SELF.search(text))
+
+
+def extract_messages(text, known):
+    saved = "\n".join(f"- {i['text']}" for i in known[-40:])[-900:] or "(nothing yet)"
+    ask = ("Message from the user:\n\"\"\"\n" + str(text).strip()[:MAX_SCAN] + "\n\"\"\"\n\nAlready saved:\n" + saved +
+           "\n\nReply with JSON only: {\"save\": [], \"forget\": []}\n"
+           "save: lasting facts the user states about themselves, as short plain sentences in the language they used "
+           "(\"Lives in Plovdiv\", \"Prefers short answers\"): name, work, place, people, projects, tools, habits, how "
+           "they like answers. Also anything they ask you to remember.\n"
+           "forget: entries from the saved list that the user asks to forget or says are no longer true, copied exactly.\n"
+           "Leave out: the task or question itself, things that only matter today, opinions about the topic, anything "
+           "already saved, and secrets (passwords, keys, card or ID numbers).\n"
+           "Most messages hold nothing lasting: answer {\"save\": [], \"forget\": []}.")
+    return [{"role": "system", "content": "You keep a short list of lasting facts about the user. Answer with JSON only."},
+            {"role": "user", "content": ask}]
+
+
+def parse_extraction(reply):
+    """(facts to save, facts to forget) from the model's answer; anything unreadable means nothing."""
+    reply = re.sub(r"<think>.*?</think>", "", str(reply or ""), flags=re.S)
+    a, b = reply.find("{"), reply.rfind("}")
+    if a < 0 or b <= a:
+        return [], []
+    try:
+        data = json.loads(reply[a:b + 1])
+    except ValueError:
+        return [], []
+    if not isinstance(data, dict):
+        return [], []
+
+    def strings(v):
+        return [re.sub(r"\s+", " ", x).strip() for x in v if isinstance(x, str)] if isinstance(v, list) else []
+
+    save = [t for t in strings(data.get("save")) if 3 <= len(t) <= MAX_TEXT and not _SECRET.search(t)][:3]
+    return save, strings(data.get("forget"))[:3]
+
+
+def apply_extraction(save, forget):
+    """Saves and forgets what the model found. Returns (saved, forgotten) texts."""
+    saved, gone = [], []
+    for t in forget:
+        gone += [i["text"] for i in forget_text(t)]
+    for t in save:
+        try:
+            saved.append(add(t, source="auto")["text"])
+        except ValueError:
+            pass
+    return saved, gone
+
+
+def forget_text(text):
+    """Forgets one entry the model named by its text: only an exact match (ignoring case and punctuation) counts."""
+    with _lock:
+        items = load()
+        hit = [i for i in items if _norm(i["text"]) == _norm(text)]
+        if hit:
+            ids = {i["id"] for i in hit}
+            _save([i for i in items if i["id"] not in ids])
+        return hit

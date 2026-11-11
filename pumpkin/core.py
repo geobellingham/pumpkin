@@ -198,6 +198,47 @@ class Core:
                 text += "\n\n" + block
         return text.strip()
 
+    # ---- memory that fills itself
+    _auto_seen = ""
+    _chat_seq = 0
+    memory_note_auto = None              # what the last automatic pass saved or forgot
+
+    def chat_started(self):
+        self._chat_seq += 1
+
+    def auto_remember(self, body, seq):
+        """After a chat answer: reads the user's newest message for lasting facts and saves them (Memory page).
+        Runs only when the message looks like it says something about the person, and gives way to a new request."""
+        if not (self.settings["memory"] and self.settings.get("memory_auto", True)) or self.server.state != "ready":
+            return []
+        try:
+            req = json.loads(body.decode("utf-8"))
+            last = req["messages"][-1]
+        except (ValueError, UnicodeDecodeError, KeyError, IndexError, TypeError, AttributeError):
+            return []
+        if not isinstance(last, dict) or last.get("role") != "user":
+            return []                                     # a tool's answer: the user said nothing new
+        c = last.get("content")
+        text = " ".join(p.get("text", "") for p in c if isinstance(p, dict) and p.get("type") == "text") \
+            if isinstance(c, list) else str(c or "")
+        key = hashlib.sha1(text.encode("utf-8", "replace")).hexdigest()
+        if key == self._auto_seen or not memory.worth_checking(text):
+            return []
+        self._auto_seen = key
+        if seq != self._chat_seq:
+            return []                                     # the next message is already on its way
+        r = llama.http(int(self.settings["llama_port"]), "/v1/chat/completions",
+                       {"messages": memory.extract_messages(text, memory.load()), "max_tokens": 220,
+                        "temperature": 0, "stream": False, "response_format": {"type": "json_object"}}, timeout=120)
+        if isinstance(r, dict) and r.get("error"):
+            return []
+        reply = (((r.get("choices") or [{}])[0].get("message") or {}).get("content") or "") if isinstance(r, dict) else ""
+        save, forget = memory.parse_extraction(reply)
+        saved, gone = memory.apply_extraction(save, forget)
+        if saved or gone:
+            self.memory_note_auto = {"at": time.time(), "saved": saved, "forgot": gone}
+        return saved
+
     # ---- paired devices: their models in the chat, and when the model should ask them
     def refresh_peers(self, statuses=None):
         if statuses is None:

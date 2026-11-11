@@ -16,6 +16,7 @@
 	}
 
 	let enabled = $state(true);
+	let auto = $state(true);
 	let items = $state<Item[] | null>(null);
 	let draft = $state('');
 	let editing = $state<string | null>(null);
@@ -23,10 +24,11 @@
 	let filter = $state('');
 
 	async function load() {
-		const r = await pumpkin.run(() => api<{ enabled: boolean; items: Item[] }>('memory'));
+		const r = await pumpkin.run(() => api<{ auto: boolean; enabled: boolean; items: Item[] }>('memory'));
 
 		if (r) {
 			enabled = r.enabled;
+			auto = r.auto;
 			items = r.items;
 		}
 	}
@@ -35,6 +37,10 @@
 
 	async function setEnabled(v: boolean) {
 		await pumpkin.run(() => api('settings', { body: { memory: v }, method: 'PUT' }), v ? 'Memory is on' : 'Memory is off');
+	}
+
+	async function setAuto(v: boolean) {
+		await pumpkin.run(() => api('settings', { body: { memory_auto: v }, method: 'PUT' }), v ? 'Remembering on its own' : 'Only remembers when asked');
 	}
 
 	async function add() {
@@ -82,7 +88,7 @@
 
 <div class="flex flex-col gap-4">
 	<Card
-		description="Facts about you that every new chat starts with: your name, work, people, projects and how you like answers. The model saves them when you tell it something lasting or ask it to remember. They stay in one file on this device."
+		description="Facts about you that every new chat starts with: your name, work, people, projects and how you like answers. Pumpkin picks them up from what you say, or when you ask it to remember something. They stay in one file on this device."
 		title="Memory"
 	>
 		{#snippet actions()}
@@ -92,6 +98,9 @@
 		{/snippet}
 
 		<Toggle bind:checked={enabled} description="When it is off, chats start without these facts and the model cannot save new ones." label="Use memory" onchange={setEnabled} />
+		{#if enabled}
+			<Toggle bind:checked={auto} description="After each answer, the model reads your message for lasting facts (your name, work, place, how you like answers) and saves them. Passwords and keys are never saved. Turn it off to save only when you ask." label="Remember on its own" onchange={setAuto} />
+		{/if}
 
 		<form
 			class="mt-3 flex gap-2"
@@ -108,7 +117,7 @@
 			<div class="flex justify-center py-8"><LoaderCircle class="h-5 w-5 animate-spin text-muted-foreground" /></div>
 		{:else if !items.length}
 			<div class="mt-3">
-				<Empty text="Nothing yet. Tell the model something like “Remember that I'm vegetarian” in a chat with tools on, or add it above." />
+				<Empty text="Nothing yet. Tell it something like “I'm vegetarian” in a chat, or add it above." />
 			</div>
 		{:else}
 			{#if items.length > 8}
@@ -132,7 +141,7 @@
 						{:else}
 							<div class="min-w-0 flex-1 pt-1.5">
 								<p class="text-sm break-words">{it.text}</p>
-								<p class="text-xs text-muted-foreground">{it.source === 'you' ? 'Added by you' : 'Saved in a chat'} · {when(it.at)}</p>
+								<p class="text-xs text-muted-foreground">{it.source === 'you' ? 'Added by you' : it.source === 'auto' ? 'Picked up from a chat' : 'Saved in a chat'} · {when(it.at)}</p>
 							</div>
 							<Button aria-label="Edit" class="size-9 shrink-0 rounded-full" onclick={() => startEdit(it)} size="icon" variant="ghost"><Pencil class="h-4 w-4" /></Button>
 							<Button aria-label="Forget" class="size-9 shrink-0 rounded-full" onclick={() => remove(it)} size="icon" variant="ghost"><Trash class="h-4 w-4" /></Button>
