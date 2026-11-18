@@ -9,7 +9,7 @@ import sys
 import threading
 import time
 
-from . import (__version__, agent, browser, coder, config, connectors, devices, docs, hardware, images, llama, llamaup, mcp_local, memory, migrate, models,
+from . import (__version__, agent, delegate, browser, coder, config, connectors, devices, docs, hardware, images, llama, llamaup, mcp_local, memory, migrate, models,
                recommend, remote, research, skills, updates, vision, workspace)
 
 # which setting holds the chosen model for each kind of image model
@@ -69,6 +69,7 @@ class Core:
         self.runner = agent.Runner(self)
         self.research = research.Research(self)
         self.helper = devices.Helper(self)
+        self.delegate = delegate.Jobs(self)          # jobs Claude hands to the model here (delegate.py)
         self.indexer = docs.Indexer(self.settings)
         self.image_server = images.ImageServer(self.settings)
         self.vision = vision.Helper(self.settings, self.library)

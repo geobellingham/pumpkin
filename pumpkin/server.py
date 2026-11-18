@@ -17,7 +17,7 @@ import socketserver
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, quote, unquote, urlparse
 
-from . import (APP_NAME, __version__, agent, config, devices, discover, docs, doctor, hardware, llama, memory, models,
+from . import (APP_NAME, __version__, agent, config, delegate, devices, discover, docs, doctor, hardware, llama, memory, models,
                remote, sessions, connectors, skills, updates, workspace, workspaces, browser, artifacts, research)
 
 COOKIE = "pumpkin_key"
@@ -409,6 +409,8 @@ class Web:
                 return self.static(h, ui)               # open-source scripts and icons; data stays locked
             if path == API + "browser/pair" and h.command == "POST":
                 return self.browser_pair(h)
+            if path == "/mcp":
+                return self.mcp(h)
             if not self.authed(h):
                 if path.startswith(API) or "text/html" not in (h.headers.get("Accept") or ""):
                     return self.json(h, {"error": {"code": 401, "message": "Sign in to Pumpkin first."}}, 401)
@@ -437,6 +439,33 @@ class Web:
                     self.json(h, {"error": f"Something went wrong in Pumpkin: {e}"}, 500)
                 except OSError:
                     pass
+
+    # ------------------------------------------------------------ Claude, connected as an MCP connector
+    def mcp(self, h):
+        """Streamable HTTP for Claude (delegate.py): JSON-RPC in, JSON out. Pumpkin's key or the Claude key opens it."""
+        auth = h.headers.get("Authorization") or ""
+        given = auth[7:].strip() if auth.startswith("Bearer ") else ""
+        if not given or not (_eq(given, self.token) or delegate.key_ok(given)):
+            time.sleep(1)
+            return self.send(h, 401, json.dumps({"error": "Pumpkin needs its Claude key here: Devices, Use with Claude."}),
+                             "application/json", headers={"WWW-Authenticate": "Bearer"})
+        if h.command != "POST":
+            return self.send(h, 405, b"", headers={"Allow": "POST"})
+        try:
+            raw = _read_body(h, 2_000_000)
+            msg = json.loads(raw.decode("utf-8") or "null")
+        except BodyError as e:
+            return self.json(h, {"jsonrpc": "2.0", "id": None, "error": {"code": -32600, "message": str(e)}}, 413)
+        except (ValueError, UnicodeDecodeError):
+            return self.json(h, {"jsonrpc": "2.0", "id": None, "error": {"code": -32700, "message": "Not JSON."}}, 400)
+        who = "Claude" if not _eq(given, self.token) else "Claude on this computer"
+        if isinstance(msg, list):
+            out = [r for r in (delegate.handle(self.core, m, who) for m in msg[:50]) if r is not None]
+        else:
+            out = delegate.handle(self.core, msg, who)
+        if not out:
+            return self.send(h, 202, b"")
+        return self.json(h, out)
 
     # ------------------------------------------------------------ the browser extension
     def browser_pair(self, h):
@@ -1147,6 +1176,15 @@ class Web:
                 if not sessions.remove(ident):
                     raise ApiError("That sign-in is gone already.", 404)
                 return {"sessions": sessions.listing(session_id)}
+        # ---- Claude, connected as an MCP connector (delegate.py)
+        if head == "claude":
+            if method == "GET" and not ident:
+                return delegate.connect_info(core, self.token)
+            if method == "POST" and ident == "key":
+                delegate.new_key()
+                return delegate.connect_info(core, self.token)
+            if method == "POST" and ident == "cancel":
+                return core.delegate.view(core.delegate.cancel(body.get("job")), full=False)
         # ---- what Pumpkin remembers about you
         if head == "memory":
             if method == "GET" and not ident:

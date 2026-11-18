@@ -253,6 +253,12 @@ class H(BaseHTTPRequestHandler):
                 for w in ["Hello", " from", " the", " fake", " model."]:
                     s.wfile.write(("data: " + json.dumps({"choices": [{"delta": {"content": w}}]}) + "\n\n").encode()); s.wfile.flush(); time.sleep(0.05)
                 s.wfile.write(b"data: [DONE]\n\n"); s.wfile.flush(); s.close_connection = True; return
+            if body.get("response_format") or "ECHO" in sysmsg:      # jobs Claude hands over (delegate.py)
+                user = str(msgs[-1].get("content", ""))
+                if "SLOWJOB" in user: time.sleep(3)
+                out = json.dumps({"words": len(user.split())}) if body.get("response_format") else "ECHO " + user[:60]
+                return s.j({"choices": [{"message": {"role": "assistant", "content": out}, "finish_reason": "stop"}],
+                            "usage": {"completion_tokens": 12}, "timings": {"predicted_per_second": 41.5}})
             if body.get("tools") and not any(m.get("role") == "tool" for m in msgs):
                 msg = {"role": "assistant", "content": "", "tool_calls": [{"id": "c1", "type": "function",
                        "function": {"name": "web_search", "arguments": json.dumps({"query": "pumpkins"})}}]}

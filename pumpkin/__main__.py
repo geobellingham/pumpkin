@@ -335,6 +335,47 @@ def urllib_post(name, body=None):
         return None
 
 
+def cmd_mcp(args):
+    """Claude Desktop and Claude Code start this as Pumpkin's connector. It passes Claude's messages on to the
+    Pumpkin running on this computer (starting it when it is not) and its answers back. Nothing but JSON-RPC goes to
+    stdout."""
+    import threading
+    if not running() and not start_background():
+        print(f"{APP_NAME} did not start. Run: pumpkin doctor", file=sys.stderr)
+    out_lock = threading.Lock()
+
+    def write(obj):
+        with out_lock:
+            sys.stdout.write(json.dumps(obj) + "\n")
+            sys.stdout.flush()
+
+    def one(line):
+        try:
+            msg = json.loads(line)
+        except ValueError:
+            return
+        mid = msg.get("id") if isinstance(msg, dict) else None
+        req = urllib.request.Request(base_url() + "/mcp", data=line.encode(), method="POST",
+                                     headers={"Content-Type": "application/json", "Accept": "application/json",
+                                              "Authorization": f"Bearer {config.token()}"})
+        try:
+            with config.local_open(req, timeout=900) as r:
+                body = r.read().decode("utf-8", "replace")
+            if body.strip():
+                write(json.loads(body))
+        except (urllib.error.URLError, OSError, ValueError) as e:
+            if mid is not None:
+                write({"jsonrpc": "2.0", "id": mid, "error": {
+                    "code": -32000, "message": f"{APP_NAME} is not answering on this computer ({e}). Start it with: "
+                                               f"pumpkin up"}})
+
+    for line in sys.stdin:
+        line = line.strip()
+        if line:
+            # each message on its own thread: a long job must not hold up Claude's other calls
+            threading.Thread(target=one, args=(line,), daemon=True).start()
+
+
 def cmd_stop(args):
     if service_installed():
         from . import service
@@ -367,6 +408,7 @@ def main(argv=None):
     sub.add_parser("stop", help="stop Pumpkin and the model")
     sub.add_parser("up", help="start Pumpkin in the background without opening it")
     sub.add_parser("url", help="print this computer's sign-in link")
+    sub.add_parser("mcp", help="Pumpkin as a connector for Claude Desktop and Claude Code (they start this)")
     c = sub.add_parser("code", help="Pumpkin Code: a coding agent in this folder, with your local model")
     c.add_argument("prompt", nargs="*", help="what to do (or type it once it starts)")
     c.add_argument("-d", "--dir", help="the project folder (default: this one)")
@@ -379,7 +421,7 @@ def main(argv=None):
     args = ap.parse_args(argv)
     config.ensure_dirs()
     {"serve": cmd_serve, "open": cmd_open, "link": cmd_link, "doctor": cmd_doctor, "service": cmd_service,
-     "stop": cmd_stop, "up": cmd_up, "url": cmd_url, "code": cmd_code, None: cmd_open}[args.cmd](args)
+     "stop": cmd_stop, "up": cmd_up, "url": cmd_url, "code": cmd_code, "mcp": cmd_mcp, None: cmd_open}[args.cmd](args)
 
 
 if __name__ == "__main__":

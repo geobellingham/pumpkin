@@ -5,6 +5,7 @@
 	import { Switch } from '$lib/components/ui/switch';
 	import qrcode from 'qrcode-generator';
 	import Card from '../components/Card.svelte';
+	import ClaudeCard from '../components/ClaudeCard.svelte';
 	import Field from '../components/Field.svelte';
 	import Toggle from '../components/Toggle.svelte';
 	import { api, pumpkin } from '../store.svelte';
@@ -363,6 +364,10 @@
 			{/if}
 		{/if}
 	</Card>
+
+	{#if !android}
+		<ClaudeCard />
+	{/if}
 
 	{#if android}
 		<p class="px-1 text-xs text-muted-foreground">

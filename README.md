@@ -241,6 +241,26 @@ different model.
 The devices need to reach each other: same Wi-Fi, or Tailscale on both (works anywhere). A phone can
 help, but can't hand out tasks yet. A model that is good with tools gives the best results.
 
+## Use with Claude
+
+Claude can hand jobs to your local model and keep working while it runs: summaries, pulling facts out of
+long files, sorting or tagging many items, translations, rewrites, first drafts. It collects the answers,
+checks them, and does the hard thinking itself. That saves Claude's effort and your usage, and private
+files are read on your computer and never sent anywhere.
+
+1. Open **Devices** in Pumpkin and find *Use with Claude*.
+2. **Claude Code:** copy the command and run it once in a terminal, for example
+   `claude mcp add pumpkin --scope user -- pumpkin mcp`.
+   **Claude Desktop:** copy the config into *Settings > Developer > Edit Config* and restart it.
+   **Claude on another computer:** turn on phone access first (Tailscale or home network), then use the
+   *Another computer* command. It carries a separate key that opens only this connector.
+3. Ask Claude something like "Use Pumpkin to summarise every PDF in ~/Contracts, then tell me which ones
+   renew this year."
+
+Claude gets seven tools: `status` (your models and their speed), `ask` (one job, with files by path and an
+optional JSON schema for the answer), `batch` (one instruction over many items), `result`, `jobs`, `cancel`
+and `load`. Long jobs run in the background, one at a time on your model, and show under *Jobs from Claude*.
+
 ## Commands
 
 ```text
@@ -249,6 +269,7 @@ pumpkin link                print the sign-in links for this computer and your p
 pumpkin doctor              check the setup from a terminal
 pumpkin service install     start Pumpkin when you log in
 pumpkin stop                stop Pumpkin and the model
+pumpkin mcp                 Pumpkin as a connector for Claude Desktop and Claude Code (they start it)
 ```
 
 ## How it works
@@ -297,6 +318,9 @@ pumpkin stop                stop Pumpkin and the model
   anything else from the internet. MCP servers you add run as you, outside the sandbox.
 - **Docker access means root.** Being in the `docker` group lets your user control the computer as root.
   That is how Docker works; rootless Docker or Podman avoid it.
+- **The Claude connector.** `/mcp` needs Pumpkin's key or the separate Claude key from *Devices*. The
+  Claude key opens only the connector, and making a new one shuts the old one out. Claude can ask Pumpkin to
+  read files by path, so only give the key to a Claude you would let read your files.
 - **Shared devices get answers only.** The pairing code holds a separate device key. It opens three
   endpoints (the device's name and models, "answer this", and "continue this chat"), nothing else: no
   settings, files, memory, tools or other chats. Sharing is off until you turn it on, *Make a new code* cuts
