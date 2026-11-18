@@ -1,6 +1,7 @@
 # Pumpkin guide
 
 Everything Pumpkin can do, and how to use each part. For installing, see the [README](../README.md#install).
+Quick answers to common questions are in the [FAQ](FAQ.md).
 
 Pumpkin opens on the chat. The grid icon on the left (or the status chip at the top right) opens
 Pumpkin's own pages: Overview, Models, Presets, Agent, Research, Code, Teammate, Artifacts, Skills, Connectors,
@@ -9,6 +10,7 @@ Tasks, Files, Images, Memory, Prompts, Reports, Voice, Devices, Phone, Doctor an
 **Contents**
 
 - [Getting started](#getting-started)
+- [Pumpkin's window](#pumpkins-window)
 - [The Overview: what is running right now](#the-overview-what-is-running-right-now)
 - [Setup list](#setup-list)
 - [Models](#models)
@@ -36,6 +38,7 @@ Tasks, Files, Images, Memory, Prompts, Reports, Voice, Devices, Phone, Doctor an
 - [Voice](#voice)
 - [Using it from your phone](#using-it-from-your-phone)
 - [Devices working together](#devices-working-together)
+- [Use with Claude](#use-with-claude)
 - [Doctor](#doctor)
 - [Settings](#settings)
 - [Commands](#commands)
@@ -59,6 +62,19 @@ The first start walks you through four steps:
 3. **Model server.** Pumpkin downloads the newest llama.cpp build for your GPU (CUDA or Vulkan for NVIDIA,
    Vulkan for AMD and Intel, Metal on a Mac, CPU otherwise).
 4. **Your model.** Pick one you have or install the recommended one. It downloads, starts and opens the chat.
+
+## Pumpkin's window
+
+`pumpkin` (or the Pumpkin icon in your app menu) opens Pumpkin in a window of its own, not as a tab in your browser.
+
+- **Linux** uses the system's GTK web view. It needs two packages most desktops already have:
+  `sudo apt install python3-gi gir1.2-webkit2-4.1` (Fedora: `python3-gobject webkit2gtk4.1`). Without them
+  Pumpkin opens in your browser instead.
+- **Windows** opens an app window with Edge (or Chrome), with no tabs or address bar.
+- **Mac** has its own Pumpkin app.
+
+`pumpkin open --browser` opens it in your browser anyway. Closing the window does not stop Pumpkin or the model:
+`pumpkin stop` does.
 
 ## The Overview: what is running right now
 
@@ -470,9 +486,21 @@ tool call, as it does for every tool. Your own MCP servers can still be added by
 
 ## Memory
 
-Tell the model things about you ("I'm a nurse", "keep answers short") and it saves them. Every new chat
-starts with them. **Memory page**: see every fact, edit, forget, add your own, or switch memory off. It is
-one file on your computer. The model is told never to save passwords or card numbers.
+Tell the model things about you ("I'm a nurse", "I live in Plovdiv", "keep answers short") and every new chat
+starts knowing them.
+
+- **It picks things up by itself.** After each answer, the model reads your message once more and saves
+  anything that will still be true later: your name, work, where you live, people and projects, how you like
+  answers. Things about today's question are left out. Saying "forget that I work nights" or "I don't live
+  there any more" removes the old fact. Passwords, keys and long number strings are never saved.
+- **Or when you ask.** "Remember that my sister is called Ana" works too, with a preset that has **Tools** on.
+- **Memory page**: every fact, with where it came from (*Added by you*, *Saved in a chat* or *Picked up from a
+  chat*). Edit it, forget it, add your own, or search when the list gets long. *Remember on its own* switches
+  the automatic part off, so it only saves when you ask. *Use memory* switches memory off altogether.
+
+It is one file on your computer and is never sent anywhere. The automatic check runs on the model you are
+chatting with, after the answer is out, and only for messages that say something about you, so it costs
+almost nothing.
 
 ## Personas, agent limits and MCP servers
 
@@ -552,6 +580,68 @@ Pair the Pumpkins on your PC, Mac and phone, and one model can use the others.
 The devices need to reach each other: same Wi-Fi, or Tailscale on both. A helper only gives answers: no
 access to your files, settings or chats. **Make a new code** cuts off every device paired so far.
 
+## Use with Claude
+
+Claude (Claude Code, or the Claude Desktop app) can hand jobs to the model on your computer and keep working
+while it runs. Claude does the planning and checking; your model does the bulk work. That saves Claude's
+effort and your usage, and files Claude asks about are read on your computer and never uploaded.
+
+**Set it up once.** **Devices** page > *Use with Claude*:
+
+- **Claude Code on this computer:** copy the command under *Claude Code* and run it in a terminal. It looks like
+
+  ```sh
+  claude mcp add pumpkin --scope user -- ~/.local/bin/pumpkin mcp
+  ```
+
+  Then `claude mcp list` should show `pumpkin` as connected. Every Claude Code session can use it from now on.
+- **Claude Desktop on this computer:** copy the config under *Claude Desktop*. In Claude Desktop open
+  *Settings > Developer > Edit Config*, paste it into `claude_desktop_config.json` (if the file already has
+  `mcpServers`, add the `pumpkin` part inside it), save, and restart Claude Desktop. Pumpkin then shows up
+  among its connectors.
+- **Claude Code on another computer:** first turn on phone access on the **Phone** page (Tailscale or home
+  network), so the other computer can reach this one. Then run the command under *Another computer* there.
+  It carries a separate Claude key that opens only this connector, not the rest of Pumpkin. **Make a new
+  key** cuts the old one off.
+
+Pumpkin does not have to be open: when Claude needs it, it starts Pumpkin in the background, and Pumpkin loads
+a model when the first job comes in.
+
+**Use it.** Just ask Claude, and name Pumpkin when you want it used:
+
+- "Use Pumpkin to summarise every PDF in ~/Contracts in five bullets each, then tell me which ones renew this year."
+- "Have Pumpkin tag these 300 support tickets as bug, question or feature request, then give me the counts."
+- "Ask the local model for a first draft of the release notes from this git log, then tighten it yourself."
+- "Translate the README into Bulgarian with Pumpkin while you fix the failing test."
+
+Claude also decides on its own to hand over work that suits a local model. It is told to keep the hard
+thinking and the final answer for itself, and to check what comes back.
+
+**What Claude can do with it:**
+
+| Tool | What it is for |
+|---|---|
+| `status` | Your models, their size, context length and speed, and how many jobs are waiting. |
+| `ask` | One job. Files are passed by path and read here. It can ask for the answer in an exact JSON format, let your model use its own tools (web search, your documents), or let a thinking model think. It waits up to a minute or so for the answer, otherwise it gets a job number and carries on. |
+| `batch` | The same instruction over up to 500 items (texts or file paths), one answer each, in the background. |
+| `result` | The answer to a job, or how far it got. |
+| `jobs`, `cancel`, `load` | List the recent jobs, stop one, or load a model ahead of time. |
+
+**Watching it.** *Jobs from Claude* on the Devices page lists every job: what it was, which model, how long it
+took and how fast, with **Stop** for one that is waiting or running. Jobs run one at a time on your model,
+after any chat you are in.
+
+**Good to know:**
+
+- Jobs take turns with your own chats, since there is one model. Big batches can keep the model busy for a
+  while.
+- A job that does not fit the model (a long PDF on a model with a 4k context) is refused with a clear
+  message instead of being cut off. Claude then splits it, or you give the preset a longer context.
+- Anything that can read files by path can read your files. Give the Claude key only to a Claude you would
+  let read them. On this computer, Claude uses Pumpkin's own key, which never leaves the machine.
+- The claude.ai website and the phone app cannot use it yet: they only take connectors that sign in with
+  OAuth.
+
 ## Doctor
 
 **Doctor page** (or `pumpkin doctor` in a terminal): checks the GPU driver, Vulkan or CUDA, Docker, disk
@@ -589,9 +679,12 @@ button at the top of Pumpkin's pages switches it too. It's kept per device.
 pumpkin                     open Pumpkin (starts it in the background if needed)
 pumpkin code                Pumpkin Code in this folder (see above)
 pumpkin link                print the sign-in links for this computer and your phone
+pumpkin open --browser      open it in your browser instead of its own window
 pumpkin doctor              check the setup
 pumpkin service install     start Pumpkin when you log in
+pumpkin up                  start Pumpkin in the background without opening it
 pumpkin stop                stop Pumpkin and the model
+pumpkin mcp                 the connector Claude Code and Claude Desktop start (see Use with Claude)
 pumpkin --version           which version you have
 ```
 
@@ -614,4 +707,8 @@ pumpkin --version           which version you have
 | No picture: "not enough free memory" | Images page > Memory > *Always*, so the text model always pauses while drawing. |
 | A paired device's model doesn't call `devices_ask` | Check **Tools** is on in the preset. Pumpkin restarts the model by itself after pairing once it is idle; **Devices > Restart the model** does it now. |
 | The phone can't connect | Same Wi-Fi in home-network mode; with Tailscale, check both are signed in. The Phone page shows what's missing. |
+| Pumpkin opens as a browser tab on Linux | Install `python3-gi gir1.2-webkit2-4.1` and open it again. If you installed Pumpkin with a Python virtual environment switched on, run the install command again without it. |
+| Claude doesn't see Pumpkin | Claude Code: `claude mcp list` should show `pumpkin`. If not, run the command from Devices > *Use with Claude* again. Claude Desktop: restart it after editing the config, and check the path in the config still exists. |
+| Claude's jobs fail with "does not fit" | The preset's context is too small for that file. Raise *Context* in the preset, or ask Claude to split the job. |
+| No image engine on an older Linux | stable-diffusion.cpp's newest builds need a recent system (glibc). Pumpkin tries older releases; if none runs, update the system or let a paired PC draw. |
 | Anything else | The Doctor page. If it doesn't help, open an issue on GitHub with what it shows. |

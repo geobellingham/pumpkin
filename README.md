@@ -15,7 +15,8 @@ chat with tools, web search, scheduled agent tasks, voice and phone access, all 
 
 ## What it does
 
-The [guide](docs/GUIDE.md) explains every feature and how to use it.
+The [guide](docs/GUIDE.md) explains every feature and how to use it, and the [FAQ](docs/FAQ.md) answers the
+usual questions.
 
 - **One-click models.** Pick a model and Pumpkin chooses the best quant for your GPU and RAM, downloads it,
   makes a preset and starts it. Picks favour the most downloaded models from the uploaders most people trust
@@ -60,9 +61,12 @@ The [guide](docs/GUIDE.md) explains every feature and how to use it.
 - **Skills and connectors.** Skills are instructions for a kind of job (a report, a log review), in the same
   `SKILL.md` format Claude uses, so existing skills work as they are. Connectors give the model the tools of GitHub,
   Notion, Jira and Confluence, a browser, Git, PostgreSQL and more, set up with a token and a test button.
-- **It remembers you.** Tell it your name, your work or how you like answers, and every new chat knows.
-  The Memory page shows each fact so you can edit or delete it, or switch memory off. It stays on this
-  device.
+- **It remembers you.** Mention your name, your work or how you like answers and it picks that up by
+  itself, so every new chat knows. The Memory page shows each fact so you can edit or delete it, or switch
+  memory off. It stays on this device.
+- **Claude can use it.** Connect Claude Code or Claude Desktop and Claude hands bulk jobs (summaries,
+  extraction, sorting, translations, drafts) to your local model while it keeps working. See
+  [Use with Claude](#use-with-claude).
 - **Agents with tools.** Models can search the web and read pages (built in, no API key), run
   commands in a Docker sandbox, and use any MCP server you add.
 - **Pumpkin Code.** A coding agent for your projects, on the Code page or with `pumpkin code` in a
@@ -257,6 +261,7 @@ files are read on your computer and never sent anywhere.
 3. Ask Claude something like "Use Pumpkin to summarise every PDF in ~/Contracts, then tell me which ones
    renew this year."
 
+Step-by-step setup, example requests and troubleshooting are in the [guide](docs/GUIDE.md#use-with-claude).
 Claude gets seven tools: `status` (your models and their speed), `ask` (one job, with files by path and an
 optional JSON schema for the answer), `batch` (one instruction over many items), `result`, `jobs`, `cancel`
 and `load`. Long jobs run in the background, one at a time on your model, and show under *Jobs from Claude*.
