@@ -244,23 +244,37 @@ class Jobs:
             raise ValueError(f"This is about {need} tokens with the answer, but {preset.get('name')} holds {ctx}. "
                              "Split it (batch helps), ask for a shorter answer, or load a model with a longer "
                              "context.")
+        think = bool(spec.get("think"))
+        # Qwen-style models listen to enable_thinking; gpt-oss always reasons and only takes an effort level
         payload = {"messages": messages, "max_tokens": spec["max_tokens"], "stream": False,
                    "temperature": spec.get("temperature", 0.3),
-                   "chat_template_kwargs": {"enable_thinking": bool(spec.get("think"))}}
+                   "chat_template_kwargs": {"enable_thinking": think, "reasoning_effort": "high" if think else "low"}}
         if isinstance(spec.get("json_schema"), dict):
             payload["response_format"] = {"type": "json_schema",
                                           "json_schema": {"name": "answer", "schema": spec["json_schema"]}}
-        r = llama.http(core.server.port if core.server.state != "external" else int(core.settings["llama_port"]),
-                       "/v1/chat/completions", payload, timeout=3600)
-        if "choices" not in r:
-            raise RuntimeError(f"The local model answered with an error: {r.get('error', r)}")
-        choice = r["choices"][0]
-        answer = _clean_answer((choice.get("message") or {}).get("content"))
+        port = core.server.port if core.server.state != "external" else int(core.settings["llama_port"])
+        tokens = 0
+        for attempt in range(2):
+            r = llama.http(port, "/v1/chat/completions", payload, timeout=3600)
+            if "choices" not in r:
+                raise RuntimeError(f"The local model answered with an error: {r.get('error', r)}")
+            tokens += int((r.get("usage") or {}).get("completion_tokens") or 0)
+            choice = r["choices"][0]
+            msg = choice.get("message") or {}
+            reasoned = bool(msg.get("reasoning_content")) or "<think>" in str(msg.get("content") or "")
+            if choice.get("finish_reason") != "length" or not reasoned or attempt:
+                break
+            # its thinking used up the room meant for the answer: once more with room for both
+            room = (ctx - prompt_chars // 3) if ctx else 32768
+            more = min(max(payload["max_tokens"] * 4, payload["max_tokens"] + 2048), 32768, room)
+            if more <= payload["max_tokens"]:
+                break
+            payload["max_tokens"] = more
+        answer = _clean_answer(msg.get("content"))
         if not answer:
             why = ("ran out of room before answering (raise max_tokens, or turn think off)"
                    if choice.get("finish_reason") == "length" else "gave an empty answer")
             raise RuntimeError(f"The local model {why}.")
-        tokens = int((r.get("usage") or {}).get("completion_tokens") or 0)
         speed = (r.get("timings") or {}).get("predicted_per_second")
         if speed:
             self.last_speed = round(float(speed), 1)

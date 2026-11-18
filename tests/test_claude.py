@@ -105,6 +105,13 @@ class TestClaudeConnector(unittest.TestCase):
         self.assertEqual(seen["response_format"]["type"], "json_schema")
         self.assertIn("error", self.tool("ask", prompt="x", files=["/no/such/file.txt"]))
 
+    def test_4b_a_model_that_thinks_anyway_gets_room_to_answer(self):
+        r = self.tool("ask", prompt="REASONS please", system="ECHO", max_tokens=300, wait=60)
+        self.assertEqual(r["answer"], "ECHO full answer", r)                   # asked again with more room
+        seen = json.loads(_read(os.path.join(self.p.home, "Pumpkin", "models", "small", f"chat-{self.p.llama_port}.json")))
+        self.assertEqual(seen["chat_template_kwargs"], {"enable_thinking": False, "reasoning_effort": "low"})
+        self.assertEqual(seen["max_tokens"], 300 + 2048)
+
     def test_5_hand_over_keep_working_collect_later(self):
         r = self.tool("ask", prompt="SLOWJOB please", system="ECHO", wait=0)
         self.assertIn(r["state"], ("queued", "running"))

@@ -256,6 +256,12 @@ class H(BaseHTTPRequestHandler):
             if body.get("response_format") or "ECHO" in sysmsg:      # jobs Claude hands over (delegate.py)
                 user = str(msgs[-1].get("content", ""))
                 if "SLOWJOB" in user: time.sleep(3)
+                if "REASONS" in user:                                   # gpt-oss: thinks first, whatever it is told
+                    full = body.get("max_tokens", 0) >= 1000
+                    m = {"role": "assistant", "reasoning_content": "Let me think about this at length...",
+                         "content": "ECHO full answer" if full else "ECHO cut"}
+                    return s.j({"choices": [{"message": m, "finish_reason": "stop" if full else "length"}],
+                                "usage": {"completion_tokens": body.get("max_tokens")}})
                 out = json.dumps({"words": len(user.split())}) if body.get("response_format") else "ECHO " + user[:60]
                 return s.j({"choices": [{"message": {"role": "assistant", "content": out}, "finish_reason": "stop"}],
                             "usage": {"completion_tokens": 12}, "timings": {"predicted_per_second": 41.5}})
