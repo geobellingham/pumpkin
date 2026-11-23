@@ -500,7 +500,8 @@ class ImageServer:
                     st = self.http("/sdcpp/v1/models/status", timeout=5)
                 except (OSError, ValueError, HTTPException):
                     st = None
-                if st and st.get("state") == "ready":
+                # "configured": newer builds (from master-1122) load the model on the first picture instead
+                if st and st.get("state") in ("ready", "configured"):
                     self.state, self.last_used = "ready", time.time()
                     return
                 if st and st.get("state") == "error":

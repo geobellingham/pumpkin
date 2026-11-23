@@ -332,7 +332,8 @@ class H(BaseHTTPRequestHandler):
         s.send_header("Content-Length", str(len(b))); s.end_headers(); s.wfile.write(b)
     def do_GET(s):
         if s.path == "/sdcpp/v1/models/status":
-            return s.j({"state": "ready" if time.time() - born > 0.3 else "loading"})
+            ok = os.environ.get("FAKE_SD_READY", "ready")             # newer sd-server builds say "configured"
+            return s.j({"state": ok if time.time() - born > 0.3 else "loading"})
         if s.path.startswith("/sdcpp/v1/jobs/"):
             jid = s.path.rsplit("/", 1)[-1]
             job = JOBS.get(jid)

@@ -350,6 +350,19 @@ class TestDrawingInChat(unittest.TestCase):
         except OSError:
             return []
 
+    def test_a_newer_engine_that_loads_on_the_first_picture(self):
+        """sd-server from master-1122 on says "configured" and loads the model when the first picture comes in."""
+        self.core.image_server.stop()
+        os.environ["FAKE_SD_READY"] = "configured"
+        try:
+            st, r = self.call("POST", "/pumpkin/api/images/generate", {"prompt": "a lantern", "swap": False}, 120)
+        finally:
+            os.environ.pop("FAKE_SD_READY", None)
+            self.core.image_server.stop()
+        self.assertEqual(st, 200, r)
+        self.assertTrue(r["path"].startswith("images/"))
+        os.remove(os.path.join(self.files, r["path"]))           # the other tests count the pictures
+
     def test_chat_draws_and_the_text_model_comes_back(self):
         st, images_state = self.call("GET", "/pumpkin/api/images")
         self.assertEqual(st, 200, images_state)
