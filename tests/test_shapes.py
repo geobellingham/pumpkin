@@ -45,6 +45,20 @@ class TestEngineChoice(unittest.TestCase):
         self.assertIn("plain white background", p)
 
 
+class TestWhereItRuns(unittest.TestCase):
+    def test_a_mac_is_told_plainly(self):
+        from unittest import mock
+        from types import SimpleNamespace
+        from pumpkin.core import Core
+        fake = SimpleNamespace(settings={"images": True})
+        with mock.patch.object(shapes, "supported", lambda: False):
+            with self.assertRaises(RuntimeError) as e:
+                Core.make_3d(fake, "a mug")
+            self.assertIn("Linux and Windows only", str(e.exception))
+            self.assertFalse(Core.shapes_ready(fake))
+
+
+@unittest.skipUnless(shapes.supported(), "trellis.cpp has builds for Linux and Windows (x64) only")
 class TestShapes(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
