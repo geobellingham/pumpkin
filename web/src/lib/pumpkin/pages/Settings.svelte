@@ -227,7 +227,7 @@
 			<ul class="flex flex-col gap-2.5 text-sm">
 				<li><span class="font-medium">Your chats, files and prompts</span> stay on this computer. The model server only listens on 127.0.0.1.</li>
 				<li><span class="font-medium">Hugging Face</span>: when you search for models, open Recommended, or download. Your search words go there, and your token if you saved one.</li>
-				<li><span class="font-medium">GitHub</span>: to check for a new Pumpkin (if the setting above is on) and to download llama.cpp when you ask.</li>
+				<li><span class="font-medium">GitHub</span>: to check for a new Pumpkin (if the setting above is on) and to download llama.cpp, the image engine and the 3D engine when you ask.</li>
 				<li><span class="font-medium">Web search</span>: only when a model uses its search tool. The search words go to DuckDuckGo, and the pages the model opens are fetched.</li>
 				<li><span class="font-medium">ntfy</span>: only if you set a topic. The notification text goes to the ntfy server.</li>
 				<li><span class="font-medium">Tailscale</span>: only if you turn on phone access.</li>

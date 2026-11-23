@@ -32,3 +32,8 @@ Full text in pumpkin/vendor/LICENSE-pypdf.txt.
 
 pumpkin/vendor/typing_extensions.py: typing_extensions 4.16.0, unchanged.
 Python Software Foundation License. Full text in pumpkin/vendor/LICENSE-typing_extensions.txt.
+
+----------------------------------------------------------------------------
+
+The 3D viewer in pumpkin/ui uses three.js 0.170.0 (https://github.com/mrdoob/three.js), unchanged.
+MIT License, Copyright (c) 2010-2024 three.js authors.

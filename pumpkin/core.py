@@ -9,7 +9,7 @@ import sys
 import threading
 import time
 
-from . import (__version__, agent, delegate, browser, coder, config, connectors, devices, docs, hardware, images, llama, llamaup, mcp_local, memory, migrate, models,
+from . import (__version__, agent, delegate, shapes, browser, coder, config, connectors, devices, docs, hardware, images, llama, llamaup, mcp_local, memory, migrate, models,
                recommend, remote, research, skills, updates, vision, workspace)
 
 # which setting holds the chosen model for each kind of image model
@@ -80,6 +80,9 @@ class Core:
         self.image_lock = threading.Lock()
         self.pictures_seen = {}
         self.image_sizes = {}                # bundle id -> estimated GB before it is downloaded
+        self.shape_progress = None           # {"stage", "since", "detail", "swapped"} while a 3D model is made
+        self.shape_run = None                # the trellis-cli run in progress, so it can be stopped
+        self.shape_size = None               # the 3D model files' size in GB, from Hugging Face
         if hardware.ANDROID:
             # the app has no Python program for llama-server to start: its tools answer from here (mcp_local)
             self.mcp_host = mcp_local.Host(os.environ.get("PUMPKIN_MCP_BRIDGE"))
@@ -181,6 +184,9 @@ class Core:
                 text += " image_edit changes the picture the user attached or you drew last."
             if self.video_ready():
                 text += " image_video makes a short video clip (slow: minutes)."
+            if self.shapes_ready():
+                text += (" image_3d makes a 3D model the user can turn around and download, from the picture they "
+                         "attached or from a described object (slow: minutes).")
             hint = self.devices_hint()
             if hint:
                 text += " " + hint
@@ -420,10 +426,10 @@ class Core:
         if any(d.get("enabled", True) for d in devices.load()):
             # a phone can take minutes, so the call may wait up to 30 minutes
             servers.setdefault("devices", self._builtin("pumpkin.mcp_devices", 1_800_000))
-        if self.images_ready() or self.edit_ready() or self.video_ready():
+        if self.images_ready() or self.edit_ready() or self.video_ready() or self.shapes_ready():
             # the chat's calls are answered by Pumpkin itself (server.py); this one serves the listing and agents
             # a clip can take up to two hours (images.generate_video), so the call may wait that long
-            servers.setdefault("image", self._builtin("pumpkin.mcp_images", 7_200_000))
+            servers.setdefault("image", self._builtin("pumpkin.mcp_images", 14_400_000))
         self.mcp_image = "image" in servers
         self.mcp_devices = "devices" in servers
 
@@ -943,6 +949,15 @@ class Core:
                         "label": {"loading": "Loading into memory", "drawing": "Drawing", "video": "Making the video"}
                                  .get(stage, "Working") if i.get("busy") else "Loaded, frees itself when idle",
                         "since": (picture or {}).get("since")})
+        sp = self.shape_progress
+        if sp:
+            if sp.get("swapped") and srv["state"] not in ("loading", "ready", "external"):
+                out.append({"id": "text", "kind": "model", "title": pre.get("name") or "Model", "state": "paused",
+                            "label": "Paused so the 3D model has room"})
+            out.append({"id": "shape", "kind": "image", "title": "3D model",
+                        "state": "working", "label": {"drawing": "Drawing the picture first",
+                                                      "building": "Making the 3D model"}.get(sp.get("stage"), "Working"),
+                        "detail": sp.get("detail") or None, "since": sp.get("since")})
         for d in self.downloads.list():
             if d["state"] in ("queued", "downloading"):
                 out.append({"id": "dl-" + d["id"], "kind": "download", "title": d["repo"].split("/")[-1],
@@ -1477,6 +1492,174 @@ class Core:
             f"The picture is shown to the user and saved as {r['path']} in their Files ({r['model']}, "
             f"{r['seconds']} s). Do not describe it or paste a link unless asked.\n"
             f"data:image/jpeg;base64,{b64}")}
+
+    # ---- 3D models (shapes.py)
+    def shapes_ready(self):
+        """The chat's model can make 3D models: pictures are on, the 3D engine and its model files are in."""
+        if not shapes.supported() or not self.settings["images"]:
+            return False
+        return bool(shapes.find_engine(self.settings)) and shapes.installed(self.settings)["ready"]
+
+    def shape_res(self, quality=None):
+        q = str(quality or self.settings["shape_quality"] or "auto").lower()
+        if q in shapes.QUALITY:
+            return shapes.QUALITY[q]
+        return shapes.default_res(self.hardware())
+
+    def shapes_state(self):
+        inst = shapes.installed(self.settings)
+        folder = os.path.normpath(inst["folder"])
+        dls = [j for j in self.downloads.list() if j.get("kind") == "3d" and os.path.normpath(j["dest"]) == folder]
+        active = [j for j in dls if j["state"] in ("queued", "downloading")]
+        failed = next((j["error"] for j in dls if j["state"] == "error"), None)
+        job = next((j for j in self.jobs.values() if j["kind"] == "3d-engine" and j["state"] == "running"), None)
+        if self.shape_size is None and shapes.supported() and not inst["ready"]:
+            threading.Thread(target=self._shape_size, daemon=True).start()
+        hw = self.hardware()
+        auto = shapes.default_res(hw)
+        return {"supported": shapes.supported(), "ready": self.shapes_ready(), "engine": shapes.engine_info(self.settings),
+                "engine_job": job["id"] if job else None, "installed": inst["ready"], "partial": inst["partial"],
+                "downloading": bool(active), "error": None if active else failed,
+                "done": sum(j["done"] for j in dls), "total": sum(j["total"] for j in dls),
+                "size_gb": inst["size_gb"] if inst["ready"] else (self.shape_size or shapes.SIZE_GB),
+                "quality": self.settings["shape_quality"], "auto": "detailed" if auto >= 1024 else "fast",
+                "fit": images.fit(shapes.NEEDS_GB[1024 if auto >= 1024 else 512], hw, "vulkan"),
+                "draws": self.images_ready(), "progress": self.shape_progress, "folder": inst["folder"]}
+
+    def _shape_size(self):
+        self.shape_size = shapes.total_size(self.settings["hf_token"] or None) or shapes.SIZE_GB
+
+    def download_shape_engine(self):
+        if not shapes.supported():
+            raise RuntimeError("3D models are not available on this device yet (Linux and Windows only).")
+        running = next((j for j in self.jobs.values() if j["kind"] == "3d-engine" and j["state"] == "running"), None)
+        if running:
+            return running
+        return self.start_job("3d-engine", lambda progress, cancelled, job: shapes.download_engine(progress, cancelled))
+
+    def install_shapes(self):
+        """Downloads the engine (when it is not in yet) and the ten model files."""
+        if not shapes.supported():
+            raise RuntimeError("3D models are not available on this device yet (Linux and Windows only).")
+        if not shapes.find_engine(self.settings):
+            self.download_shape_engine()
+        inst = shapes.installed(self.settings)
+        if inst["missing"]:
+            os.makedirs(inst["folder"], exist_ok=True)
+            self.downloads.add(shapes.HF_REPO, inst["missing"], dest=inst["folder"], kind="3d")
+        return self.shapes_state()
+
+    def delete_shapes(self):
+        if self.shape_run:
+            raise RuntimeError("A 3D model is being made. Stop it first.")
+        folder = shapes.models_dir(self.settings)
+        for j in self.downloads.list():
+            if j.get("kind") == "3d" and os.path.normpath(j["dest"]) == os.path.normpath(folder):
+                self.downloads.cancel(j["id"])
+        if os.path.basename(os.path.normpath(folder)) == shapes.FOLDER:
+            shutil.rmtree(folder, ignore_errors=True)
+        return self.shapes_state()
+
+    def cancel_3d(self):
+        run = self.shape_run
+        if run:
+            run.cancelled = True
+            run.stop()
+        return self.shapes_state()
+
+    def make_3d(self, prompt=None, picture=None, from_picture=False, source=None, quality=None, seed=None,
+                swap_ok=True, faces=None):
+        """Makes a 3D model and saves it into the user's Files (3d/). The picture is the bytes given, the one the user
+        attached or the newest drawn (from_picture), a file in Files (source), or, with only a prompt, one the image
+        model draws first. Returns {path, seconds, quality, model, swapped, picture}."""
+        if not shapes.supported():
+            raise RuntimeError("3D models are not available on this device yet (Linux and Windows only).")
+        if not self.settings["images"]:
+            raise RuntimeError("Pictures and 3D models are switched off in Pumpkin (Images page).")
+        cli = shapes.find_engine(self.settings)
+        inst = shapes.installed(self.settings)
+        if not cli or not inst["ready"]:
+            raise RuntimeError("The 3D model is not installed. The user can add it on Pumpkin's Images page.")
+        if self.shape_run:
+            raise RuntimeError("A 3D model is already being made. Wait for it, or stop it on the Images page.")
+        prompt = re.sub(r"\s+", " ", str(prompt or "")).strip()[:1000]
+        res = self.shape_res(quality)
+        t0 = time.time()
+        self.shape_progress = {"stage": "drawing", "since": t0, "detail": "", "swapped": False}
+        drawn = None
+        src_path = out_path = None
+        try:
+            if picture is None and (from_picture or source):
+                picture = self.picture_to_edit(source)
+            if picture is None:
+                if not prompt:
+                    raise ValueError("Say what the 3D model should be, or attach a picture of it.")
+                if not self.images_ready():
+                    raise RuntimeError("Making a 3D model from words needs an image model to draw it first. Attach a "
+                                       "picture instead, or add Z-Image Turbo on Pumpkin's Images page.")
+                drawn = self.make_image(shapes.picture_prompt(prompt), "square", seed, swap_ok=swap_ok)
+                picture = drawn["jpeg"]
+            ext = ".png" if picture[:8] == b"\x89PNG\r\n\x1a\n" else ".jpg"
+            work = os.path.join(config.STATE_DIR, "trellis-work")
+            os.makedirs(work, exist_ok=True)
+            stamp = time.strftime("%Y%m%d-%H%M%S")
+            src_path = os.path.join(work, "input-" + stamp + ext)
+            out_path = os.path.join(work, "model-" + stamp + ".glb")
+            with open(src_path, "wb") as f:
+                f.write(picture)
+            run = shapes.Run(cli, inst["folder"], src_path, out_path, res, seed, faces, int(self.settings["threads"] or 0))
+            run.cancelled = False
+            self.shape_progress.update(stage="building", since=time.time())
+            with self.image_lock:
+                if self.image_server and self.image_server.state != "off" and not self.image_server.busy:
+                    self.image_server.stop()                     # the picture model's memory goes to the 3D model
+                was = None
+                if swap_ok and self.needs_swap(shapes.NEEDS_GB[res]):
+                    was = dict(self.server.preset)
+                    self.server.stop()
+                    self.shape_progress["swapped"] = True
+                self.shape_run = run
+                try:
+                    data = run.run(cancelled=lambda: run.cancelled,
+                                   progress=lambda line: self.shape_progress.update(detail=line))
+                finally:
+                    self.shape_run = None
+                    if was:
+                        try:
+                            self.server.start(was)
+                            self.server.wait_ready(timeout=900)
+                        except Exception:  # noqa: BLE001 - the model is still worth returning
+                            pass
+            folder = os.path.join(os.path.expanduser(self.settings["files_dir"]), "3d")
+            os.makedirs(folder, exist_ok=True)
+            base = config.slug((prompt or "model")[:48]) or "model"
+            name = f"{base}-{stamp}.glb"
+            with open(os.path.join(folder, name), "wb") as f:
+                f.write(data)
+            return {"path": f"3d/{name}", "seconds": round(time.time() - t0, 1), "res": res,
+                    "quality": "detailed" if res >= 1024 else "fast", "model": "TRELLIS.2",
+                    "swapped": bool(self.shape_progress.get("swapped")),
+                    "picture": drawn["path"] if drawn else None, "bytes": len(data)}
+        finally:
+            self.shape_progress = None
+            for p in (src_path, out_path):                    # the run's own copies, whatever happened
+                if p:
+                    try:
+                        os.remove(p)
+                    except OSError:
+                        pass
+
+    def shape_tool(self, params):
+        """The chat called image_3d. The chat shows the model from the file; the model only gets a short note."""
+        try:
+            r = self.make_3d(params.get("prompt"), from_picture=bool(params.get("from_picture")),
+                             source=params.get("source"), quality=params.get("quality"))
+        except (RuntimeError, ValueError, OSError) as e:
+            return {"error": str(e)}
+        made = f" from the picture {r['picture']}" if r.get("picture") else ""
+        return {"plain_text_response": (
+            f"The 3D model is shown to the user and saved as {r['path']} in their Files ({r['model']}, "
+            f"{r['quality']} quality, made in {r['seconds']} s{made}). Do not describe it or paste a link unless asked.")}
 
     def code_waiting(self, session, data):
         """Pumpkin Code waits for a yes: tell the user, who may have stepped away."""

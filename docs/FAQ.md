@@ -84,6 +84,11 @@ Setting *Memory for context* to `q8_0` frees memory for a bigger model or more c
 No. The model runs inside llama.cpp, which is already C++. Pumpkin itself only passes text along: about 10
 microseconds per word, against the 5 to 20 milliseconds the model needs to write one.
 
+**Can it make 3D models?**
+Yes, on Linux and Windows. Install *3D models* on the Images page (about 16 GB), then turn a picture into a textured
+`.glb`, or describe an object and the image model draws it first. A model takes a few minutes; *Detailed* quality
+needs about a 16 GB graphics card, *Fast* suits smaller ones. See the [guide](GUIDE.md#3d-models).
+
 ## Privacy and security
 
 **Does anything leave my computer?**

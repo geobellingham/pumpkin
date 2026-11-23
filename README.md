@@ -50,6 +50,9 @@ usual questions.
 - **It makes short videos.** Add Wan 2.2 (5B) on the Images page and ask the chat for a clip, or to bring a
   picture to life. The clip plays in the chat and is saved in your Files. Be patient: a few seconds of
   video take several minutes even on a good graphics card, and up to 5 seconds per clip.
+- **It makes 3D models.** Turn a picture into a textured 3D model you can turn around in the chat and download
+  as a `.glb`, or describe an object and Pumpkin draws it first. It runs Microsoft's TRELLIS.2 through
+  [trellis.cpp](https://github.com/pwilkin/trellis.cpp) on your graphics card (Linux and Windows).
 - **It keeps your place.** When a model stops or is swapped out (to draw a picture, say), Pumpkin saves the
   conversation it has read and loads it back at the next start, so a long chat with a big context does not
   have to be read again. Switch it off in Settings.
@@ -262,9 +265,9 @@ files are read on your computer and never sent anywhere.
    renew this year."
 
 Step-by-step setup, example requests and troubleshooting are in the [guide](docs/GUIDE.md#use-with-claude).
-Claude gets seven tools: `status` (your models and their speed), `ask` (one job, with files by path and an
-optional JSON schema for the answer), `batch` (one instruction over many items), `result`, `jobs`, `cancel`
-and `load`. Long jobs run in the background, one at a time on your model, and show under *Jobs from Claude*.
+Claude gets eight tools: `status` (your models and their speed), `ask` (one job, with files by path and an
+optional JSON schema for the answer), `batch` (one instruction over many items), `make_3d` (a 3D model from a
+picture or a description), `result`, `jobs`, `cancel` and `load`. Long jobs run in the background, one at a time on your model, and show under *Jobs from Claude*.
 
 ## Commands
 
@@ -313,7 +316,7 @@ pumpkin mcp                 Pumpkin as a connector for Claude Desktop and Claude
 - **Web pages cannot reach in.** Pumpkin refuses requests addressed to unknown domain names (DNS
   rebinding), cannot be framed by other sites, and never sends its address in a referrer. If you put
   Pumpkin behind your own domain, list it in `PUMPKIN_ALLOWED_HOSTS`.
-- **Verified downloads.** The installer, the update button and the llama.cpp and stable-diffusion.cpp
+- **Verified downloads.** The installer, the update button and the llama.cpp, stable-diffusion.cpp and trellis.cpp
   downloads check the SHA-256 that GitHub publishes for each release file, and stop if it does not match.
   Updates install the tagged release, never unreleased code.
 - **The agent sandbox.** Commands run in a Docker container that can only see the work folder

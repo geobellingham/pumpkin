@@ -84,6 +84,8 @@ DEFAULT_SETTINGS = {
     "image_swap": "auto",              # auto: stop the text model while drawing when both do not fit | always | never
     "image_keep_min": 10,              # free the image model's memory after this many idle minutes (0 = keep)
     "sd_server": "",                   # explicit sd-server path; empty = the downloaded one
+    "trellis_cli": "",                 # explicit trellis-cli path for 3D models; empty = the downloaded one
+    "shape_quality": "auto",           # 3D models: auto (by graphics memory) | fast (512) | detailed (1024)
 }
 
 DEFAULT_PERSONAS = [

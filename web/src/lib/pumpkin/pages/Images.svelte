@@ -6,6 +6,7 @@
 	import Empty from '../components/Empty.svelte';
 	import Progress from '../components/Progress.svelte';
 	import Segmented from '../components/Segmented.svelte';
+	import Shapes3D from '../components/Shapes3D.svelte';
 	import Toggle from '../components/Toggle.svelte';
 	import { api, pumpkin } from '../store.svelte';
 	import { onDestroy, onMount } from 'svelte';
@@ -297,8 +298,10 @@
 			{/if}
 		</Card>
 
+		<Shapes3D />
+
 		<Card description="Pausing makes room on the graphics card, and costs a few seconds while the text model loads again." title="Memory">
-			<p class="mb-2 text-sm">Pause the text model while drawing</p>
+			<p class="mb-2 text-sm">Pause the text model while drawing or making 3D models</p>
 			<Segmented
 				bind:value={swap}
 				onchange={setSwap}

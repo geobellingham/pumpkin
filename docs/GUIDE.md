@@ -22,6 +22,7 @@ Tasks, Files, Images, Memory, Prompts, Reports, Voice, Devices, Phone, Doctor an
 - [Drawing pictures](#drawing-pictures)
 - [Editing pictures](#editing-pictures)
 - [Short videos](#short-videos)
+- [3D models](#3d-models)
 - [Pumpkin Code](#pumpkin-code)
 - [Workspaces](#workspaces)
 - [Research](#research)
@@ -255,6 +256,30 @@ Install **Wan 2.2 (5B)** on the Images page. Then, in a chat with Tools on:
 The clip plays in the chat and is saved in `Files/videos`. Clips are 1 to 5 seconds (2 by default). It is
 slow: a few seconds of video take several minutes even on a good graphics card, and the text model pauses
 meanwhile if memory is short.
+
+## 3D models
+
+Turn a picture into a textured 3D model you can turn around, and download as a `.glb` file (Blender, Unity, Godot,
+Windows' 3D Viewer and web pages open it). Pumpkin runs [TRELLIS.2](https://github.com/microsoft/TRELLIS.2) through
+[trellis.cpp](https://github.com/pwilkin/trellis.cpp) on your own graphics card. Linux and Windows for now.
+
+1. **Images page > 3D models > Install.** It downloads the engine and the model files (about 16 GB).
+2. **Pick a picture** and press **Make it 3D**. Or type what you want ("a carved pumpkin lantern") and the image
+   model draws a picture of it first, so for words you need an image model too.
+3. Or ask in a chat with Tools on: "make a 3D model of a red teapot", or attach a photo and say "turn this into 3D".
+   The model appears in the chat; drag to turn it, scroll to zoom.
+
+Models are saved in `Files/3d`, and a picture drawn for one in `Files/images`.
+
+- **Quality.** *Detailed* (1024) needs about a 16 GB graphics card; *Fast* (512) suits smaller cards and is quicker.
+  *Auto* picks by your card.
+- **Time.** A few minutes on a good graphics card, longer on a laptop or integrated graphics. The progress shows on
+  the Images page and the Overview, and **Stop** ends it at once.
+- **Pictures that work best**: one whole object, plainly lit, on a simple background. The engine cuts the object out
+  first, so a busy scene or a cropped object gives a messy model.
+- **Memory.** Each model is one run: it loads a stage, uses it and frees it, so nothing stays in memory afterwards.
+  If the text model and the 3D model do not fit together, the text model pauses and comes back by itself, as it
+  does for pictures.
 
 ## Pumpkin Code
 
@@ -625,6 +650,7 @@ thinking and the final answer for itself, and to check what comes back.
 | `ask` | One job. Files are passed by path and read here. It can ask for the answer in an exact JSON format, let your model use its own tools (web search, your documents), or let a thinking model think. It waits up to a minute or so for the answer, otherwise it gets a job number and carries on. |
 | `batch` | The same instruction over up to 500 items (texts or file paths), one answer each, in the background. |
 | `result` | The answer to a job, or how far it got. |
+| `make_3d` | A 3D model (.glb) from a picture file or a description, in the background. Needs 3D models set up on the Images page. |
 | `jobs`, `cancel`, `load` | List the recent jobs, stop one, or load a model ahead of time. |
 
 **Watching it.** *Jobs from Claude* on the Devices page lists every job: what it was, which model, how long it
@@ -710,5 +736,6 @@ pumpkin --version           which version you have
 | Pumpkin opens as a browser tab on Linux | Install `python3-gi gir1.2-webkit2-4.1` and open it again. If you installed Pumpkin with a Python virtual environment switched on, run the install command again without it. |
 | Claude doesn't see Pumpkin | Claude Code: `claude mcp list` should show `pumpkin`. If not, run the command from Devices > *Use with Claude* again. Claude Desktop: restart it after editing the config, and check the path in the config still exists. |
 | Claude's jobs fail with "does not fit" | The preset's context is too small for that file. Raise *Context* in the preset, or ask Claude to split the job. |
+| A 3D model fails with "ran out of graphics memory" | Set *Quality* to *Fast*, or Images > *Pause the text model* to *Always*. |
 | No image engine on an older Linux | stable-diffusion.cpp's newest builds need a recent system (glibc). Pumpkin tries older releases; if none runs, update the system or let a paired PC draw. |
 | Anything else | The Doctor page. If it doesn't help, open an issue on GitHub with what it shows. |

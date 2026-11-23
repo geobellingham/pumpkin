@@ -37,6 +37,7 @@ Pass json_schema when you need structured output.
 - Pass files by path (they are read on the user's computer, so private files never leave it) instead of pasting them.
 - Small job: ask, and the answer comes back. Big or many jobs: ask with wait 0, or batch for one instruction over \
 many items, keep working on something else, then collect them with result.
+- When the user wants a 3D model, make_3d makes one on their computer, from a picture file or a description.
 - Check what comes back before you rely on it (spot-check facts, run the code). If it fails twice on the same job, \
 do the job yourself."""
 
@@ -87,6 +88,15 @@ TOOLS = [
      "inputSchema": {"type": "object", "properties": {}}},
     {"name": "cancel", "description": "Stop a job that is waiting or running.",
      "inputSchema": {"type": "object", "properties": {"job": {"type": "string"}}, "required": ["job"]}},
+    {"name": "make_3d",
+     "description": "Make a textured 3D model (.glb) on the user's computer, from a picture file or from a short "
+                    "description of one object (Pumpkin draws a picture first). Slow: several minutes, so it runs "
+                    "in the background: you get a job id; collect with result, which gives the saved file's path.",
+     "inputSchema": {"type": "object", "properties": {
+         "prompt": {"type": "string", "description": "The object, like \"a carved pumpkin lantern\"."},
+         "picture": {"type": "string", "description": "Path of a picture file on the user's computer to turn into 3D."},
+         "quality": {"type": "string", "enum": ["fast", "detailed"], "description": "Default: what suits the "
+                                                                                    "graphics card."}}}},
     {"name": "load", "description": "Load one of the models from status, so the next jobs do not wait for it.",
      "inputSchema": {"type": "object", "properties": {"model": {"type": "string"}}, "required": ["model"]}},
 ]
@@ -214,6 +224,8 @@ class Jobs:
             try:
                 if job["kind"] == "batch":
                     self._batch(job)
+                elif job["kind"] == "3d":
+                    self._shape(job)
                 else:
                     self._ask(job)
                 self._finish(job, "cancelled" if job["cancel"] else "done")
@@ -304,6 +316,22 @@ class Jobs:
         messages = ([{"role": "system", "content": spec["system"]}] if spec.get("system") else []) + \
             [{"role": "user", "content": prompt}]
         job["answer"], job["tokens"], job["finish"] = self._chat(messages, spec, preset)
+
+    def _shape(self, job):
+        spec = job["spec"]
+        pic = None
+        if spec.get("picture"):
+            p = os.path.realpath(os.path.expanduser(spec["picture"]))
+            if not os.path.isfile(p) or os.path.getsize(p) > 30_000_000:
+                raise ValueError(f"There is no picture at {spec['picture']} (or it is over 30 MB).")
+            with open(p, "rb") as f:
+                pic = f.read()
+        job["model"] = "TRELLIS.2"
+        r = self.core.make_3d(spec.get("prompt"), picture=pic, quality=spec.get("quality"))
+        full = os.path.join(os.path.expanduser(self.core.settings["files_dir"]), r["path"])
+        job["answer"] = (f"Saved the 3D model as {full} ({round(r['bytes'] / 1e6, 1)} MB, {r['quality']} quality, "
+                         f"{r['seconds']} s)." + (f" The picture it was made from: {r['picture']} in Pumpkin's Files."
+                                                  if r.get("picture") else ""))
 
     def _batch(self, job):
         spec = job["spec"]
@@ -415,6 +443,19 @@ def call(core, name, args, who="Claude"):
         return {"jobs": jobs.recent()}
     if name == "cancel":
         return jobs.view(jobs.cancel(args.get("job")))
+    if name == "make_3d":
+        if not core.shapes_ready():
+            raise RuntimeError("3D models are not set up in Pumpkin. The user can add them on the Images page "
+                               "(Linux and Windows).")
+        prompt = str(args.get("prompt") or "").strip()
+        picture = str(args.get("picture") or "").strip()
+        if not prompt and not picture:
+            raise ValueError("Give a picture path or a description of the object.")
+        if picture and not os.path.isfile(os.path.expanduser(picture)):
+            raise ValueError(f"There is no file at {picture}.")
+        q = args.get("quality") if args.get("quality") in ("fast", "detailed") else None
+        job = jobs.add("3d", {"prompt": prompt or os.path.basename(picture), "picture": picture, "quality": q}, who)
+        return jobs.view(jobs.wait(job, 2))
     if name == "load":
         p = core.find_preset(args.get("model"))
         if not p:

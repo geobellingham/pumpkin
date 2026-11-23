@@ -41,10 +41,11 @@ grep -q "version as builtVersion" "$PW"
 grep -q "builtVersion !== currentVersion" "$PW"
 # a picture the model drew (image_generate, image_edit) shows in the chat itself instead of inside a folded tool block
 TB=src/lib/components/app/chat/ChatMessages/ChatMessage/ChatMessageToolCall/ChatMessageToolCallBlock.svelte
-sed -i "0,/^\timport ChatMessageToolCallBlockDefault/s##\timport PumpkinToolImage from '\$lib/pumpkin/components/ToolImage.svelte';\n\timport PumpkinToolVideo from '\$lib/pumpkin/components/ToolVideo.svelte';\n&#" "$TB"
-sed -i "s#^{\#if isSearchCall}#{\#if section.toolName === 'image_generate' || section.toolName === 'image_edit'}\n\t<PumpkinToolImage {isStreaming} {section} />\n{:else if section.toolName === 'image_video'}\n\t<PumpkinToolVideo {isStreaming} {section} />\n{:else if isSearchCall}#" "$TB"
+sed -i "0,/^\timport ChatMessageToolCallBlockDefault/s##\timport PumpkinToolImage from '\$lib/pumpkin/components/ToolImage.svelte';\n\timport PumpkinToolVideo from '\$lib/pumpkin/components/ToolVideo.svelte';\n\timport PumpkinToolModel3D from '\$lib/pumpkin/components/ToolModel3D.svelte';\n&#" "$TB"
+sed -i "s#^{\#if isSearchCall}#{\#if section.toolName === 'image_generate' || section.toolName === 'image_edit'}\n\t<PumpkinToolImage {isStreaming} {section} />\n{:else if section.toolName === 'image_video'}\n\t<PumpkinToolVideo {isStreaming} {section} />\n{:else if section.toolName === 'image_3d'}\n\t<PumpkinToolModel3D {isStreaming} {section} />\n{:else if isSearchCall}#" "$TB"
 grep -q "PumpkinToolImage {isStreaming}" "$TB"
 grep -q "PumpkinToolVideo {isStreaming}" "$TB"
+grep -q "PumpkinToolModel3D {isStreaming}" "$TB"
 # the chat's full-screen preview of a page or drawing gets "Save to Files" and "Download"
 PV=src/lib/components/app/dialogs/DialogCodePreview.svelte
 sed -i "0,/^\timport XIcon/s##\timport PumpkinPreviewBar from '\$lib/pumpkin/components/PreviewBar.svelte';\n&#" "$PV"
@@ -56,7 +57,7 @@ LG=src/lib/components/app/misc/Logo.svelte
 sed -i "s#^\timport logoMark from '\$lib/assets/logo.svg?raw';#\timport plainMark from '\$lib/assets/logo.svg?raw';\n\timport jackMark from '\$lib/assets/logo-halloween.svg?raw';\n\timport { isHalloween } from '\$lib/pumpkin/season';\n\tconst logoMark = isHalloween() ? jackMark : plainMark;#" "$LG"
 grep -q "isHalloween() ? jackMark : plainMark" "$LG"
 npm ci --no-audit --no-fund
-npm install --no-save --no-audit --no-fund qrcode-generator@1.4.4 @fontsource-variable/geist@5.3.0 @fontsource-variable/geist-mono@5.3.0
+npm install --no-save --no-audit --no-fund qrcode-generator@1.4.4 @fontsource-variable/geist@5.3.0 @fontsource-variable/geist-mono@5.3.0 three@0.170.0 @types/three@0.170.0
 npm run build
 rm -rf "$OUT"
 cp -r dist "$OUT"

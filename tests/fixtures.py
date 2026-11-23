@@ -374,3 +374,89 @@ def make_fake_sd(path):
             f.write(f'@"{sys.executable}" "%~dp0{os.path.basename(path)}" %*\r\n')
         return path + ".cmd"
     return path
+
+
+FAKE_TRELLIS = r'''#!/usr/bin/env python3
+"""A stand-in for trellis-cli: checks its model folder, prints stages like the real one and writes a small .glb."""
+import json, os, struct, sys, time
+args = sys.argv[1:]
+def opt(*names, default=None):
+    for n in names:
+        if n in args:
+            return args[args.index(n) + 1]
+    return default
+if "--help" in args or "-h" in args:
+    print("usage: trellis-cli --image <image.png> --output <out.glb> [options]"); sys.exit(0)
+here = os.path.dirname(os.path.abspath(__file__))
+with open(os.path.join(here, "trellis-calls.jsonl"), "a") as f:
+    f.write(json.dumps(args) + "\n")
+models, image, out = opt("-m", "--models"), opt("-i", "--image"), opt("-o", "--output", default="model.glb")
+need = ["birefnet.gguf", "dinov3.gguf", "ss_flow.gguf", "ss_dec.gguf", "shape_flow_512.gguf", "shape_flow_1024.gguf",
+        "shape_dec.gguf", "tex_flow_512.gguf", "tex_flow_1024.gguf", "tex_dec.gguf"]
+missing = [n for n in need if not os.path.isfile(os.path.join(models or "", n))]
+if missing:
+    print("error: model file not found: " + missing[0]); sys.exit(1)
+if not image or not os.path.isfile(image):
+    print("error: cannot open input image"); sys.exit(1)
+for stage in ("background removal", "DINOv3 encode", "sparse structure flow", "shape flow", "texture flow", "export GLB"):
+    print("[trellis] " + stage, flush=True)
+    time.sleep(float(os.environ.get("FAKE_TRELLIS_STEP", "0.1")))
+    if os.environ.get("FAKE_TRELLIS_OOM") and stage == "shape flow":
+        print("ggml_vulkan: Device memory allocation of size 4294967296 failed.")
+        print("ggml_vulkan: vk::Device::allocateMemory: ErrorOutOfDeviceMemory"); sys.exit(1)
+# an orange cube with flat faces: 24 vertices (position + normal), 36 indices
+P, N, I = [], [], []
+for axis in range(3):
+    for sign in (1, -1):
+        base = len(P)
+        for u in (-1, 1):
+            for v in (-1, 1):
+                p = [0.0, 0.0, 0.0]
+                p[axis] = sign * 0.5; p[(axis + 1) % 3] = u * 0.5; p[(axis + 2) % 3] = v * 0.5
+                n = [0.0, 0.0, 0.0]; n[axis] = float(sign)
+                P.append(p); N.append(n)
+        I += [base, base + 3, base + 1, base, base + 2, base + 3] if sign > 0 else [base, base + 1, base + 3, base, base + 3, base + 2]
+pos = b"".join(struct.pack("<3f", *p) for p in P)
+nrm = b"".join(struct.pack("<3f", *n) for n in N)
+idx = b"".join(struct.pack("<H", i) for i in I)
+binary = pos + nrm + idx
+binary += b"\0" * (-len(binary) % 4)
+doc = json.dumps({
+    "asset": {"version": "2.0", "generator": "fake trellis"}, "scene": 0, "scenes": [{"nodes": [0]}],
+    "nodes": [{"mesh": 0}],
+    "meshes": [{"primitives": [{"attributes": {"POSITION": 0, "NORMAL": 1}, "indices": 2, "material": 0}]}],
+    "materials": [{"pbrMetallicRoughness": {"baseColorFactor": [0.92, 0.45, 0.12, 1], "metallicFactor": 0.0,
+                                            "roughnessFactor": 0.6}}],
+    "buffers": [{"byteLength": len(binary)}],
+    "bufferViews": [{"buffer": 0, "byteOffset": 0, "byteLength": len(pos)},
+                    {"buffer": 0, "byteOffset": len(pos), "byteLength": len(nrm)},
+                    {"buffer": 0, "byteOffset": len(pos) + len(nrm), "byteLength": len(idx)}],
+    "accessors": [{"bufferView": 0, "componentType": 5126, "count": 24, "type": "VEC3",
+                   "min": [-0.5, -0.5, -0.5], "max": [0.5, 0.5, 0.5]},
+                  {"bufferView": 1, "componentType": 5126, "count": 24, "type": "VEC3"},
+                  {"bufferView": 2, "componentType": 5123, "count": 36, "type": "SCALAR"}]}).encode()
+doc += b" " * (-len(doc) % 4)
+with open(out, "wb") as f:
+    f.write(struct.pack("<4sII", b"glTF", 2, 12 + 8 + len(doc) + 8 + len(binary)) +
+            struct.pack("<I4s", len(doc), b"JSON") + doc + struct.pack("<I4s", len(binary), b"BIN\0") + binary)
+print("[trellis] wrote " + out)
+'''
+
+
+def make_fake_trellis(path, models_dir=None):
+    """The fake trellis-cli, and (given a folder) the ten model files it checks for."""
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(FAKE_TRELLIS)
+    os.chmod(path, 0o755)
+    if models_dir:
+        os.makedirs(models_dir, exist_ok=True)
+        for n in ("birefnet.gguf", "dinov3.gguf", "ss_flow.gguf", "ss_dec.gguf", "shape_flow_512.gguf",
+                  "shape_flow_1024.gguf", "shape_dec.gguf", "tex_flow_512.gguf", "tex_flow_1024.gguf", "tex_dec.gguf"):
+            with open(os.path.join(models_dir, n), "wb") as f:
+                f.write(b"GGUF")
+    if os.name == "nt":
+        import sys
+        with open(path + ".cmd", "w", encoding="utf-8") as f:
+            f.write(f'@"{sys.executable}" "%~dp0{os.path.basename(path)}" %*\r\n')
+        return path + ".cmd"
+    return path

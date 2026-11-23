@@ -1,4 +1,4 @@
-"""Built-in MCP server for pictures and clips: the tools reach the model as image_generate, image_edit, image_video.
+"""Built-in MCP server for pictures and clips: the tools reach the model as image_generate, image_edit, image_video, image_3d.
 
 llama-server starts it as `python -m pumpkin.mcp_images`, so the chat's model sees the tool. The chat's own calls
 never get here: Pumpkin answers them itself (server.py), because it may have to stop llama-server to make room
@@ -29,10 +29,19 @@ TOOLS = [
          "prompt": {"type": "string"}, "shape": {"type": "string", "enum": SHAPES},
          "seconds": {"type": "number", "description": "Length, 1 to 5 seconds (default 2)"},
          "from_picture": {"type": "boolean"}}, "required": ["prompt"]}},
+    {"name": "3d", "description": "Make a 3D model the user can turn around and download (.glb). From the picture the "
+                                  "user attached or you drew (set from_picture), or from a short English description "
+                                  "of one object (a picture is drawn first). Slow: several minutes.",
+     "inputSchema": {"type": "object", "properties": {
+         "prompt": {"type": "string", "description": "The object, like \"a carved pumpkin lantern\""},
+         "from_picture": {"type": "boolean"},
+         "quality": {"type": "string", "enum": ["fast", "detailed"]}}, "required": []}},
 ]
 
 
 def call(name, args):
+    if name == "3d":
+        return _make_3d(args)
     if name not in ("generate", "edit", "video"):
         raise LookupError(f"Unknown tool {name}")
     s = config.Settings()
@@ -57,6 +66,28 @@ def call(name, args):
     if name == "video":
         return f"The video is saved as {res.get('path')} in the user's Files ({res.get('model')}, {res.get('seconds')} s)."
     return f"The picture is saved as {res.get('path')} in the user's Files ({res.get('model')}, {res.get('seconds')} s)."
+
+
+def _make_3d(args):
+    s = config.Settings()
+    body = json.dumps({"prompt": args.get("prompt", ""), "from_picture": bool(args.get("from_picture")),
+                       "source": args.get("source"), "quality": args.get("quality"), "swap": False}).encode()
+    req = urllib.request.Request(f"http://127.0.0.1:{int(s['port'])}/pumpkin/api/shapes/make", data=body,
+                                 method="POST", headers={"Content-Type": "application/json", "X-Pumpkin": "1",
+                                                         "Authorization": f"Bearer {config.token()}"})
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    try:
+        with opener.open(req, timeout=4 * 3600) as r:
+            res = json.loads(r.read().decode() or "{}")
+    except urllib.error.HTTPError as e:
+        try:
+            msg = json.loads(e.read().decode() or "{}").get("error")
+        except ValueError:
+            msg = None
+        raise RuntimeError(msg if isinstance(msg, str) else f"Pumpkin answered {e.code}")
+    except (urllib.error.URLError, OSError) as e:
+        raise RuntimeError(f"Could not reach Pumpkin: {e}")
+    return f"The 3D model is saved as {res.get('path')} in the user's Files ({res.get('quality')} quality, {res.get('seconds')} s)."
 
 
 def main():

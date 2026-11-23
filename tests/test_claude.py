@@ -57,7 +57,7 @@ class TestClaudeConnector(unittest.TestCase):
         self.assertEqual(r["result"]["protocolVersion"], "2025-06-18")
         self.assertIn("bulk or mechanical", r["result"]["instructions"])     # when to hand work over
         names = {t["name"] for t in self.rpc("tools/list")[1]["result"]["tools"]}
-        self.assertEqual(names, {"status", "ask", "batch", "result", "jobs", "cancel", "load"})
+        self.assertEqual(names, {"status", "ask", "batch", "result", "jobs", "cancel", "make_3d", "load"})
         st, _ = self.rpc("", raw=b'{"jsonrpc": "2.0", "method": "notifications/initialized"}')
         self.assertEqual(st, 202)
         s = self.tool("status")

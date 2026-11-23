@@ -1,4 +1,5 @@
 """The one web server: the UI, the /pumpkin/api control API, and a pass-through to llama-server."""
+import base64
 import gzip
 import hmac
 import html
@@ -28,6 +29,7 @@ self.addEventListener('activate', (e) => e.waitUntil((async () => {
 })()));
 """
 API = "/pumpkin/api/"
+mimetypes.add_type("model/gltf-binary", ".glb")          # 3D models; the viewer fetches them
 mimetypes.add_type("video/webm", ".webm")           # Windows may not know it, and the chat must play clips
 UPLOAD_LIMIT = 512 * 2 ** 20
 HOP = {"connection", "keep-alive", "proxy-authenticate", "proxy-authorization", "te", "trailers",
@@ -841,6 +843,53 @@ class Web:
                 core.delete_image(ident)
                 return core.images_state()
 
+        # ---- 3D models (shapes.py)
+        if head == "shapes":
+            if method == "GET" and not ident:
+                return core.shapes_state()
+            if ident == "install" and method == "POST":
+                try:
+                    return core.install_shapes()
+                except RuntimeError as e:
+                    raise ApiError(str(e), 409)
+            if ident == "engine" and method == "POST":
+                try:
+                    return {"job": core.download_shape_engine()["id"]}
+                except RuntimeError as e:
+                    raise ApiError(str(e), 409)
+            if ident == "cancel" and method == "POST":
+                return core.cancel_3d()
+            if ident == "settings" and method == "PUT":
+                q = str(body.get("quality") or "auto")
+                if q not in ("auto", "fast", "detailed"):
+                    raise ApiError("Quality is auto, fast or detailed.")
+                core.settings.update({"shape_quality": q})
+                return core.shapes_state()
+            if ident == "make" and method == "POST":
+                pic = None
+                raw = str(body.get("image") or "")
+                if raw:
+                    m = re.match(r"data:image/(?:png|jpe?g|webp);base64,(.+)$", raw, re.S)
+                    try:
+                        pic = base64.b64decode(m.group(1) if m else raw, validate=False)
+                    except (ValueError, TypeError):
+                        raise ApiError("The picture could not be read.")
+                    if len(pic) > 30_000_000:
+                        raise ApiError("The picture is too big (over 30 MB).", 413)
+                try:
+                    r = core.make_3d(body.get("prompt"), picture=pic, source=body.get("source"),
+                                     from_picture=bool(body.get("from_picture")), quality=body.get("quality"),
+                                     seed=body.get("seed"), swap_ok=body.get("swap", True) is not False)
+                except (RuntimeError, ValueError) as e:
+                    raise ApiError(str(e), 409)
+                r["url"] = f"{API}files/download?path={quote(r['path'])}&inline=1"
+                return r
+            if ident == "models" and method == "DELETE":
+                try:
+                    return core.delete_shapes()
+                except RuntimeError as e:
+                    raise ApiError(str(e), 409)
+
         # ---- models
         if head == "models":
             if method == "GET" and not ident:
@@ -1400,6 +1449,9 @@ class Web:
                     call = json.loads(body.decode() or "{}")
                 except (ValueError, UnicodeDecodeError):
                     call = {}
+                if isinstance(call, dict) and call.get("tool") == "image_3d":
+                    params = call.get("params") if isinstance(call.get("params"), dict) else {}
+                    return self.json(h, self.core.shape_tool(params))
                 if isinstance(call, dict) and call.get("tool") == "image_video":
                     params = call.get("params") if isinstance(call.get("params"), dict) else {}
                     return self.json(h, self.core.video_tool(params))
