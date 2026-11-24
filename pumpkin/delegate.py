@@ -95,7 +95,7 @@ TOOLS = [
      "inputSchema": {"type": "object", "properties": {
          "prompt": {"type": "string", "description": "The object, like \"a carved pumpkin lantern\"."},
          "picture": {"type": "string", "description": "Path of a picture file on the user's computer to turn into 3D."},
-         "quality": {"type": "string", "enum": ["fast", "detailed"], "description": "Default: what suits the "
+         "quality": {"type": "string", "enum": ["fast", "detailed", "best"], "description": "Default: what suits the "
                                                                                     "graphics card."}}}},
     {"name": "load", "description": "Load one of the models from status, so the next jobs do not wait for it.",
      "inputSchema": {"type": "object", "properties": {"model": {"type": "string"}}, "required": ["model"]}},
@@ -453,7 +453,7 @@ def call(core, name, args, who="Claude"):
             raise ValueError("Give a picture path or a description of the object.")
         if picture and not os.path.isfile(os.path.expanduser(picture)):
             raise ValueError(f"There is no file at {picture}.")
-        q = args.get("quality") if args.get("quality") in ("fast", "detailed") else None
+        q = args.get("quality") if args.get("quality") in ("fast", "detailed", "best") else None
         job = jobs.add("3d", {"prompt": prompt or os.path.basename(picture), "picture": picture, "quality": q}, who)
         return jobs.view(jobs.wait(job, 2))
     if name == "load":

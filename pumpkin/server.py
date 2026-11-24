@@ -860,11 +860,24 @@ class Web:
             if ident == "cancel" and method == "POST":
                 return core.cancel_3d()
             if ident == "settings" and method == "PUT":
-                q = str(body.get("quality") or "auto")
-                if q not in ("auto", "fast", "detailed"):
-                    raise ApiError("Quality is auto, fast or detailed.")
-                core.settings.update({"shape_quality": q})
+                ch = {}
+                if "quality" in body:
+                    ch["shape_quality"] = str(body.get("quality") or "auto")
+                    if ch["shape_quality"] not in ("auto", "fast", "detailed", "best"):
+                        raise ApiError("Quality is auto, fast, detailed or best.")
+                if "model" in body:
+                    ch["shape_model"] = str(body.get("model") or "auto")
+                    if ch["shape_model"] not in ("auto", "trellis", "pixal3d"):
+                        raise ApiError("The 3D model is auto, trellis or pixal3d.")
+                if "matte" in body:
+                    ch["shape_matte"] = bool(body.get("matte"))
+                core.settings.update(ch)
                 return core.shapes_state()
+            if ident == "pixal3d" and method == "POST":
+                try:
+                    return core.install_pixal()
+                except RuntimeError as e:
+                    raise ApiError(str(e), 409)
             if ident == "make" and method == "POST":
                 pic = None
                 raw = str(body.get("image") or "")
@@ -879,7 +892,8 @@ class Web:
                 try:
                     r = core.make_3d(body.get("prompt"), picture=pic, source=body.get("source"),
                                      from_picture=bool(body.get("from_picture")), quality=body.get("quality"),
-                                     seed=body.get("seed"), swap_ok=body.get("swap", True) is not False)
+                                     seed=body.get("seed"), swap_ok=body.get("swap", True) is not False,
+                                     model=body.get("model"), matte=body.get("matte"))
                 except (RuntimeError, ValueError) as e:
                     raise ApiError(str(e), 409)
                 r["url"] = f"{API}files/download?path={quote(r['path'])}&inline=1"

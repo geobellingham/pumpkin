@@ -271,8 +271,17 @@ Windows' 3D Viewer and web pages open it). Pumpkin runs [TRELLIS.2](https://gith
 
 Models are saved in `Files/3d`, and a picture drawn for one in `Files/images`.
 
-- **Quality.** *Detailed* (1024) needs about a 16 GB graphics card; *Fast* (512) suits smaller cards and is quicker.
-  *Auto* picks by your card.
+- **Pixal3D.** *Add Pixal3D* (about 10 GB more; it shares the other files) gives a fine-tune of TRELLIS.2 whose
+  shape follows the picture much more closely. Once it is in, Pumpkin uses it, except at *Fast*, where Pixal3D has
+  no texture model and TRELLIS.2 takes over. *Model* switches back to TRELLIS.2.
+- **Quality.** *Fast* (512) suits smaller cards and is quickest. *Detailed* (1024) needs about a 16 GB graphics
+  card and bakes the colours at full resolution. *Best* (1536, 4096 texture) is the finest and slowest; if the card
+  runs out of memory it goes again at *Detailed* by itself. *Auto* picks by your card.
+- **Matte surfaces.** TRELLIS often makes fabric and plastic partly metallic, so dark clothes come out looking like
+  black plastic. *Matte surfaces* takes the metal look off the saved file; shape and colours stay. Leave it off for
+  real metal.
+- **The viewer** has three looks: *As made*, *Matte* (the metal taken off, only on screen) and *Clay* (plain grey, to
+  judge the shape).
 - **Time.** A few minutes on a good graphics card, longer on a laptop or integrated graphics. The progress shows on
   the Images page and the Overview, and **Stop** ends it at once.
 - **Pictures that work best**: one whole object, plainly lit, on a simple background. The engine cuts the object out
@@ -736,6 +745,8 @@ pumpkin --version           which version you have
 | Pumpkin opens as a browser tab on Linux | Install `python3-gi gir1.2-webkit2-4.1` and open it again. If you installed Pumpkin with a Python virtual environment switched on, run the install command again without it. |
 | Claude doesn't see Pumpkin | Claude Code: `claude mcp list` should show `pumpkin`. If not, run the command from Devices > *Use with Claude* again. Claude Desktop: restart it after editing the config, and check the path in the config still exists. |
 | Claude's jobs fail with "does not fit" | The preset's context is too small for that file. Raise *Context* in the preset, or ask Claude to split the job. |
-| A 3D model fails with "ran out of graphics memory" | Set *Quality* to *Fast*, or Images > *Pause the text model* to *Always*. |
+| A 3D model fails with "ran out of graphics memory" | Set *Quality* lower, or Images > *Pause the text model* to *Always*. |
+| A 3D model of dark clothes looks like black plastic | Turn on *Matte surfaces*, and check the shape with *Clay* in the viewer. |
+| The 3D model does not match the picture | Add Pixal3D, use one whole object with space around it on a plain background, and avoid cropped photos. |
 | No image engine on an older Linux | stable-diffusion.cpp's newest builds need a recent system (glibc). Pumpkin tries older releases; if none runs, update the system or let a paired PC draw. |
 | Anything else | The Doctor page. If it doesn't help, open an issue on GitHub with what it shows. |

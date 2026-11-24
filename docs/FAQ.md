@@ -86,8 +86,13 @@ microseconds per word, against the 5 to 20 milliseconds the model needs to write
 
 **Can it make 3D models?**
 Yes, on Linux and Windows. Install *3D models* on the Images page (about 16 GB), then turn a picture into a textured
-`.glb`, or describe an object and the image model draws it first. A model takes a few minutes; *Detailed* quality
-needs about a 16 GB graphics card, *Fast* suits smaller ones. See the [guide](GUIDE.md#3d-models).
+`.glb`, or describe an object and the image model draws it first. Add Pixal3D for shapes that follow the picture
+more closely, and pick *Best* on a 16 GB card or bigger. See the [guide](GUIDE.md#3d-models).
+
+**My 3D model looks bad. Why?**
+Usually the picture: a cropped photo, several objects, a busy background or a person (faces are the hardest part).
+Dark clothes can also come out looking like black plastic because the model guesses metal; *Matte surfaces* fixes
+that. Use *Clay* in the viewer to see whether the shape itself is good.
 
 ## Privacy and security
 

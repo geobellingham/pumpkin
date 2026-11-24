@@ -34,15 +34,47 @@ class TestEngineChoice(unittest.TestCase):
         self.assertEqual([(r["tag_name"], a["name"]) for r, a in win], [("v0.8.1", "trellis-vulkan-windows-x64.zip")])
 
     def test_quality_follows_the_graphics_card(self):
-        self.assertEqual(shapes.default_res({"main_gpu": {"vram_total": 16.0}}), 1024)
+        self.assertEqual(shapes.default_quality({"main_gpu": {"vram_total": 16.0}}), "detailed")
+        self.assertEqual(shapes.default_quality({"main_gpu": {"vram_total": 24.0}}), "best")
         self.assertEqual(shapes.default_res({"main_gpu": {"vram_total": 8.0}}), 512)
         self.assertEqual(shapes.default_res({"main_gpu": None, "ram_total": 64}), 512)
         self.assertEqual(shapes.default_res({"main_gpu": {"unified": True}, "ram_total": 32}), 1024)
 
+    def test_pixal3d_when_it_is_in_and_the_quality_has_a_texture_model(self):
+        self.assertEqual(shapes.choose_family("auto", True, 1024), "pixal3d")
+        self.assertEqual(shapes.choose_family("auto", True, 512), "trellis")       # Pixal3D has no 512 texture
+        self.assertEqual(shapes.choose_family("auto", False, 1536), "trellis")
+        self.assertEqual(shapes.choose_family("trellis", True, 1536), "trellis")
+
+    def test_what_each_quality_asks_the_engine_for(self):
+        def cmd(res, family="trellis"):
+            return shapes.Run("cli", "m", "in.png", "out.glb", res, family=family).cmd
+        self.assertNotIn("--tex-res", cmd(512))
+        self.assertEqual(cmd(1024)[-2:], ["--tex-res", "1024"])           # the full colour volume, not 512
+        best = cmd(1536, "pixal3d")
+        self.assertIn("--model", best)
+        self.assertEqual(best[best.index("--atlas") + 1], "4096")
+
+    def test_matte_takes_the_metal_off_and_nothing_else(self):
+        import struct
+        doc = json.dumps({"asset": {"version": "2.0"}, "materials": [{"pbrMetallicRoughness": {
+            "baseColorTexture": {"index": 0}, "metallicFactor": 1.0}}]}).encode()
+        doc += b" " * (-len(doc) % 4)
+        binary = b"\x01\x02\x03\x04" * 5
+        glb = struct.pack("<4sII", b"glTF", 2, 12 + 8 + len(doc) + 8 + len(binary)) + struct.pack("<I4s", len(doc), b"JSON") \
+            + doc + struct.pack("<I4s", len(binary), b"BIN\0") + binary
+        out = shapes.matte(glb)
+        self.assertEqual(struct.unpack("<I", out[8:12])[0], len(out))
+        jlen = struct.unpack("<I", out[12:16])[0]
+        mat = json.loads(out[20:20 + jlen])["materials"][0]["pbrMetallicRoughness"]
+        self.assertEqual((mat["metallicFactor"], mat["baseColorTexture"]), (0.0, {"index": 0}))
+        self.assertTrue(out.endswith(struct.pack("<I4s", len(binary), b"BIN\0") + binary))
+        self.assertEqual(shapes.matte(b"not a glb"), b"not a glb")
+
     def test_a_picture_made_for_3d(self):
         p = shapes.picture_prompt("  a carved pumpkin lantern. ")
         self.assertTrue(p.startswith("a single a carved pumpkin lantern,"))
-        self.assertIn("plain white background", p)
+        self.assertIn("plain light grey background", p)   # white cuts out badly from white objects
 
 
 class TestWhereItRuns(unittest.TestCase):
@@ -137,6 +169,8 @@ class TestShapes(unittest.TestCase):
         self.assertEqual(st, 200)
         self.assertTrue(s["supported"] and s["ready"] and s["installed"], s)
         self.assertEqual(s["auto"], "detailed")                  # a 16 GB card
+        self.assertFalse(s["pixal3d"]["installed"])
+        self.assertEqual(set(s["fits"]), {"fast", "detailed", "best"})
         self.assertTrue(s["draws"])
         self.assertTrue(self.core.shapes_ready())
 
@@ -160,7 +194,7 @@ class TestShapes(unittest.TestCase):
         st, r, _ = self.call("POST", "/pumpkin/api/shapes/make", {"prompt": "a carved pumpkin lantern"}, timeout=180)
         self.assertEqual(st, 200, r)
         self.assertTrue(r["picture"].startswith("images/a-single-a-carved-pumpkin-lantern"), r)
-        self.assertEqual(r["res"], 1024)                         # auto on a 16 GB card
+        self.assertEqual((r["res"], r["quality"]), (1024, "detailed"))        # auto on a 16 GB card
         self.assertTrue(os.path.isfile(os.path.join(self.files, r["picture"])))
         self.assertIn("trellis-work", self.last_call()[self.last_call().index("-i") + 1])   # the drawn picture went in
 
@@ -213,6 +247,7 @@ class TestShapes(unittest.TestCase):
         self.assertEqual(s["quality"], "fast")
         self.assertEqual(self.core.shape_res(), 512)
         self.assertEqual(self.call("PUT", "/pumpkin/api/shapes/settings", {"quality": "huge"})[0], 400)
+        self.assertEqual(self.call("PUT", "/pumpkin/api/shapes/settings", {"model": "hunyuan"})[0], 400)
         self.call("PUT", "/pumpkin/api/shapes/settings", {"quality": "auto"})
         self.assertEqual(self.call("POST", "/pumpkin/api/shapes/make", {})[0], 409)
 
@@ -227,6 +262,54 @@ class TestShapes(unittest.TestCase):
             self.assertIn("not installed", r["error"])
         finally:
             os.rename(os.path.join(folder, "tex_dec.bak"), os.path.join(folder, "tex_dec.gguf"))
+
+    def glb_metal(self, path):
+        import struct
+        with open(os.path.join(self.files, path), "rb") as f:
+            d = f.read()
+        jlen = struct.unpack("<I", d[12:16])[0]
+        return json.loads(d[20:20 + jlen])["materials"][0]["pbrMetallicRoughness"]["metallicFactor"]
+
+    def test_a_pixal3d_best_and_matte(self):
+        folder = os.path.join(self.image_dir, shapes.FOLDER)
+        st, r, _ = self.call("POST", "/pumpkin/api/shapes/pixal3d", {})
+        self.assertEqual(st, 200, r)                                # (the fake Hugging Face is not there: queued)
+        fixtures.make_fake_trellis(os.path.join(self.tmp, "bin", "trellis-cli"), folder, pixal=True)
+        try:
+            st, s, _ = self.call("PUT", "/pumpkin/api/shapes/settings", {"quality": "best", "matte": True})
+            self.assertTrue(s["pixal3d"]["installed"] and s["matte"], s)
+            st, r, _ = self.call("POST", "/pumpkin/api/shapes/make", {"prompt": "jacket", "image": base64.b64encode(PNG).decode()})
+            self.assertEqual(st, 200, r)
+            self.assertEqual((r["model"], r["quality"], r["res"], r["fell_back"], r["matte"]),
+                             ("Pixal3D", "best", 1536, False, True))
+            args = self.last_call()
+            self.assertEqual(args[args.index("--model") + 1], "pixal3d")
+            self.assertEqual(args[args.index("--atlas") + 1], "4096")
+            self.assertEqual(self.glb_metal(r["path"]), 0.0)          # the metal look is gone
+            # Best did not fit: it goes again at Detailed, by itself
+            os.environ["FAKE_TRELLIS_OOM"] = "1536"
+            try:
+                st, r, _ = self.call("POST", "/pumpkin/api/shapes/make",
+                                     {"prompt": "jacket", "image": base64.b64encode(PNG).decode(), "matte": False})
+            finally:
+                os.environ.pop("FAKE_TRELLIS_OOM")
+            self.assertEqual(st, 200, r)
+            self.assertEqual((r["quality"], r["res"], r["fell_back"]), ("detailed", 1024, True))
+            self.assertEqual(self.glb_metal(r["path"]), 1.0)          # as made
+            # TRELLIS.2 when asked for, even with Pixal3D in
+            st, r, _ = self.call("POST", "/pumpkin/api/shapes/make", {"prompt": "jacket", "model": "trellis",
+                                                                      "image": base64.b64encode(PNG).decode()})
+            self.assertNotIn("--model", self.last_call())
+            self.assertEqual(r["model"], "TRELLIS.2")
+        finally:
+            self.call("PUT", "/pumpkin/api/shapes/settings", {"quality": "auto", "matte": False, "model": "auto"})
+            for n in shapes.PIXAL_FILES:
+                try:
+                    os.remove(os.path.join(folder, n))
+                except OSError:
+                    pass
+            for d in self.core.downloads.list():
+                self.core.downloads.cancel(d["id"])
 
     def test_9_claude_can_ask_for_one(self):
         from pumpkin import delegate

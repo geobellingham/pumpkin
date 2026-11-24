@@ -51,8 +51,8 @@ usual questions.
   picture to life. The clip plays in the chat and is saved in your Files. Be patient: a few seconds of
   video take several minutes even on a good graphics card, and up to 5 seconds per clip.
 - **It makes 3D models.** Turn a picture into a textured 3D model you can turn around in the chat and download
-  as a `.glb`, or describe an object and Pumpkin draws it first. It runs Microsoft's TRELLIS.2 through
-  [trellis.cpp](https://github.com/pwilkin/trellis.cpp) on your graphics card (Linux and Windows).
+  as a `.glb`, or describe an object and Pumpkin draws it first. It runs Microsoft's TRELLIS.2, or the closer
+  Pixal3D, through [trellis.cpp](https://github.com/pwilkin/trellis.cpp) on your graphics card (Linux and Windows).
 - **It keeps your place.** When a model stops or is swapped out (to draw a picture, say), Pumpkin saves the
   conversation it has read and loads it back at the next start, so a long chat with a big context does not
   have to be read again. Switch it off in Settings.

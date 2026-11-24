@@ -1,5 +1,6 @@
 """3D models: Pumpkin runs trellis.cpp (Microsoft's TRELLIS.2 in C++/ggml) to turn a picture into a textured 3D
-model, a .glb file any 3D program, game engine or web page opens.
+model, a .glb file any 3D program, game engine or web page opens. With five more files the same engine runs Pixal3D,
+a TRELLIS.2 fine-tune whose shape follows the picture much more closely.
 
 - The engine (trellis-cli) is downloaded from trellis.cpp's GitHub releases, the Vulkan build (it runs on AMD, NVIDIA
   and Intel cards, and on the processor without one), checked against the checksums GitHub publishes.
@@ -28,9 +29,16 @@ FILES = ["birefnet.gguf", "dinov3.gguf", "ss_flow.gguf", "ss_dec.gguf", "shape_f
 ENGINE_DIR = os.path.join(config.DATA_DIR, "trellis")
 LOG_PATH = os.path.join(config.STATE_DIR, "trellis.log")
 FOLDER = "trellis2"
+PIXAL_REPO = "vegax87/Pixal3D"         # the Pixal3D-specific files, named as trellis.cpp expects them
+PIXAL_FILES = ["pixal3d_ss_flow.gguf", "pixal3d_shape_flow_512.gguf", "pixal3d_shape_flow_1024.gguf",
+               "pixal3d_tex_flow_1024.gguf", "pixal3d_naf.gguf"]
 SIZE_GB = 16.5                         # the ten files, until Hugging Face says exactly
-QUALITY = {"fast": 512, "detailed": 1024}
-NEEDS_GB = {512: 7.0, 1024: 13.0}      # graphics memory a run takes at its peak, about
+PIXAL_GB = 10.5
+# each quality: geometry resolution, and what else goes to trellis-cli. The engine's own default bakes the colours of
+# a 1024 model from a 512 volume, which is why they looked soft: detailed and best ask for the full 1024 volume.
+QUALITY = {"fast": 512, "detailed": 1024, "best": 1536}
+EXTRA = {"fast": [], "detailed": ["--tex-res", "1024"], "best": ["--tex-res", "1024", "--atlas", "4096"]}
+NEEDS_GB = {512: 7.0, 1024: 13.0, 1536: 15.5}   # graphics memory a run takes at its peak, about
 TIMEOUT = 3 * 3600
 
 
@@ -153,12 +161,19 @@ def models_dir(settings):
 
 
 def installed(settings):
-    """{ready, partial, missing, folder, size_gb} for the ten model files."""
+    """{ready, partial, missing, folder, size_gb, pixal3d: {ready, partial, missing}} for the model files."""
     folder = models_dir(settings)
-    have = [f for f in FILES if os.path.isfile(os.path.join(folder, f)) and os.path.getsize(os.path.join(folder, f))]
-    size = sum(os.path.getsize(os.path.join(folder, f)) for f in have) / images.GiB
+
+    def there(f):
+        p = os.path.join(folder, f)
+        return os.path.isfile(p) and os.path.getsize(p) > 0
+    have = [f for f in FILES if there(f)]
+    pix = [f for f in PIXAL_FILES if there(f)]
+    size = sum(os.path.getsize(os.path.join(folder, f)) for f in have + pix) / images.GiB
     return {"ready": len(have) == len(FILES), "partial": 0 < len(have) < len(FILES),
-            "missing": [f for f in FILES if f not in have], "folder": folder, "size_gb": round(size, 1)}
+            "missing": [f for f in FILES if f not in have], "folder": folder, "size_gb": round(size, 1),
+            "pixal3d": {"ready": len(have) == len(FILES) and len(pix) == len(PIXAL_FILES),
+                        "partial": 0 < len(pix) < len(PIXAL_FILES), "missing": [f for f in PIXAL_FILES if f not in pix]}}
 
 
 def total_size(token=None):
@@ -173,21 +188,60 @@ def total_size(token=None):
     return round(sum(sizes[f] for f in FILES) / images.GiB, 1)
 
 
-def default_res(hw):
-    """1024 needs about a 16 GB card; smaller cards, and computers without one, get 512."""
+def _vram(hw):
     g = (hw or {}).get("main_gpu") or {}
-    vram = 0 if g.get("too_old") else (g.get("vram_total") or 0)
     if g.get("unified"):
-        vram = (hw or {}).get("ram_total", 0) * 0.6
-    return 1024 if vram >= 15 else 512
+        return (hw or {}).get("ram_total", 0) * 0.6
+    return 0 if g.get("too_old") else (g.get("vram_total") or 0)
+
+
+def default_quality(hw):
+    """Detailed needs about a 16 GB card and Best more; smaller cards, and computers without one, get Fast."""
+    vram = _vram(hw)
+    return "best" if vram >= 22 else "detailed" if vram >= 15 else "fast"
+
+
+def default_res(hw):
+    return QUALITY[default_quality(hw)]
+
+
+def choose_family(want, pixal_ready, res):
+    """Pixal3D when it is in (its shape follows the picture), except at 512, where it has no texture model."""
+    want = str(want or "auto").lower()
+    if want == "trellis" or not pixal_ready or res < 1024:
+        return "trellis"
+    return "pixal3d"
+
+
+def matte(glb):
+    """The .glb with every material's metalness set to 0. TRELLIS often makes fabric and plastic partly metallic,
+    which shows as dark, shiny clothes; the colours and the shape stay as they were."""
+    import struct
+    if glb[:4] != b"glTF" or len(glb) < 20:
+        return glb
+    jlen, jtype = struct.unpack("<I4s", glb[12:20])
+    if jtype != b"JSON":
+        return glb
+    doc = json.loads(glb[20:20 + jlen].decode("utf-8"))
+    for m in doc.get("materials") or []:
+        m.setdefault("pbrMetallicRoughness", {})["metallicFactor"] = 0.0
+    body = json.dumps(doc, separators=(",", ":")).encode("utf-8")
+    body += b" " * (-len(body) % 4)
+    rest = glb[20 + jlen:]
+    return struct.pack("<4sII", b"glTF", 2, 12 + 8 + len(body) + len(rest)) + struct.pack("<I4s", len(body), b"JSON") \
+        + body + rest
 
 
 # ---------------------------------------------------------------- one run
 class Run:
     """One trellis-cli run: a picture in, a .glb out. Progress is the last line it printed."""
 
-    def __init__(self, cli, models, picture, out, res=1024, seed=None, faces=None, threads=0):
+    def __init__(self, cli, models, picture, out, res=1024, seed=None, faces=None, threads=0, family="trellis",
+                 quality=None):
         self.cmd = [cli, "-i", picture, "-o", out, "-m", models, "--res", str(int(res))]
+        if family == "pixal3d":
+            self.cmd += ["--model", "pixal3d"]
+        self.cmd += EXTRA.get(quality or {512: "fast", 1024: "detailed", 1536: "best"}.get(int(res), "detailed"), [])
         if seed is not None and str(seed).strip() not in ("", "-1"):
             self.cmd += ["-s", str(int(seed))]
         if faces:
@@ -262,7 +316,7 @@ def out_of_memory():
 
 def explain():
     if out_of_memory():
-        return ("The 3D engine ran out of graphics memory. Try Fast quality, or stop the text model while it works "
+        return ("The 3D engine ran out of graphics memory. Try a lower quality, or stop the text model while it works "
                 "(Images > the text model pauses: Always).")
     hits = [l.strip() for l in log_tail(60).splitlines()
             if re.search(r"error|fail|abort|assert|not found|cannot|unsupported", l, re.I)]
@@ -273,8 +327,8 @@ def explain():
 
 
 # what a picture made for 3D should look like: one whole object the engine can cut out cleanly
-PICTURE_HINT = ("a single {what}, the whole object in view, centered, three-quarter view, studio product shot, "
-                "soft even light, plain white background, no shadows, no text")
+PICTURE_HINT = ("a single {what}, the whole object in view with space around it, centered, studio product shot, "
+                "soft even light, plain light grey background, no shadows, no text")
 
 
 def picture_prompt(what):

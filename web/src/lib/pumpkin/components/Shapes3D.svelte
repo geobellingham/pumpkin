@@ -9,11 +9,21 @@
 	import ModelViewer from './ModelViewer.svelte';
 	import Progress from './Progress.svelte';
 	import Segmented from './Segmented.svelte';
+	import Toggle from './Toggle.svelte';
 	import { api, pumpkin } from '../store.svelte';
 	import { onDestroy, onMount } from 'svelte';
 
+	interface Fit {
+		level: string;
+		text: string;
+	}
+
 	interface State {
-		auto: 'fast' | 'detailed';
+		auto: 'fast' | 'detailed' | 'best';
+		fits: Record<string, Fit>;
+		matte: boolean;
+		model: 'auto' | 'trellis' | 'pixal3d';
+		pixal3d: { done: number; downloading: boolean; error: string | null; installed: boolean; partial: boolean; size_gb: number; total: number };
 		done: number;
 		downloading: boolean;
 		draws: boolean;
@@ -24,7 +34,7 @@
 		folder: string;
 		installed: boolean;
 		partial: boolean;
-		progress: { detail?: string; since: number; stage: string; swapped?: boolean } | null;
+		progress: { detail?: string; family?: string; quality?: string; since: number; stage: string; swapped?: boolean } | null;
 		quality: string;
 		ready: boolean;
 		size_gb: number;
@@ -33,6 +43,9 @@
 	}
 
 	interface Made {
+		fell_back: boolean;
+		matte: boolean;
+		model: string;
 		path: string;
 		picture: string | null;
 		quality: string;
@@ -43,6 +56,8 @@
 
 	let st = $state<State | null>(null);
 	let quality = $state('auto');
+	let family = $state('pixal3d');
+	let matte = $state(false);
 	let prompt = $state('');
 	let picture = $state<{ data: string; name: string } | null>(null);
 	let making = $state(false);
@@ -58,6 +73,8 @@
 		if (r) {
 			st = r;
 			quality = r.quality;
+			family = r.model === 'trellis' ? 'trellis' : 'pixal3d';
+			matte = r.matte;
 		}
 
 		engineJob = st?.engine_job ? await api<typeof engineJob>(`jobs/${st.engine_job}`).catch(() => null) : engineJob?.state === 'error' ? engineJob : null;
@@ -68,7 +85,7 @@
 		timer = setInterval(() => {
 			now = Date.now();
 
-			if (st?.downloading || st?.engine_job || st?.progress || making) void load();
+			if (st?.downloading || st?.pixal3d?.downloading || st?.engine_job || st?.progress || making) void load();
 		}, 2000);
 	});
 
@@ -86,6 +103,18 @@
 
 	async function setQuality(v: string) {
 		await pumpkin.run(() => api('shapes/settings', { body: { quality: v }, method: 'PUT' }), 'Saved');
+	}
+
+	async function setFamily(v: string) {
+		await pumpkin.run(() => api('shapes/settings', { body: { model: v === 'trellis' ? 'trellis' : 'auto' }, method: 'PUT' }), 'Saved');
+	}
+
+	async function setMatte(v: boolean) {
+		await pumpkin.run(() => api('shapes/settings', { body: { matte: v }, method: 'PUT' }), v ? 'Matte surfaces' : 'Surfaces as made');
+	}
+
+	async function installPixal() {
+		if (await pumpkin.run(() => api<State>('shapes/pixal3d', { body: {} }), 'Downloading Pixal3D')) void load();
 	}
 
 	function pick(e: Event) {
@@ -128,6 +157,7 @@
 	}
 
 	const elapsed = $derived(st?.progress ? Math.max(0, Math.round(now / 1000 - st.progress.since)) : 0);
+	const QNAME: Record<string, string> = { best: 'Best', detailed: 'Detailed', fast: 'Fast' };
 	const stage = $derived(
 		st?.progress?.stage === 'drawing'
 			? 'Drawing the picture first…'
@@ -136,7 +166,7 @@
 </script>
 
 <Card
-	description="Turn a picture into a textured 3D model you can turn around and download (.glb, opens in Blender, game engines and 3D viewers). From words, the image model draws the picture first. It runs TRELLIS.2 on this computer and takes a few minutes."
+	description="Turn a picture into a textured 3D model you can turn around and download (.glb, opens in Blender, game engines and 3D viewers). From words, the image model draws the picture first. It runs on this computer and takes a few minutes. Best results: one whole object, evenly lit, on a plain background, with space around it."
 	title="3D models"
 >
 	{#if st === null}
@@ -169,18 +199,56 @@
 			{/if}
 		</div>
 
+		{#if st.ready}
+			<div class="mt-4">
+				<p class="mb-2 text-sm">Model</p>
+				{#if st.pixal3d.installed}
+					<Segmented
+						bind:value={family}
+						onchange={setFamily}
+						options={[
+							{ label: 'Pixal3D', value: 'pixal3d' },
+							{ label: 'TRELLIS.2', value: 'trellis' }
+						]}
+					/>
+					<p class="mt-1 text-xs text-muted-foreground">Pixal3D follows the picture more closely. At Fast it hands over to TRELLIS.2, which has the smaller texture model.</p>
+				{:else}
+					<div class="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-muted/40 p-3">
+						<div class="min-w-0">
+							<p class="text-sm font-medium">Pixal3D</p>
+							<p class="text-xs text-muted-foreground">A TRELLIS.2 fine-tune whose shape follows the picture much more closely. About {st.pixal3d.size_gb} GB more; it shares the other files.</p>
+							{#if st.pixal3d.downloading}
+								<div class="mt-2 w-64 max-w-full"><Progress done={st.pixal3d.done} label="Downloading" total={st.pixal3d.total} /></div>
+							{/if}
+							{#if st.pixal3d.error}<p class="mt-1 text-xs text-red-600 dark:text-red-400">{st.pixal3d.error}</p>{/if}
+						</div>
+						{#if !st.pixal3d.downloading}
+							<Button class="rounded-full" onclick={installPixal} size="sm" variant="outline"><Download class="mr-1.5 h-4 w-4" />{st.pixal3d.partial || st.pixal3d.error ? 'Resume' : 'Add Pixal3D'}</Button>
+						{/if}
+					</div>
+				{/if}
+			</div>
+		{/if}
+
 		<div class="mt-4">
 			<p class="mb-2 text-sm">Quality</p>
 			<Segmented
 				bind:value={quality}
 				onchange={setQuality}
 				options={[
-					{ label: `Auto (${st.auto === 'detailed' ? 'detailed' : 'fast'})`, value: 'auto' },
+					{ label: `Auto (${QNAME[st.auto].toLowerCase()})`, value: 'auto' },
 					{ label: 'Fast', value: 'fast' },
-					{ label: 'Detailed', value: 'detailed' }
+					{ label: 'Detailed', value: 'detailed' },
+					{ label: 'Best', value: 'best' }
 				]}
 			/>
-			<p class="mt-1 text-xs text-muted-foreground">Detailed needs about a 16 GB graphics card and takes longer. Fast suits smaller cards.</p>
+			<p class="mt-1 text-xs text-muted-foreground">
+				Fast suits smaller cards. Detailed needs about a 16 GB graphics card. Best is finer still with sharper textures, takes the longest, and drops to Detailed by itself if the card runs out of memory.{st.fits?.best ? ` Best here: ${st.fits.best.text.toLowerCase()}.` : ''}
+			</p>
+		</div>
+
+		<div class="mt-4">
+			<Toggle bind:checked={matte} description="TRELLIS often makes fabric and plastic partly metallic, so dark clothes come out looking like black plastic. This takes the metal look off the saved model; shape and colours stay. Leave it off for real metal." label="Matte surfaces" onchange={setMatte} />
 		</div>
 
 		{#if st.ready}
@@ -214,7 +282,7 @@
 
 			{#if st.progress}
 				<div class="mt-3 text-sm text-muted-foreground">
-					<p>{stage} {Math.floor(elapsed / 60)}:{String(elapsed % 60).padStart(2, '0')}</p>
+					<p>{stage} {Math.floor(elapsed / 60)}:{String(elapsed % 60).padStart(2, '0')}{st.progress.quality ? ` · ${QNAME[st.progress.quality] ?? ''}${st.progress.family === 'pixal3d' ? ', Pixal3D' : ''}` : ''}</p>
 					{#if st.progress.detail}<p class="mt-1 truncate font-mono text-xs">{st.progress.detail}</p>{/if}
 				</div>
 			{/if}
@@ -223,7 +291,7 @@
 				<figure class="mt-4">
 					<ModelViewer src={made.url} />
 					<figcaption class="mt-1 text-xs text-muted-foreground">
-						{made.quality === 'detailed' ? 'Detailed' : 'Fast'}, {Math.round(made.seconds)} s{made.swapped ? ', the text model paused meanwhile' : ''}. Saved in Files as {made.path}{made.picture ? `, from the picture ${made.picture}` : ''}.
+						{made.model}, {QNAME[made.quality] ?? made.quality}{made.fell_back ? ' (Best did not fit the card)' : ''}{made.matte ? ', matte' : ''}, {made.seconds >= 60 ? `${Math.floor(made.seconds / 60)} min ${Math.round(made.seconds % 60)} s` : `${Math.round(made.seconds)} s`}{made.swapped ? ', the text model paused meanwhile' : ''}. Saved in Files as {made.path}{made.picture ? `, from the picture ${made.picture}` : ''}.
 						<a class="underline" download href={made.url}>Download</a>
 					</figcaption>
 				</figure>

@@ -1500,30 +1500,42 @@ class Core:
             return False
         return bool(shapes.find_engine(self.settings)) and shapes.installed(self.settings)["ready"]
 
-    def shape_res(self, quality=None):
+    def shape_quality(self, quality=None):
+        """fast, detailed or best: the one asked for, the one set on the Images page, or what suits the card."""
         q = str(quality or self.settings["shape_quality"] or "auto").lower()
-        if q in shapes.QUALITY:
-            return shapes.QUALITY[q]
-        return shapes.default_res(self.hardware())
+        return q if q in shapes.QUALITY else shapes.default_quality(self.hardware())
+
+    def shape_res(self, quality=None):
+        return shapes.QUALITY[self.shape_quality(quality)]
 
     def shapes_state(self):
         inst = shapes.installed(self.settings)
         folder = os.path.normpath(inst["folder"])
-        dls = [j for j in self.downloads.list() if j.get("kind") == "3d" and os.path.normpath(j["dest"]) == folder]
+        mine = [j for j in self.downloads.list() if j.get("kind") == "3d" and os.path.normpath(j["dest"]) == folder]
+        dls = [j for j in mine if j.get("repo") != shapes.PIXAL_REPO]
+        pdl = [j for j in mine if j.get("repo") == shapes.PIXAL_REPO]
         active = [j for j in dls if j["state"] in ("queued", "downloading")]
         failed = next((j["error"] for j in dls if j["state"] == "error"), None)
+        pactive = [j for j in pdl if j["state"] in ("queued", "downloading")]
         job = next((j for j in self.jobs.values() if j["kind"] == "3d-engine" and j["state"] == "running"), None)
         if self.shape_size is None and shapes.supported() and not inst["ready"]:
             threading.Thread(target=self._shape_size, daemon=True).start()
         hw = self.hardware()
-        auto = shapes.default_res(hw)
+        auto = shapes.default_quality(hw)
+        pix = inst["pixal3d"]
         return {"supported": shapes.supported(), "ready": self.shapes_ready(), "engine": shapes.engine_info(self.settings),
                 "engine_job": job["id"] if job else None, "installed": inst["ready"], "partial": inst["partial"],
                 "downloading": bool(active), "error": None if active else failed,
                 "done": sum(j["done"] for j in dls), "total": sum(j["total"] for j in dls),
                 "size_gb": inst["size_gb"] if inst["ready"] else (self.shape_size or shapes.SIZE_GB),
-                "quality": self.settings["shape_quality"], "auto": "detailed" if auto >= 1024 else "fast",
-                "fit": images.fit(shapes.NEEDS_GB[1024 if auto >= 1024 else 512], hw, "vulkan"),
+                "quality": self.settings["shape_quality"], "auto": auto,
+                "fit": images.fit(shapes.NEEDS_GB[shapes.QUALITY[auto]], hw, "vulkan"),
+                "fits": {q: images.fit(shapes.NEEDS_GB[r], hw, "vulkan") for q, r in shapes.QUALITY.items()},
+                "model": self.settings["shape_model"], "matte": bool(self.settings["shape_matte"]),
+                "pixal3d": {"installed": pix["ready"], "partial": pix["partial"], "downloading": bool(pactive),
+                            "done": sum(j["done"] for j in pdl), "total": sum(j["total"] for j in pdl),
+                            "error": None if pactive else next((j["error"] for j in pdl if j["state"] == "error"), None),
+                            "size_gb": shapes.PIXAL_GB},
                 "draws": self.images_ready(), "progress": self.shape_progress, "folder": inst["folder"]}
 
     def _shape_size(self):
@@ -1549,6 +1561,18 @@ class Core:
             self.downloads.add(shapes.HF_REPO, inst["missing"], dest=inst["folder"], kind="3d")
         return self.shapes_state()
 
+    def install_pixal(self):
+        """The five Pixal3D files, next to the TRELLIS.2 ones (it shares the rest)."""
+        if not shapes.supported():
+            raise RuntimeError("3D models are not available on this device yet (Linux and Windows only).")
+        inst = shapes.installed(self.settings)
+        if not inst["ready"]:
+            raise RuntimeError("Install TRELLIS.2 first: Pixal3D uses its other files.")
+        missing = inst["pixal3d"]["missing"]
+        if missing:
+            self.downloads.add(shapes.PIXAL_REPO, missing, dest=inst["folder"], kind="3d")
+        return self.shapes_state()
+
     def delete_shapes(self):
         if self.shape_run:
             raise RuntimeError("A 3D model is being made. Stop it first.")
@@ -1568,10 +1592,11 @@ class Core:
         return self.shapes_state()
 
     def make_3d(self, prompt=None, picture=None, from_picture=False, source=None, quality=None, seed=None,
-                swap_ok=True, faces=None):
+                swap_ok=True, faces=None, model=None, matte=None):
         """Makes a 3D model and saves it into the user's Files (3d/). The picture is the bytes given, the one the user
         attached or the newest drawn (from_picture), a file in Files (source), or, with only a prompt, one the image
-        model draws first. Returns {path, seconds, quality, model, swapped, picture}."""
+        model draws first. Best falls back to Detailed when the card runs out of memory. Returns {path, seconds,
+        quality, model, swapped, picture, fell_back}."""
         if not shapes.supported():
             raise RuntimeError("3D models are not available on this device yet (Linux and Windows only).")
         if not self.settings["images"]:
@@ -1583,7 +1608,8 @@ class Core:
         if self.shape_run:
             raise RuntimeError("A 3D model is already being made. Wait for it, or stop it on the Images page.")
         prompt = re.sub(r"\s+", " ", str(prompt or "")).strip()[:1000]
-        res = self.shape_res(quality)
+        q = self.shape_quality(quality)
+        matte = bool(self.settings["shape_matte"]) if matte is None else bool(matte)
         t0 = time.time()
         self.shape_progress = {"stage": "drawing", "since": t0, "detail": "", "swapped": False}
         drawn = None
@@ -1607,21 +1633,33 @@ class Core:
             out_path = os.path.join(work, "model-" + stamp + ".glb")
             with open(src_path, "wb") as f:
                 f.write(picture)
-            run = shapes.Run(cli, inst["folder"], src_path, out_path, res, seed, faces, int(self.settings["threads"] or 0))
-            run.cancelled = False
             self.shape_progress.update(stage="building", since=time.time())
+            fell_back = False
             with self.image_lock:
                 if self.image_server and self.image_server.state != "off" and not self.image_server.busy:
                     self.image_server.stop()                     # the picture model's memory goes to the 3D model
                 was = None
-                if swap_ok and self.needs_swap(shapes.NEEDS_GB[res]):
+                if swap_ok and self.needs_swap(shapes.NEEDS_GB[shapes.QUALITY[q]]):
                     was = dict(self.server.preset)
                     self.server.stop()
                     self.shape_progress["swapped"] = True
-                self.shape_run = run
                 try:
-                    data = run.run(cancelled=lambda: run.cancelled,
-                                   progress=lambda line: self.shape_progress.update(detail=line))
+                    while True:
+                        res = shapes.QUALITY[q]
+                        family = shapes.choose_family(model or self.settings["shape_model"], inst["pixal3d"]["ready"], res)
+                        run = shapes.Run(cli, inst["folder"], src_path, out_path, res, seed, faces,
+                                         int(self.settings["threads"] or 0), family=family, quality=q)
+                        run.cancelled = False
+                        self.shape_run = run
+                        self.shape_progress.update(quality=q, family=family)
+                        try:
+                            data = run.run(cancelled=lambda: run.cancelled,
+                                           progress=lambda line: self.shape_progress.update(detail=line))
+                            break
+                        except RuntimeError:
+                            if q != "best" or run.cancelled or not shapes.out_of_memory():
+                                raise
+                            q, fell_back = "detailed", True         # 1536 did not fit this card: 1024 does
                 finally:
                     self.shape_run = None
                     if was:
@@ -1630,14 +1668,16 @@ class Core:
                             self.server.wait_ready(timeout=900)
                         except Exception:  # noqa: BLE001 - the model is still worth returning
                             pass
+            if matte:
+                data = shapes.matte(data)
             folder = os.path.join(os.path.expanduser(self.settings["files_dir"]), "3d")
             os.makedirs(folder, exist_ok=True)
             base = config.slug((prompt or "model")[:48]) or "model"
             name = f"{base}-{stamp}.glb"
             with open(os.path.join(folder, name), "wb") as f:
                 f.write(data)
-            return {"path": f"3d/{name}", "seconds": round(time.time() - t0, 1), "res": res,
-                    "quality": "detailed" if res >= 1024 else "fast", "model": "TRELLIS.2",
+            return {"path": f"3d/{name}", "seconds": round(time.time() - t0, 1), "res": res, "quality": q,
+                    "model": "Pixal3D" if family == "pixal3d" else "TRELLIS.2", "fell_back": fell_back, "matte": matte,
                     "swapped": bool(self.shape_progress.get("swapped")),
                     "picture": drawn["path"] if drawn else None, "bytes": len(data)}
         finally:
@@ -1657,6 +1697,8 @@ class Core:
         except (RuntimeError, ValueError, OSError) as e:
             return {"error": str(e)}
         made = f" from the picture {r['picture']}" if r.get("picture") else ""
+        if r.get("fell_back"):
+            made += ", at Detailed because Best did not fit the graphics card"
         return {"plain_text_response": (
             f"The 3D model is shown to the user and saved as {r['path']} in their Files ({r['model']}, "
             f"{r['quality']} quality, made in {r['seconds']} s{made}). Do not describe it or paste a link unless asked.")}

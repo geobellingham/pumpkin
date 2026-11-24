@@ -35,7 +35,7 @@ TOOLS = [
      "inputSchema": {"type": "object", "properties": {
          "prompt": {"type": "string", "description": "The object, like \"a carved pumpkin lantern\""},
          "from_picture": {"type": "boolean"},
-         "quality": {"type": "string", "enum": ["fast", "detailed"]}}, "required": []}},
+         "quality": {"type": "string", "enum": ["fast", "detailed", "best"]}}, "required": []}},
 ]
 
 

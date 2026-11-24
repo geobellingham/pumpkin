@@ -85,7 +85,9 @@ DEFAULT_SETTINGS = {
     "image_keep_min": 10,              # free the image model's memory after this many idle minutes (0 = keep)
     "sd_server": "",                   # explicit sd-server path; empty = the downloaded one
     "trellis_cli": "",                 # explicit trellis-cli path for 3D models; empty = the downloaded one
-    "shape_quality": "auto",           # 3D models: auto (by graphics memory) | fast (512) | detailed (1024)
+    "shape_quality": "auto",           # 3D models: auto (by graphics memory) | fast (512) | detailed (1024) | best (1536)
+    "shape_model": "auto",             # 3D models: auto (Pixal3D when it is in) | trellis | pixal3d
+    "shape_matte": False,              # 3D models: take the metal look off (TRELLIS often makes cloth partly metallic)
 }
 
 DEFAULT_PERSONAS = [

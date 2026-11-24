@@ -10,6 +10,8 @@
 	let state = $state<'loading' | 'ready' | 'error'>('loading');
 	let error = $state('');
 	let reset: (() => void) | null = null;
+	let look: ((m: 'as-made' | 'matte' | 'clay') => void) | null = null;
+	let mode = $state<'as-made' | 'matte' | 'clay'>('as-made');
 	let cleanup: (() => void) | null = null;
 
 	onMount(() => {
@@ -37,14 +39,21 @@
 				const env = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
 
 				scene.environment = env;
-				scene.environmentIntensity = 0.7;
+				scene.environmentIntensity = 1.1;
 
-				const sun = new THREE.DirectionalLight(0xffffff, 0.9);
+				const sun = new THREE.DirectionalLight(0xffffff, 1.1);
 
 				sun.position.set(3, 5, 4);
 				scene.add(sun);
+				scene.add(new THREE.HemisphereLight(0xffffff, 0x8a8a8a, 0.5));
 
 				const camera = new THREE.PerspectiveCamera(40, 1, 0.01, 100);
+				// a soft light from where you look, so dark models (black clothes, hair) still show their folds
+				const fill = new THREE.DirectionalLight(0xffffff, 0.9);
+
+				camera.add(fill);
+				fill.position.set(0.3, 0.4, 1);
+				scene.add(camera);
 				const controls = new OrbitControls(camera, renderer.domElement);
 
 				controls.enableDamping = true;
@@ -67,6 +76,26 @@
 
 				model.position.sub(center);
 				scene.add(model);
+
+				// the materials as made, and the two other looks: metal taken off, and plain grey to judge the shape
+				const meshes: Array<{ material: unknown }> = [];
+
+				model.traverse((o) => {
+					if ((o as unknown as { isMesh?: boolean }).isMesh) meshes.push(o as unknown as { material: unknown });
+				});
+				const made = meshes.map((m) => m.material);
+				const flat = new THREE.MeshStandardMaterial({ color: 0x8f8f8f, metalness: 0, roughness: 0.85 });
+				const mattes = made.map((m) => {
+					const c = (m as { clone?: () => { metalness?: number } }).clone?.();
+
+					if (c && 'metalness' in c) c.metalness = 0;
+
+					return c ?? m;
+				});
+
+				look = (m) => {
+					meshes.forEach((mesh, i) => (mesh.material = m === 'clay' ? flat : m === 'matte' ? mattes[i] : made[i]));
+				};
 
 				// far enough back that the whole model fits the view with a margin, seen a little from above
 				const radius = size / 2;
@@ -126,6 +155,8 @@
 							m.dispose();
 						}
 					});
+					flat.dispose();
+					for (const m of mattes) (m as { dispose?: () => void }).dispose?.();
 					env.dispose();
 					pmrem.dispose();
 					renderer.dispose();
@@ -154,6 +185,18 @@
 			The 3D view did not open: {error}
 		</div>
 	{:else}
+		<div class="absolute top-2 left-2 flex gap-1 rounded-full bg-background/80 p-0.5 text-xs backdrop-blur">
+			{#each [['as-made', 'As made'], ['matte', 'Matte'], ['clay', 'Clay']] as [value, label] (value)}
+				<button
+					class={['rounded-full px-2.5 py-1', mode === value ? 'bg-foreground text-background' : 'text-muted-foreground hover:text-foreground']}
+					onclick={() => {
+						mode = value as typeof mode;
+						look?.(mode);
+					}}
+					type="button">{label}</button
+				>
+			{/each}
+		</div>
 		<button
 			aria-label="Reset the view"
 			class="absolute right-2 bottom-2 rounded-full bg-background/80 p-2 text-muted-foreground backdrop-blur hover:text-foreground"
