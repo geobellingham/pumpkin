@@ -326,10 +326,11 @@ class Jobs:
                 raise ValueError(f"There is no picture at {spec['picture']} (or it is over 30 MB).")
             with open(p, "rb") as f:
                 pic = f.read()
-        job["model"] = "TRELLIS.2"
+        job["model"] = "3D"
         r = self.core.make_3d(spec.get("prompt"), picture=pic, quality=spec.get("quality"))
+        job["model"] = r["model"]
         full = os.path.join(os.path.expanduser(self.core.settings["files_dir"]), r["path"])
-        job["answer"] = (f"Saved the 3D model as {full} ({round(r['bytes'] / 1e6, 1)} MB, {r['quality']} quality, "
+        job["answer"] = (f"Saved the 3D model as {full} ({r['model']}, {round(r['bytes'] / 1e6, 1)} MB, {r['quality']} quality, "
                          f"{r['seconds']} s)." + (f" The picture it was made from: {r['picture']} in Pumpkin's Files."
                                                   if r.get("picture") else ""))
 

@@ -1635,6 +1635,7 @@ class Core:
                 f.write(picture)
             self.shape_progress.update(stage="building", since=time.time())
             fell_back = False
+            plain = False                                          # Pixal3D did not fit: TRELLIS.2 instead
             with self.image_lock:
                 if self.image_server and self.image_server.state != "off" and not self.image_server.busy:
                     self.image_server.stop()                     # the picture model's memory goes to the 3D model
@@ -1646,7 +1647,8 @@ class Core:
                 try:
                     while True:
                         res = shapes.QUALITY[q]
-                        family = shapes.choose_family(model or self.settings["shape_model"], inst["pixal3d"]["ready"], res)
+                        family = "trellis" if plain else shapes.choose_family(model or self.settings["shape_model"],
+                                                                              inst["pixal3d"]["ready"], res)
                         run = shapes.Run(cli, inst["folder"], src_path, out_path, res, seed, faces,
                                          int(self.settings["threads"] or 0), family=family, quality=q)
                         run.cancelled = False
@@ -1657,9 +1659,16 @@ class Core:
                                            progress=lambda line: self.shape_progress.update(detail=line))
                             break
                         except RuntimeError:
-                            if q != "best" or run.cancelled or not shapes.out_of_memory():
+                            if run.cancelled or not shapes.out_of_memory():
                                 raise
-                            q, fell_back = "detailed", True         # 1536 did not fit this card: 1024 does
+                            if family == "pixal3d":
+                                # Pixal3D needs a few very large single blocks (5 GB at 1024), which some drivers
+                                # refuse however much memory is free (AMD on Windows): TRELLIS.2 does not need them
+                                plain = True
+                            elif q == "best":
+                                q, fell_back = "detailed", True     # 1536 did not fit this card: 1024 does
+                            else:
+                                raise
                 finally:
                     self.shape_run = None
                     if was:
@@ -1678,6 +1687,7 @@ class Core:
                 f.write(data)
             return {"path": f"3d/{name}", "seconds": round(time.time() - t0, 1), "res": res, "quality": q,
                     "model": "Pixal3D" if family == "pixal3d" else "TRELLIS.2", "fell_back": fell_back, "matte": matte,
+                    "pixal3d_too_big": plain,
                     "swapped": bool(self.shape_progress.get("swapped")),
                     "picture": drawn["path"] if drawn else None, "bytes": len(data)}
         finally:
@@ -1699,6 +1709,8 @@ class Core:
         made = f" from the picture {r['picture']}" if r.get("picture") else ""
         if r.get("fell_back"):
             made += ", at Detailed because Best did not fit the graphics card"
+        if r.get("pixal3d_too_big"):
+            made += ", with TRELLIS.2 because Pixal3D did not fit the graphics card"
         return {"plain_text_response": (
             f"The 3D model is shown to the user and saved as {r['path']} in their Files ({r['model']}, "
             f"{r['quality']} quality, made in {r['seconds']} s{made}). Do not describe it or paste a link unless asked.")}

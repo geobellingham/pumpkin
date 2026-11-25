@@ -296,6 +296,17 @@ class TestShapes(unittest.TestCase):
             self.assertEqual(st, 200, r)
             self.assertEqual((r["quality"], r["res"], r["fell_back"]), ("detailed", 1024, True))
             self.assertEqual(self.glb_metal(r["path"]), 1.0)          # as made
+            # Pixal3D hits a driver's single-block limit (AMD on Windows): TRELLIS.2 makes it instead
+            os.environ["FAKE_TRELLIS_OOM"] = "pixal3d"
+            try:
+                self.call("PUT", "/pumpkin/api/shapes/settings", {"quality": "detailed"})
+                st, r, _ = self.call("POST", "/pumpkin/api/shapes/make",
+                                     {"prompt": "jacket", "image": base64.b64encode(PNG).decode()})
+            finally:
+                os.environ.pop("FAKE_TRELLIS_OOM")
+            self.assertEqual(st, 200, r)
+            self.assertEqual((r["model"], r["quality"], r["pixal3d_too_big"]), ("TRELLIS.2", "detailed", True))
+            self.assertNotIn("--model", self.last_call())
             # TRELLIS.2 when asked for, even with Pixal3D in
             st, r, _ = self.call("POST", "/pumpkin/api/shapes/make", {"prompt": "jacket", "model": "trellis",
                                                                       "image": base64.b64encode(PNG).decode()})

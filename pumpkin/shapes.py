@@ -311,7 +311,7 @@ def last_line():
 def out_of_memory():
     low = log_tail(80).lower()
     return any(s in low for s in ("out of memory", "failed to allocate", "cudamalloc", "vk::outofdevicememory",
-                                  "erroroutofdevicememory"))
+                                  "erroroutofdevicememory", "exceeds device buffer size limit"))
 
 
 def explain():

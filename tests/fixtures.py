@@ -405,10 +405,11 @@ if not image or not os.path.isfile(image):
 for stage in ("background removal", "DINOv3 encode", "sparse structure flow", "shape flow", "texture flow", "export GLB"):
     print("[trellis] " + stage, flush=True)
     time.sleep(float(os.environ.get("FAKE_TRELLIS_STEP", "0.1")))
-    big = os.environ.get("FAKE_TRELLIS_OOM") == "1536" and opt("--res") == "1536"
+    big = (os.environ.get("FAKE_TRELLIS_OOM") == "1536" and opt("--res") == "1536") or \
+        (os.environ.get("FAKE_TRELLIS_OOM") == "pixal3d" and opt("--model") == "pixal3d")
     if (os.environ.get("FAKE_TRELLIS_OOM") == "1" or big) and stage == "shape flow":
         print("ggml_vulkan: Device memory allocation of size 4294967296 failed.")
-        print("ggml_vulkan: vk::Device::allocateMemory: ErrorOutOfDeviceMemory"); sys.exit(1)
+        print("ggml_vulkan: Requested buffer size exceeds device buffer size limit: ErrorOutOfDeviceMemory"); sys.exit(1)
 if os.environ.get("FAKE_TRELLIS_GLB"):                         # a real model, for looking at the viewer
     import shutil; shutil.copyfile(os.environ["FAKE_TRELLIS_GLB"], out); print("[trellis] wrote " + out); sys.exit(0)
 # an orange cube with flat faces: 24 vertices (position + normal), 36 indices
